@@ -111,7 +111,7 @@ export default function CommandPalette({
         id: 'act-announcements',
         group: 'Actions',
         title: 'View Latest Career Announcements',
-        subtitle: 'Cisco STO launch, Databricks & ERS awards',
+        subtitle: 'Cisco Systems Inc. STO launch, Databricks & ERS awards',
         keywords: 'news updates announcements',
         action: () => {
           onClose();
@@ -164,7 +164,7 @@ export default function CommandPalette({
         id: 'sec-experience',
         group: 'Sections',
         title: 'Professional Experience & Leadership',
-        subtitle: '13+ years across Cisco, HCL America & TCS',
+        subtitle: '13+ years across Cisco Systems Inc., HCL America Inc./HCLTech & TCS',
         keywords: 'experience timeline career work history',
         action: () => jumpToSection('experience'),
       },

@@ -41,7 +41,7 @@ export function buildAtsPlainTextResume(input: AtsExportInput): string {
 
   lines.push('================================================================================');
   lines.push(PERSONAL_INFO.name.toUpperCase());
-  lines.push('Software Engineer — Cisco Security & Trust Organization (STO) CTO Operations | Cloud Solutions Architect');
+  lines.push('Software Engineer — Cisco Systems Inc. Security & Trust Organization (STO) CTO Operations');
   lines.push(`Location: ${PERSONAL_INFO.location}`);
   lines.push(`Email: ${PERSONAL_INFO.email} | LinkedIn: ${PERSONAL_INFO.linkedin}`);
   lines.push('Portfolio: https://www.mohammedsufyan.com/');
@@ -52,7 +52,7 @@ export function buildAtsPlainTextResume(input: AtsExportInput): string {
     lines.push('EXECUTIVE SUMMARY');
     lines.push('-----------------');
     lines.push(
-      'Architecting high-velocity security data platforms, multi-cloud vulnerability engines, and enterprise compliance systems across 13+ years of engineering experience with Cisco, HCL America Inc., and Tata Consultancy Services in the United States, United Kingdom, and India.'
+      'Architecting high-velocity security data platforms, multi-cloud vulnerability engines, and enterprise compliance systems across 13+ years of engineering experience with Cisco Systems Inc., HCL America Inc./HCLTech, and Tata Consultancy Services in the United States, United Kingdom, and India.'
     );
     lines.push('');
     lines.push('Key Metrics:');

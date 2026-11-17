@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { Award, AWARDS_BY_ORGANIZATION, LINKEDIN_RECOMMENDATIONS } from '../data/portfolioData';
 import { CollapseTimeline, CollapseTimelineNode } from './CollapseTimeline';
 import HeaderSpotlight from './HeaderSpotlight';
+import CiscoName from './CiscoName';
 import { Reveal, EASE_OUT_EXPO, SpotlightCard } from './MotionPrimitives';
 import SectionScanLine from './SectionScanLine';
 
@@ -171,7 +172,7 @@ export default function Awards() {
               Official Recognitions &amp; Honors
             </h2>
             <p className="mt-2 text-sm sm:text-base text-slate-400 max-w-3xl">
-              Peer endorsements, corporate excellence citations, and leadership awards across Cisco, HCL Technologies, and Tata Consultancy Services.
+              Peer endorsements, corporate excellence citations, and leadership awards across <CiscoName />, HCL America Inc./HCLTech, and Tata Consultancy Services.
             </p>
           </div>
           </HeaderSpotlight>
@@ -205,9 +206,9 @@ export default function Awards() {
             {(
               [
                 { id: 'all', short: `All (${totalAwardsCount})`, label: `All Citations (${totalAwardsCount})` },
-                { id: 'Cisco', short: 'Cisco', label: 'Cisco Systems' },
-                { id: 'HCL', short: 'HCL', label: 'HCL Technologies' },
-                { id: 'TCS', short: 'TCS', label: 'TCS' },
+                { id: 'Cisco', short: 'Cisco', label: 'Cisco Systems Inc.' },
+                { id: 'HCL', short: 'HCL', label: 'HCL America Inc./HCLTech' },
+                { id: 'TCS', short: 'TCS', label: 'Tata Consultancy Services' },
               ] as const
             ).map((tab) => {
               const isActive = filterOrg === tab.id;
@@ -294,7 +295,7 @@ export default function Awards() {
                       <div className="min-w-0">
                         <div className="flex items-center gap-2.5 flex-wrap">
                           <h3 className="text-lg sm:text-xl font-display font-bold text-white tracking-tight">
-                            {group.organization}
+                            {group.organization.includes('Cisco') ? <CiscoName /> : group.organization}
                           </h3>
                           <span className="text-xs font-mono text-cyan-400 px-2.5 py-0.5 rounded bg-cyan-950/30 border border-cyan-500/30 shrink-0">
                             {group.awards.length} {group.awards.length === 1 ? 'Honor Conferred' : 'Honors Conferred'}

@@ -36,7 +36,10 @@ export default function Footer({ onOpenDigitalCard }: FooterProps) {
             </div>
 
             <p className="text-xs sm:text-sm text-slate-400 leading-relaxed max-w-md font-light">
-              Software Engineer & Principal Cloud Solutions Architect with 13+ years of enterprise engineering experience across Cisco Systems Inc. America, HCL Technologies, and Tata Consultancy Services in the United States, United Kingdom, and India.
+              Software Engineer with 13+ years of enterprise engineering experience across{' '}
+              <span className="sm:hidden">Cisco</span>
+              <span className="hidden sm:inline">Cisco Systems Inc.</span>
+              , HCL America Inc./HCLTech, and Tata Consultancy Services in the United States, United Kingdom, and India.
             </p>
           </div>
 

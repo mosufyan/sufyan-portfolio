@@ -54,7 +54,7 @@ export interface Recommendation {
 export const PERSONAL_INFO = {
   name: 'Mohammed Sufyan',
   title: 'Software Engineer — Cloud Solutions Architect / Trust Organization DFOV / DFS Operations / Cloud Solutions Architect',
-  tagline: 'Architecting high-velocity systems for distributed platforms, multi-cloud scalability, resilience and cloud governance across diverse ecosystems. 13+ years of enterprise experience with Cisco, HCL Technologies, and Tata Consultancy Services in the United States, United Kingdom, and India.',
+  tagline: 'Architecting high-velocity systems for distributed platforms, multi-cloud scalability, resilience and cloud governance across diverse ecosystems. 13+ years of enterprise experience with Cisco Systems Inc., HCL America Inc./HCLTech, and Tata Consultancy Services in the United States, United Kingdom, and India.',
   email: 'sufyan.net@gmail.com',
   linkedin: 'https://www.linkedin.com/in/mohammed-sufyan',
   location: 'San Jose, California, United States · Hybrid',
@@ -64,7 +64,7 @@ export const PERSONAL_INFO = {
   academicCgpa: '9.5/10',
   philosophy: {
     quote1: "Throughout my life, I've approached every challenge with enthusiasm, creativity, and commitment to achieve success. Thousand and One Rare achievements continue to fuel my unique experience and exceptional commitment to personal and professional integrity.",
-    body: 'Senior Systems and Cloud Solutions Architect with 13+ years of experience spanning Cisco Systems Inc., HCL America Inc., and Tata Consultancy Services across high-throughput and high-compliance enterprise domains. Lead and build architectures across multi-cloud footprints (AWS, Azure, GCP), with deep specialization in Zero Trust architectures, telemetry pipelines, distributed cloud infrastructure, microservices, and cross-platform resilience.',
+    body: 'Senior Systems and Cloud Solutions Architect with 13+ years of experience spanning Cisco Systems Inc., HCL America Inc./HCLTech, and Tata Consultancy Services across high-throughput and high-compliance enterprise domains. Lead and build architectures across multi-cloud footprints (AWS, Azure, GCP), with deep specialization in Zero Trust architectures, telemetry pipelines, distributed cloud infrastructure, microservices, and cross-platform resilience.',
     poem: 'Knowledge is my companion,\nit boasts me wherever I go.\nMy heart is its container, and\nnot the bookshelf.',
     poemAuthor: 'Mohammed Sufyan, Principal Cloud Architect'
   }
@@ -74,7 +74,7 @@ export const STATS = [
   {
     value: '13+',
     label: 'YEARS ENTERPRISE EXPERIENCE',
-    sublabel: 'Cisco • HCL America • TCS'
+    sublabel: 'Cisco Systems Inc. • HCL America Inc./HCLTech • TCS'
   },
   {
     value: '20x',
@@ -147,7 +147,7 @@ export const TECHNICAL_DISCIPLINES = [
 
 export const WORK_EXPERIENCE: CompanyExperience[] = [
   {
-    company: 'Cisco',
+    company: 'Cisco Systems Inc.',
     companyTag: 'CURRENT ROLE · FULL-TIME',
     tenure: 'Aug 2026 — Present · 3 mos',
     location: 'San Jose, California, United States · Hybrid',
@@ -157,9 +157,9 @@ export const WORK_EXPERIENCE: CompanyExperience[] = [
         period: 'Aug 2026 — Present · 3 mos',
         location: 'San Jose, California, United States · Hybrid',
         employmentType: 'Full-time',
-        domain: 'Cisco Security & Trust Organization (STO) CTO Operations · Project Atlas',
+        domain: 'Cisco Systems Inc. Security & Trust Organization (STO) CTO Operations · Project Atlas',
         highlights: [
-          'Software Engineer in Cisco Security & Trust Organization (STO) CTO Operations, building the security data platform at the core of Project Atlas — a unified, governed foundation that consolidates shared services, standardizes data, and enables teams to build, automate, and innovate with confidence.',
+          'Software Engineer in Cisco Systems Inc. Security & Trust Organization (STO) CTO Operations, building the security data platform at the core of Project Atlas — a unified, governed foundation that consolidates shared services, standardizes data, and enables teams to build, automate, and innovate with confidence.',
           'Design and implement APIs and data pipelines to ingest, process, and manage large volumes of structured and unstructured security data across the STO data platform.',
           'Build and optimize scalable software for Project Atlas Minimum Viable Architecture (MVA) — focusing on code quality, system architecture, and performance of large-scale data processing systems.',
           'Own features end-to-end: development, infrastructure enhancements, and integration with enterprise data systems across a globally distributed STO team.',
@@ -171,7 +171,7 @@ export const WORK_EXPERIENCE: CompanyExperience[] = [
     ]
   },
   {
-    company: 'HCL America Inc.',
+    company: 'HCL America Inc./HCLTech',
     companyTag: 'FULL-TIME · 7 YRS',
     tenure: 'Sep 2019 — Aug 2026 · 7 yrs',
     location: 'San Francisco Bay Area, United States & Bengaluru, India',
@@ -181,14 +181,14 @@ export const WORK_EXPERIENCE: CompanyExperience[] = [
         period: 'Oct 2024 — Aug 2026 · 1 yr 11 mos',
         location: 'San Francisco Bay Area · Hybrid',
         employmentType: 'Full-time',
-        domain: 'Multi-Cloud Vulnerability Orchestration & AI Document Retrieval · Cisco Account',
+        domain: 'Multi-Cloud Vulnerability Orchestration & AI Document Retrieval · Cisco Systems Inc. Account',
         recognitionBadge: '4 Consecutive Quarterly Awards (ERS Star Champion, HCL Achievers League)',
         highlights: [
           'Architected a multi-cloud vulnerability orchestration platform for Cisco Systems Inc. — integrating Tenable scanner plugins, async Python, AWS S3/DynamoDB, and DuckDB to orchestrate enterprise-scale scan scheduling, execution, and result ingestion across global infrastructure.',
-          'Designed and delivered an AI-powered document retrieval system using RAG architecture — ingesting enterprise ServiceNow documents into a vector store with incremental sync, enabling natural-language security knowledge search for Cisco\'s engineering teams.',
+          'Designed and delivered an AI-powered document retrieval system using RAG architecture — ingesting enterprise ServiceNow documents into a vector store with incremental sync, enabling natural-language security knowledge search for Cisco Systems Inc.\'s engineering teams.',
           'Engineered OpenShift CronJob observability tooling with statistical anomaly detection — providing zero-config health monitoring for compliance pipeline workloads across missed runs, success-rate degradation, and period-over-period performance comparison.',
           'Designed an internal Python project generator CLI, standardising all security engineering project scaffolding with UV, Docker devcontainers, pre-commit security gates (bandit, mypy, ruff), and GitHub automation — reducing new project bootstrap time from days to minutes.',
-          'Recognised with 4 consecutive quarterly awards (ERS Star Champion, HCL Achievers League) for outstanding architecture and delivery on the Cisco account.'
+          'Recognised with 4 consecutive quarterly awards (ERS Star Champion, HCL Achievers League) for outstanding architecture and delivery on the Cisco Systems Inc. account.'
         ],
         technologies: ['Agentic Workflows', 'Python (Programming Language)', 'Tenable', 'Async Python', 'AWS S3 / DynamoDB', 'DuckDB', 'RAG Architecture', 'Vector Store', 'OpenShift', 'Statistical Anomaly Detection', 'UV Devcontainers']
       },
@@ -197,11 +197,11 @@ export const WORK_EXPERIENCE: CompanyExperience[] = [
         period: 'Dec 2023 — Sep 2024 · 10 mos',
         location: 'San Francisco Bay Area',
         employmentType: 'Full-time',
-        domain: 'SVIC JupiterOne API & Security Graph Data Pipelines · Cisco Account',
+        domain: 'SVIC JupiterOne API & Security Graph Data Pipelines · Cisco Systems Inc. Account',
         highlights: [
-          'Led engineering of the SVIC JupiterOne API — a Django 5 + Django REST Framework REST service with async J1QL query jobs, Wiz findings integration, and Tenable findings endpoints, bridging Cisco\'s security graph data to downstream analytics consumers.',
-          'Designed and implemented a J1QL-to-SQL translation library enabling Cisco\'s JupiterOne security graph data to be queried against a relational data warehouse — unlocking SQL-native analytics across graph-origin vulnerability data.',
-          'Built and maintained 5 JupiterOne data ingestion pipelines (Wiz, ServiceNow/ESP, Symphony/Tenable, fixed findings, plugin metadata) — keeping Cisco\'s security graph continuously current and audit-ready.'
+          'Led engineering of the SVIC JupiterOne API — a Django 5 + Django REST Framework REST service with async J1QL query jobs, Wiz findings integration, and Tenable findings endpoints, bridging Cisco Systems Inc.\'s security graph data to downstream analytics consumers.',
+          'Designed and implemented a J1QL-to-SQL translation library enabling Cisco Systems Inc.\'s JupiterOne security graph data to be queried against a relational data warehouse — unlocking SQL-native analytics across graph-origin vulnerability data.',
+          'Built and maintained 5 JupiterOne data ingestion pipelines (Wiz, ServiceNow/ESP, Symphony/Tenable, fixed findings, plugin metadata) — keeping Cisco Systems Inc.\'s security graph continuously current and audit-ready.'
         ],
         technologies: ['Python (Programming Language)', 'Shell Scripting', 'Django 5', 'Django REST Framework', 'J1QL', 'Wiz', 'Tenable', 'JupiterOne', 'SQL Translation', 'Security Graph']
       },
@@ -213,10 +213,10 @@ export const WORK_EXPERIENCE: CompanyExperience[] = [
         domain: 'UCT/CSBIT Cloud Security Audit Platform & CSEO Compliance Pipelines',
         recognitionBadge: 'HCL Achievers League O3, Shining Star (×2), and ERS Knowledge Champion',
         highlights: [
-          'Architected and maintained the UCT/CSBIT cloud security audit platform — an event-driven microservices system (Flask, OpenShift, RabbitMQ, MongoDB, HashiCorp Vault, Celery) for running pluggable compliance guardrail scans (Nmap, OWASP ZAP, SSL/TLS auditing) against Cisco cloud tenants.',
+          'Architected and maintained the UCT/CSBIT cloud security audit platform — an event-driven microservices system (Flask, OpenShift, RabbitMQ, MongoDB, HashiCorp Vault, Celery) for running pluggable compliance guardrail scans (Nmap, OWASP ZAP, SSL/TLS auditing) against Cisco Systems Inc. cloud tenants.',
           'Engineered the core compliance pipeline v5 stream and batch processing framework (SQLAlchemy, pandas, APScheduler, JSON schema validation, ArangoDB) — the foundational ETL engine powering all CSEO security data pipelines.',
-          'Built the Security Issue Rating (SIR) library — a configurable risk scoring engine for Tenable/Symphony vulnerability findings, incorporating business context rules to prioritise remediation across Cisco\'s infrastructure.',
-          'Recognised with 4 awards: HCL Achievers League O3, Shining Star (×2), and ERS Knowledge Champion for sustained technical excellence on the Cisco account.'
+          'Built the Security Issue Rating (SIR) library — a configurable risk scoring engine for Tenable/Symphony vulnerability findings, incorporating business context rules to prioritise remediation across Cisco Systems Inc.\'s infrastructure.',
+          'Recognised with 4 awards: HCL Achievers League O3, Shining Star (×2), and ERS Knowledge Champion for sustained technical excellence on the Cisco Systems Inc. account.'
         ],
         technologies: ['Agentic Workflows', 'Python (Programming Language)', 'Flask', 'OpenShift', 'RabbitMQ', 'MongoDB', 'HashiCorp Vault', 'Celery', 'SQLAlchemy', 'pandas', 'APScheduler', 'ArangoDB']
       },
@@ -225,13 +225,13 @@ export const WORK_EXPERIENCE: CompanyExperience[] = [
         period: 'Sep 2019 — Jun 2022 · 2 yrs 10 mos',
         location: 'Bengaluru, Karnataka, India',
         employmentType: 'Full-time',
-        domain: 'Initial Cloud Compliance Infrastructure & Cisco Continuous Security Buddy Project',
+        domain: 'Initial Cloud Compliance Infrastructure & Cisco Systems Inc. Continuous Security Buddy Project',
         recognitionBadge: '6 Awards: Delivery Excellence, Technical Excellence, ERS Knowledge Champion (×2), Spark Award',
         highlights: [
-          'Led development of initial UCT/CSBIT cloud compliance scanning infrastructure for Cisco Systems — establishing the microservices architecture, scan service REST API, and audit orchestration layer that became Cisco\'s internal cloud security guardrail platform.',
-          'Built automated vulnerability scan ingestion pipelines integrating Symphony and Tenable data sources — standardising security finding formats and enabling centralised tracking across Cisco\'s multi-cloud environment.',
+          'Led development of initial UCT/CSBIT cloud compliance scanning infrastructure for Cisco Systems Inc. — establishing the microservices architecture, scan service REST API, and audit orchestration layer that became Cisco Systems Inc.\'s internal cloud security guardrail platform.',
+          'Built automated vulnerability scan ingestion pipelines integrating Symphony and Tenable data sources — standardising security finding formats and enabling centralised tracking across Cisco Systems Inc.\'s multi-cloud environment.',
           'Introduced GitLab CI/CD pipelines and standardised Python project structures across the CSEO engineering team — improving code quality, reducing integration errors, and accelerating delivery cadence.',
-          'Recognised with 6 awards including Delivery Excellence, Technical Excellence, ERS Knowledge Champion (×2), and Spark Award for outstanding delivery on the Cisco Continuous Security Buddy Project.'
+          'Recognised with 6 awards including Delivery Excellence, Technical Excellence, ERS Knowledge Champion (×2), and Spark Award for outstanding delivery on the Cisco Systems Inc. Continuous Security Buddy Project.'
         ],
         technologies: ['Python (Programming Language)', 'Cloud Security', 'GitLab CI/CD', 'Microservices', 'REST API', 'Tenable', 'Symphony', 'Audit Orchestration']
       }
@@ -576,7 +576,7 @@ export const AWARDS_BY_ORGANIZATION = [
         organization: 'Cisco Systems Inc.',
         date: 'SEP 2026',
         category: 'STO Data Platform Launch',
-        description: 'Awarded for exceptional delivery and leadership during the Cisco STO Data Platform Launch as part of Project Atlas.',
+        description: 'Awarded for exceptional delivery and leadership during the Cisco Systems Inc. STO Data Platform Launch as part of Project Atlas.',
         associatedWith: 'Cisco'
       },
       {
@@ -585,7 +585,7 @@ export const AWARDS_BY_ORGANIZATION = [
         organization: 'Cisco Systems Inc.',
         date: 'AUG 2026',
         category: 'Play to Win Together',
-        description: 'Recognized for collaborative engineering excellence in driving platform milestones within Cisco STO CTO Operations.',
+        description: 'Recognized for collaborative engineering excellence in driving platform milestones within Cisco Systems Inc. STO CTO Operations.',
         associatedWith: 'Cisco'
       }
     ]
@@ -708,7 +708,7 @@ export const AWARDS_BY_ORGANIZATION = [
         organization: 'HCLTech',
         date: 'MAR 2022',
         category: 'Technical Innovation',
-        description: 'For Technical Excellence on the Cisco cloud security audit orchestration platform.',
+        description: 'For Technical Excellence on the Cisco Systems Inc. cloud security audit orchestration platform.',
         associatedWith: 'HCLTech'
       },
       {
@@ -726,7 +726,7 @@ export const AWARDS_BY_ORGANIZATION = [
         organization: 'HCLTech',
         date: 'APR 2021',
         category: 'Proactive Innovation',
-        description: 'For Splendid performance towards the deliverables in the Cisco Continuous Security Buddy Project.',
+        description: 'For Splendid performance towards the deliverables in the Cisco Systems Inc. Continuous Security Buddy Project.',
         associatedWith: 'HCLTech'
       },
       {
@@ -793,7 +793,7 @@ export const ANNOUNCEMENTS = [
   {
     id: 'ann-1',
     date: 'OCTOBER 2026',
-    title: 'Cisco STO Data Platform Launch & Connected Recognition',
+    title: 'Cisco Systems Inc. STO Data Platform Launch & Connected Recognition',
     summary: 'Awarded Cisco Play to Win Connected Recognition for building the security data platform at the core of Project Atlas.'
   },
   {
@@ -805,7 +805,7 @@ export const ANNOUNCEMENTS = [
   {
     id: 'ann-3',
     date: 'MARCH 2026',
-    title: '4th Consecutive ERS Champion Award on Cisco Account',
+    title: '4th Consecutive ERS Champion Award on Cisco Systems Inc. Account',
     summary: 'Recognized by HCL America Inc. for outstanding architecture on multi-cloud vulnerability orchestration and AI document retrieval.'
   }
 ];
@@ -833,7 +833,7 @@ export const LINKEDIN_RECOMMENDATIONS: Recommendation[] = [
   {
     id: 'rec-abhishek-ghimire',
     author: 'Abhishek Upadhyaya Ghimire',
-    role: 'Cloud Engineering Technical Leader at Cisco',
+    role: 'Cloud Engineering Technical Leader at Cisco Systems Inc.',
     date: 'MAY 2023',
     relationship: 'Worked with Mohammed on the same team',
     relationshipType: 'peer',
