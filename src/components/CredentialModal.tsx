@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Check, ExternalLink, ShieldCheck, X, Calendar, Hash } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Certification, PERSONAL_INFO } from '../data/portfolioData';
+import { useTheme } from '../theme/ThemeProvider';
 import IssuerMark from './IssuerMark';
 import { EASE_OUT_EXPO } from './MotionPrimitives';
 
@@ -11,6 +12,7 @@ interface CredentialModalProps {
 }
 
 export default function CredentialModal({ certification, onClose }: CredentialModalProps) {
+  const { theme } = useTheme();
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -78,7 +80,7 @@ export default function CredentialModal({ certification, onClose }: CredentialMo
                 {certification.title}
               </h3>
               <div className="flex items-center gap-2 text-sm font-medium text-cyan-400">
-                <IssuerMark issuer={certification.issuer} size="sm" />
+                <IssuerMark issuer={certification.issuer} size="sm" theme={theme} />
                 <span>Issued by {certification.issuer}</span>
               </div>
             </div>

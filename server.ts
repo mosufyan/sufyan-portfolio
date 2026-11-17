@@ -244,13 +244,14 @@ interface CvAccessPayload {
   email?: string;
   phone?: string;
   reason: string;
-  action: 'pdf' | 'print' | 'ats';
+  action: 'pdf' | 'print' | 'ats' | 'install';
   formatLabel: string;
 }
 
 function formatCvActionLabel(action: CvAccessPayload['action']): string {
   if (action === 'print') return 'Browser Print';
   if (action === 'ats') return 'ATS Plain-Text Copy';
+  if (action === 'install') return 'App Install';
   return 'PDF Download';
 }
 
@@ -631,12 +632,16 @@ async function sendCvAccessEmail(payload: CvAccessPayload, userAgent: string): P
   const safeHeaderName = sanitizeDisplayName(payload.name || '') || sanitizeHeaderValue(payload.email || payload.phone || 'Visitor');
   const safeHeaderEmail = payload.email ? sanitizeHeaderValue(payload.email) : undefined;
   const actionLabel = formatCvActionLabel(payload.action);
-  const subjectLine = `[CV ${actionLabel}] ${safeHeaderName} — ${sanitizeHeaderValue(payload.formatLabel)}`;
+  const subjectPrefix = payload.action === 'install' ? 'App' : 'CV';
+  const subjectLine = `[${subjectPrefix} ${actionLabel}] ${safeHeaderName} — ${sanitizeHeaderValue(payload.formatLabel)}`;
   const html = buildCvAccessEmailHtml(payload, timestamp, userAgent);
   const text = buildCvAccessPlainText(payload, timestamp, userAgent);
 
   return dispatchEmailMessage({
-    fromDisplayName: `CV Export Alert — ${safeHeaderName}`,
+    fromDisplayName:
+      payload.action === 'install'
+        ? `App Install Alert — ${safeHeaderName}`
+        : `CV Export Alert — ${safeHeaderName}`,
     replyTo: safeHeaderEmail,
     subjectLine,
     html,
@@ -823,12 +828,28 @@ async function startServer() {
       const cleanEmail = typeof body.email === 'string' ? sanitizeHeaderValue(body.email) : '';
       const cleanPhone = typeof body.phone === 'string' ? sanitizeHeaderValue(body.phone) : '';
       const cleanReason = typeof body.reason === 'string' ? body.reason.trim() : '';
-      const cleanAction: 'pdf' | 'print' | 'ats' =
-        body.action === 'print' ? 'print' : body.action === 'ats' ? 'ats' : 'pdf';
-      const cleanFormat = typeof body.formatLabel === 'string' ? sanitizeHeaderValue(body.formatLabel) : 'Executive Summary';
+      const cleanAction: CvAccessPayload['action'] =
+        body.action === 'print'
+          ? 'print'
+          : body.action === 'ats'
+            ? 'ats'
+            : body.action === 'install'
+              ? 'install'
+              : 'pdf';
+      const cleanFormat =
+        typeof body.formatLabel === 'string'
+          ? sanitizeHeaderValue(body.formatLabel)
+          : cleanAction === 'install'
+            ? 'Portfolio PWA'
+            : 'Executive Summary';
 
       if (!cleanEmail && !cleanPhone) {
-        res.status(400).json({ error: 'Please provide either your Email ID or Phone Number to download.' });
+        res.status(400).json({
+          error:
+            cleanAction === 'install'
+              ? 'Please provide either your Email ID or Phone Number to install.'
+              : 'Please provide either your Email ID or Phone Number to download.',
+        });
         return;
       }
 
@@ -843,7 +864,12 @@ async function startServer() {
       }
 
       if (cleanReason.length < 3) {
-        res.status(400).json({ error: 'Please share a brief reason (at least 3 characters) why you are downloading or printing this CV.' });
+        res.status(400).json({
+          error:
+            cleanAction === 'install'
+              ? 'Please share a brief reason (at least 3 characters) why you are installing this app.'
+              : 'Please share a brief reason (at least 3 characters) why you are downloading or printing this CV.',
+        });
         return;
       }
 
@@ -873,10 +899,13 @@ async function startServer() {
       res.status(200).json({
         ok: true,
         provider: result.provider,
-        message: 'Access verified. Preparing your CV export.',
+        message:
+          cleanAction === 'install'
+            ? 'Access verified. Preparing app install.'
+            : 'Access verified. Preparing your CV export.',
       });
     } catch (error) {
-      const errMsg = error instanceof Error ? error.message : 'Unable to process CV export request.';
+      const errMsg = error instanceof Error ? error.message : 'Unable to process access request.';
       console.error('CV access dispatch error:', errMsg);
       res.status(500).json({ error: errMsg });
     }

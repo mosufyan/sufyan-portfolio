@@ -88,7 +88,7 @@ export default function Hero({ onOpenResume, onOpenDigitalCard }: HeroProps) {
         className="absolute top-20 right-10 z-0 h-80 w-80 rounded-full bg-blue-600/10 blur-3xl pointer-events-none print:hidden"
       />
 
-      <div className="relative z-10 mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div className="relative z-10 page-shell">
         {/* Main Hero Presentation */}
         <div className="grid grid-cols-1 md:grid-cols-12 items-center gap-8 lg:gap-12">
           <div className="md:col-span-7 xl:col-span-8 flex flex-col space-y-4">
@@ -97,9 +97,10 @@ export default function Hero({ onOpenResume, onOpenDigitalCard }: HeroProps) {
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.45, delay: 0.04, ease: EASE_OUT_EXPO }}
-            className="text-[11px] sm:text-xs font-mono tracking-wider text-slate-400 uppercase pt-1"
+            className="text-[10px] sm:text-xs font-mono tracking-wider text-slate-400 uppercase pt-1 leading-relaxed"
           >
-            GLOBAL CLOUD INFRASTRUCTURE • SECOPS • MULTI-CLOUD ARCHITECTURE
+            <span className="sm:hidden">CLOUD • SECOPS • MULTI-CLOUD ARCHITECTURE</span>
+            <span className="hidden sm:inline">GLOBAL CLOUD INFRASTRUCTURE • SECOPS • MULTI-CLOUD ARCHITECTURE</span>
           </motion.div>
 
           {/* Main Headline */}
@@ -107,7 +108,7 @@ export default function Hero({ onOpenResume, onOpenDigitalCard }: HeroProps) {
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.55, delay: 0.1, ease: EASE_OUT_EXPO }}
-            className="text-4xl sm:text-5xl lg:text-6xl font-display font-extrabold tracking-tight text-white leading-[1.08] text-balance"
+            className="text-[1.85rem] sm:text-5xl lg:text-6xl 2xl:text-7xl font-display font-extrabold tracking-tight text-white leading-[1.08] text-balance break-words"
           >
             Hello! I&apos;m <span className="bg-gradient-to-r from-[#38bdf8] via-cyan-300 to-sky-400 bg-clip-text text-transparent">Mohammed</span>
             <br />
@@ -119,9 +120,10 @@ export default function Hero({ onOpenResume, onOpenDigitalCard }: HeroProps) {
             initial={{ opacity: 0, y: 14 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.18, ease: EASE_OUT_EXPO }}
-            className="text-sm sm:text-base font-normal text-slate-300 leading-snug pt-1"
+            className="text-sm sm:text-base 2xl:text-lg font-normal text-slate-300 leading-snug pt-1 max-w-3xl text-pretty"
           >
-            Software Engineer — Cisco Security &amp; Trust Organization (STO) CTO Operations | Cloud Solutions Architect
+            <span className="sm:hidden">Software Engineer — Cisco STO CTO Ops | Cloud Solutions Architect</span>
+            <span className="hidden sm:inline">Software Engineer — Cisco Security &amp; Trust Organization (STO) CTO Operations | Cloud Solutions Architect</span>
           </motion.h2>
 
           {/* Lead Narrative */}
@@ -139,17 +141,18 @@ export default function Hero({ onOpenResume, onOpenDigitalCard }: HeroProps) {
             initial={{ opacity: 0, y: 14 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.3, ease: EASE_OUT_EXPO }}
-            className="flex flex-wrap items-center gap-3 pt-3 print:hidden"
+            className="flex flex-wrap items-center gap-2.5 sm:gap-3 pt-3 print:hidden"
           >
             {/* Button 1: View Architecture & Experience */}
             <motion.a
               whileHover={{ y: -2, scale: 1.01 }}
               whileTap={{ scale: 0.98 }}
               href="#experience"
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-[#38bdf8] hover:bg-sky-300 text-slate-950 font-semibold text-xs sm:text-sm transition-colors shadow-md shadow-sky-500/20"
+              className="inline-flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 rounded-lg bg-[#38bdf8] hover:bg-sky-300 text-slate-950 font-semibold text-xs sm:text-sm transition-colors shadow-md shadow-sky-500/20 max-w-full"
             >
-              <MonitorSmartphone className="w-4 h-4" />
-              <span>View Architecture &amp; Experience</span>
+              <MonitorSmartphone className="w-4 h-4 shrink-0" />
+              <span className="sm:hidden">View Experience</span>
+              <span className="hidden sm:inline">View Architecture &amp; Experience</span>
             </motion.a>
 
             {/* Button 2: Download Official CV */}
@@ -157,10 +160,11 @@ export default function Hero({ onOpenResume, onOpenDigitalCard }: HeroProps) {
               whileHover={{ y: -2, scale: 1.01 }}
               whileTap={{ scale: 0.98 }}
               onClick={onOpenResume}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-slate-700 bg-[#161c28] hover:bg-slate-800 text-slate-200 text-xs sm:text-sm font-medium transition-colors"
+              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-slate-700 bg-[#161c28] hover:bg-slate-800 text-slate-200 text-xs sm:text-sm font-medium transition-colors max-w-full"
             >
-              <Download className="w-4 h-4 text-slate-300" />
-              <span>Download Official CV</span>
+              <Download className="w-4 h-4 text-slate-300 shrink-0" />
+              <span className="sm:hidden">Download CV</span>
+              <span className="hidden sm:inline">Download Official CV</span>
             </motion.button>
 
             {/* Icon Buttons */}

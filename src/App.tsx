@@ -87,95 +87,79 @@ export default function App() {
 
   return (
     <MotionConfig reducedMotion="user">
-      <div className="min-h-screen bg-[#06080d] text-slate-200 selection:bg-cyan-500/30 selection:text-cyan-200 print:min-h-0">
-      <div className={resumeOpen ? 'print:hidden' : ''}>
-        {/* Fixed Navigation Bar */}
-        <Navbar
+      <div className="min-h-screen print:min-h-0">
+        {/* Portfolio chrome follows site theme; ResumeModal stays outside so CV export keeps its own dark/light toggle */}
+        <div className="site-theme min-h-screen min-w-0 w-full overflow-x-clip bg-[#06080d] text-slate-200 selection:bg-cyan-500/30 selection:text-cyan-200 transition-colors duration-300">
+          <div className={resumeOpen ? 'print:hidden' : ''}>
+            <Navbar
+              onOpenResume={() => setResumeOpen(true)}
+              onOpenAnnouncements={() => setAnnouncementsOpen(true)}
+              onOpenCommandPalette={() => setCommandPaletteOpen(true)}
+            />
+
+            <main>
+              <Hero
+                onOpenResume={() => setResumeOpen(true)}
+                onOpenDigitalCard={() => setDigitalCardOpen(true)}
+              />
+              <Philosophy />
+              <Experience
+                selectedSkill={selectedSkill}
+                onSelectSkill={setSelectedSkill}
+                focusedCompany={focusedCompany}
+              />
+              <Skills
+                selectedSkill={selectedSkill}
+                onSelectSkill={setSelectedSkill}
+              />
+              <Certifications
+                selectedSkill={selectedSkill}
+                onSelectSkill={setSelectedSkill}
+                onSelectCertification={(cert) => setSelectedCert(cert)}
+              />
+              <Awards />
+              <Education />
+              <Contact onOpenDigitalCard={() => setDigitalCardOpen(true)} />
+            </main>
+
+            <Footer onOpenDigitalCard={() => setDigitalCardOpen(true)} />
+          </div>
+
+          <FloatingBackToTop />
+          <OfflineIndicator />
+
+          <AnnouncementsModal
+            isOpen={announcementsOpen}
+            onClose={() => setAnnouncementsOpen(false)}
+          />
+
+          <CredentialModal
+            certification={selectedCert}
+            onClose={() => setSelectedCert(null)}
+          />
+        </div>
+
+        {/* Outside site-theme so light remapping cannot wash out dark chrome */}
+        <CommandPalette
+          isOpen={commandPaletteOpen}
+          onClose={() => setCommandPaletteOpen(false)}
+          onSelectSkill={setSelectedSkill}
+          onSelectCertification={(cert) => setSelectedCert(cert)}
+          onFocusCompany={handleFocusCompany}
           onOpenResume={() => setResumeOpen(true)}
           onOpenAnnouncements={() => setAnnouncementsOpen(true)}
-          onOpenCommandPalette={() => setCommandPaletteOpen(true)}
+          onOpenDigitalCard={() => setDigitalCardOpen(true)}
         />
 
-        {/* Main Page Layout */}
-        <main>
-          {/* Hero Section */}
-          <Hero
-            onOpenResume={() => setResumeOpen(true)}
-            onOpenDigitalCard={() => setDigitalCardOpen(true)}
-          />
+        <DigitalCardModal
+          isOpen={digitalCardOpen}
+          onClose={() => setDigitalCardOpen(false)}
+        />
 
-          {/* Philosophy & Personal Profile */}
-          <Philosophy />
-
-          {/* Professional Experience Timeline */}
-          <Experience
-            selectedSkill={selectedSkill}
-            onSelectSkill={setSelectedSkill}
-            focusedCompany={focusedCompany}
-          />
-
-          {/* Technical Skills & Disciplines */}
-          <Skills
-            selectedSkill={selectedSkill}
-            onSelectSkill={setSelectedSkill}
-          />
-
-          {/* Official Certifications & Accreditations */}
-          <Certifications
-            selectedSkill={selectedSkill}
-            onSelectSkill={setSelectedSkill}
-            onSelectCertification={(cert) => setSelectedCert(cert)}
-          />
-
-          {/* Honors & Recognitions */}
-          <Awards />
-
-          {/* Education & Scholastic Credentials */}
-          <Education />
-
-          {/* Contact & Transmission Form */}
-          <Contact onOpenDigitalCard={() => setDigitalCardOpen(true)} />
-        </main>
-
-        {/* Site Footer */}
-        <Footer onOpenDigitalCard={() => setDigitalCardOpen(true)} />
-      </div>
-
-      {/* Floating Back to Top & Offline Status */}
-      <FloatingBackToTop />
-      <OfflineIndicator />
-
-      {/* Modals */}
-      <CommandPalette
-        isOpen={commandPaletteOpen}
-        onClose={() => setCommandPaletteOpen(false)}
-        onSelectSkill={setSelectedSkill}
-        onSelectCertification={(cert) => setSelectedCert(cert)}
-        onFocusCompany={handleFocusCompany}
-        onOpenResume={() => setResumeOpen(true)}
-        onOpenAnnouncements={() => setAnnouncementsOpen(true)}
-        onOpenDigitalCard={() => setDigitalCardOpen(true)}
-      />
-
-      <ResumeModal
-        isOpen={resumeOpen}
-        onClose={() => setResumeOpen(false)}
-      />
-
-      <DigitalCardModal
-        isOpen={digitalCardOpen}
-        onClose={() => setDigitalCardOpen(false)}
-      />
-
-      <AnnouncementsModal
-        isOpen={announcementsOpen}
-        onClose={() => setAnnouncementsOpen(false)}
-      />
-
-      <CredentialModal
-        certification={selectedCert}
-        onClose={() => setSelectedCert(null)}
-      />
+        <ResumeModal
+          isOpen={resumeOpen}
+          onClose={() => setResumeOpen(false)}
+        />
       </div>
     </MotionConfig>
   );

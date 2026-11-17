@@ -32,16 +32,13 @@ import {
   Loader2,
   Check,
   SlidersHorizontal,
-  Lock,
-  Phone,
-  User,
-  FileText,
   Linkedin,
   Sun,
   Moon,
   Quote,
   Copy
 } from 'lucide-react';
+import { useTheme } from '../theme/ThemeProvider';
 import {
   PERSONAL_INFO,
   STATS,
@@ -55,6 +52,10 @@ import {
   EDUCATION
 } from '../data/portfolioData';
 import { buildAtsPlainTextResume } from '../utils/atsFormatter';
+import AccessGateModal, {
+  isAccessUnlocked,
+  type AccessGateAction,
+} from './AccessGateModal';
 import IssuerMark from './IssuerMark';
 
 interface ResumeModalProps {
@@ -171,44 +172,30 @@ function chunkArray<T>(items: T[], size: number): T[][] {
   return chunks;
 }
 
-const CV_UNLOCK_STORAGE_KEY = 'ms_cv_download_unlocked';
-
-const REASON_QUICK_PICKS = [
-  'Recruiting / Hiring Role',
-  'Architecture Review',
-  'Advisory / Consulting',
-  'Networking / Reference'
-];
-
 export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
+  const { theme: siteTheme } = useTheme();
   const contentRef = useRef<HTMLDivElement>(null);
   const [preset, setPreset] = useState<PresetMode>('summary');
   const [config, setConfig] = useState<ExportConfig>(PRESETS.summary);
-  const [cvTheme, setCvTheme] = useState<'dark' | 'light'>('dark');
+  const [cvTheme, setCvTheme] = useState<'dark' | 'light'>(siteTheme);
   const isLight = cvTheme === 'light';
+
   const [showCustomize, setShowCustomize] = useState(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [pdfSuccess, setPdfSuccess] = useState(false);
   const [atsCopied, setAtsCopied] = useState(false);
   const [pdfError, setPdfError] = useState<string | null>(null);
 
-  const [cvUnlocked, setCvUnlocked] = useState<boolean>(() => {
-    try {
-      return typeof window !== 'undefined' && window.sessionStorage.getItem(CV_UNLOCK_STORAGE_KEY) === '1';
-    } catch {
-      return false;
+  const [cvUnlocked, setCvUnlocked] = useState<boolean>(() => isAccessUnlocked());
+  const [pendingAction, setPendingAction] = useState<AccessGateAction | null>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      setCvTheme(siteTheme);
+    } else {
+      setPendingAction(null);
     }
-  });
-  const [pendingAction, setPendingAction] = useState<'pdf' | 'print' | 'ats' | null>(null);
-  const [gateForm, setGateForm] = useState({
-    name: '',
-    email: '',
-    phone: '',
-    reason: '',
-    website: ''
-  });
-  const [gateSubmitting, setGateSubmitting] = useState(false);
-  const [gateError, setGateError] = useState<string | null>(null);
+  }, [isOpen, siteTheme]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -220,10 +207,7 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         if (pendingAction !== null) {
-          if (!gateSubmitting) {
-            setPendingAction(null);
-            setGateError(null);
-          }
+          setPendingAction(null);
           return;
         }
         if (!isGeneratingPdf) {
@@ -238,7 +222,7 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
       document.documentElement.removeAttribute('data-cv-print-theme');
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isOpen, isGeneratingPdf, pendingAction, gateSubmitting, cvTheme, onClose]);
+  }, [isOpen, isGeneratingPdf, pendingAction, cvTheme, onClose]);
 
   const applyPreset = (mode: 'summary' | 'concise' | 'full') => {
     setPreset(mode);
@@ -718,116 +702,47 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
 
   const handleRequestPdf = () => {
     if (isGeneratingPdf || selectedSectionCount === 0) return;
-    if (cvUnlocked) {
+    if (cvUnlocked || isAccessUnlocked()) {
+      setCvUnlocked(true);
       void handleDownloadPdf();
       return;
     }
-    setGateError(null);
     setPendingAction('pdf');
   };
 
   const handleRequestPrint = () => {
     if (selectedSectionCount === 0) return;
-    if (cvUnlocked) {
+    if (cvUnlocked || isAccessUnlocked()) {
+      setCvUnlocked(true);
       handleNativePrint();
       return;
     }
-    setGateError(null);
     setPendingAction('print');
   };
 
   const handleRequestAtsCopy = () => {
     if (selectedSectionCount === 0) return;
-    if (cvUnlocked) {
+    if (cvUnlocked || isAccessUnlocked()) {
+      setCvUnlocked(true);
       void handleCopyAtsText();
       return;
     }
-    setGateError(null);
     setPendingAction('ats');
   };
 
-  const handleGateSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const cleanName = gateForm.name.trim();
-    const cleanEmail = gateForm.email.trim();
-    const cleanPhone = gateForm.phone.trim();
-    const cleanReason = gateForm.reason.trim();
-
-    if (!cleanEmail && !cleanPhone) {
-      setGateError('Please provide either your Email ID or Phone Number to continue.');
-      return;
-    }
-
-    if (cleanEmail) {
-      const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+$/;
-      if (/[?#<>()[\]\\,;:\s]/.test(cleanEmail) || !emailRegex.test(cleanEmail)) {
-        setGateError('Please enter a valid email address.');
-        return;
-      }
-    }
-
-    if (cleanPhone) {
-      const digits = cleanPhone.replace(/\D/g, '').length;
-      if (!/^[+\d\s().-]+$/.test(cleanPhone) || digits < 7 || digits > 15) {
-        setGateError('Please enter a valid phone number (at least 7 digits).');
-        return;
-      }
-    }
-
-    if (cleanReason.length < 3) {
-      setGateError('Please share a brief reason (at least 3 characters) why you want to download or print this CV.');
-      return;
-    }
-
-    const actionToRun = pendingAction ?? 'pdf';
-    setGateError(null);
-    setGateSubmitting(true);
-
-    try {
-      const response = await fetch('/api/cv-access', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          name: cleanName,
-          email: cleanEmail,
-          phone: cleanPhone,
-          reason: cleanReason,
-          action: actionToRun,
-          formatLabel: getFormatLabel(),
-          website: gateForm.website
-        })
+  const handleAccessVerified = (action: AccessGateAction) => {
+    setCvUnlocked(true);
+    setPendingAction(null);
+    if (action === 'pdf') {
+      void handleDownloadPdf();
+    } else if (action === 'ats') {
+      void handleCopyAtsText();
+    } else if (action === 'print') {
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          window.print();
+        }, 80);
       });
-
-      const data = (await response.json().catch(() => ({}))) as { error?: string };
-      if (!response.ok) {
-        throw new Error(data.error || 'Could not verify request right now. Please try again.');
-      }
-
-      try {
-        window.sessionStorage.setItem(CV_UNLOCK_STORAGE_KEY, '1');
-      } catch {
-        // ignore storage failures in restricted contexts
-      }
-      setCvUnlocked(true);
-      setPendingAction(null);
-
-      if (actionToRun === 'pdf') {
-        void handleDownloadPdf();
-      } else if (actionToRun === 'ats') {
-        void handleCopyAtsText();
-      } else {
-        requestAnimationFrame(() => {
-          setTimeout(() => {
-            window.print();
-          }, 80);
-        });
-      }
-    } catch (err) {
-      setGateError(err instanceof Error ? err.message : 'Could not verify request right now. Please try again.');
-    } finally {
-      setGateSubmitting(false);
     }
   };
 
@@ -938,18 +853,19 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
           >
         {/* Top Modal Action Bar & Format Selector (hidden when printing) */}
         <div className="border-b border-slate-800 bg-[#080b13] shrink-0 print:hidden">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 sm:px-6 py-3 sm:py-3.5">
-            <div className="flex items-start sm:items-center justify-between gap-2.5 min-w-0">
-              <div className="flex items-center gap-2.5 min-w-0">
+          <div className="flex flex-col gap-3 px-4 sm:px-6 py-3 sm:py-3.5">
+            {/* Title row — always full width so it never collides with actions */}
+            <div className="flex items-start justify-between gap-3 min-w-0">
+              <div className="flex items-start gap-2.5 min-w-0 flex-1">
                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-500/20 to-blue-600/30 border border-cyan-500/30 text-cyan-400 font-bold font-display text-xs">
                   MS
                 </div>
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-display font-bold text-white text-sm sm:text-base">
                       Export CV / Portfolio PDF
                     </span>
-                    <span className="text-[10px] font-mono text-cyan-400 bg-cyan-950/40 border border-cyan-500/30 px-2 py-0.5 rounded uppercase">
+                    <span className="text-[10px] font-mono text-cyan-400 bg-cyan-950/40 border border-cyan-500/30 px-2 py-0.5 rounded uppercase whitespace-nowrap">
                       {preset === 'summary'
                         ? 'Executive Summary'
                         : preset === 'concise'
@@ -959,7 +875,7 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
                             : 'Custom Selection'}
                     </span>
                   </div>
-                  <p className="text-[11px] font-mono text-slate-400 mt-0.5">
+                  <p className="text-[11px] font-mono text-slate-400 mt-0.5 leading-snug">
                     Choose a layout preset or customize sections below before downloading
                   </p>
                 </div>
@@ -967,14 +883,15 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
 
               <button
                 onClick={onClose}
-                className="sm:hidden p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
                 aria-label="Close"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {/* Actions on their own row — wrap cleanly at any width */}
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => setCvTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
@@ -1066,14 +983,6 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
                   </>
                 )}
               </button>
-
-              <button
-                onClick={onClose}
-                className="hidden sm:inline-flex p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
-                aria-label="Close"
-              >
-                <X className="w-5 h-5" />
-              </button>
             </div>
           </div>
 
@@ -1084,21 +993,22 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
           )}
 
           {/* Preset Mode Switcher Strip */}
-          <div className="px-4 sm:px-6 pb-3 flex flex-wrap items-center justify-between gap-2.5">
-            <div className="flex flex-wrap items-center gap-1.5 p-1 rounded-xl bg-[#0d121f] border border-slate-800 w-full sm:w-auto">
+          <div className="px-4 sm:px-6 pb-3 flex flex-col gap-2">
+            <div className="flex flex-wrap items-center gap-1.5 p-1 rounded-xl bg-[#0d121f] border border-slate-800 w-full">
               <button
                 onClick={() => applyPreset('summary')}
-                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all cursor-pointer ${
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all cursor-pointer whitespace-nowrap ${
                   preset === 'summary'
                     ? 'bg-cyan-500 text-slate-950 font-semibold shadow-sm'
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
-                Executive Summary (Recommended)
+                <span className="sm:hidden">Summary</span>
+                <span className="hidden sm:inline">Executive Summary (Recommended)</span>
               </button>
               <button
                 onClick={() => applyPreset('concise')}
-                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all cursor-pointer ${
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all cursor-pointer whitespace-nowrap ${
                   preset === 'concise'
                     ? 'bg-cyan-500 text-slate-950 font-semibold shadow-sm'
                     : 'text-slate-400 hover:text-white'
@@ -1108,17 +1018,18 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
               </button>
               <button
                 onClick={() => applyPreset('full')}
-                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all cursor-pointer ${
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all cursor-pointer whitespace-nowrap ${
                   preset === 'full'
                     ? 'bg-cyan-500 text-slate-950 font-semibold shadow-sm'
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
-                Entire Portfolio (All Details)
+                <span className="sm:hidden">Full Portfolio</span>
+                <span className="hidden sm:inline">Entire Portfolio (All Details)</span>
               </button>
             </div>
 
-            <div className="text-[11px] font-mono text-slate-400">
+            <div className="text-[11px] font-mono text-slate-400 leading-snug">
               {preset === 'summary' && 'Stats + Recent Roles + Compact Skills + Top 6 Certs + Education'}
               {preset === 'concise' && `All Roles (Top 3 Highlights) + Full Skills + Top 8 Certs + Key Honors + ${visibleRecommendations.length} Endorsements`}
               {preset === 'full' && `Complete Archive: All ${totalRoleCount} Roles + All ${CERTIFICATIONS.length} Certs + All ${AWARDS.length} Honors + ${LINKEDIN_RECOMMENDATIONS.length} Recommendations`}
@@ -2092,265 +2003,17 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
           )}
         </div>
 
-            {/* Interactive CV Download / Print Lead-Capture Verification Gate */}
-            <AnimatePresence>
-              {pendingAction !== null && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.18 }}
-                  onClick={() => {
-                    if (!gateSubmitting) {
-                      setPendingAction(null);
-                      setGateError(null);
-                    }
-                  }}
-                  className="absolute inset-0 z-30 flex justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto print:hidden"
-                >
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.96, y: 12 }}
-                    animate={{ opacity: 1, scale: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.96, y: 10 }}
-                    transition={{ duration: 0.22, ease: EASE_OUT_EXPO }}
-                    onClick={(e) => e.stopPropagation()}
-                    className="w-full max-w-lg rounded-2xl border border-slate-700 bg-[#0d121f] shadow-2xl overflow-hidden my-auto"
-                  >
-                    <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-slate-800 bg-[#080b13]">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-cyan-950/60 border border-cyan-500/40 text-cyan-400">
-                          <Lock className="w-4 h-4" />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <h3 className="font-display font-bold text-white text-base">
-                              Verify to{' '}
-                              {pendingAction === 'print'
-                                ? 'Print CV'
-                                : pendingAction === 'ats'
-                                  ? 'Copy ATS Text'
-                                  : 'Download PDF'}
-                            </h3>
-                            <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-cyan-950/50 border border-cyan-500/30 text-cyan-300">
-                              {getFormatLabel()}
-                            </span>
-                          </div>
-                          <p className="text-[11px] font-mono text-slate-400 mt-0.5">
-                            Quick check — notifies Mohammed Sufyan before unlocking export
-                          </p>
-                        </div>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (!gateSubmitting) {
-                            setPendingAction(null);
-                            setGateError(null);
-                          }
-                        }}
-                        disabled={gateSubmitting}
-                        aria-label="Close verification prompt"
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer disabled:opacity-50"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-
-                    <form onSubmit={handleGateSubmit} className="p-5 space-y-4">
-                      <div className="sr-only" aria-hidden="true">
-                        <label htmlFor="cv-gate-website">Leave this field blank</label>
-                        <input
-                          id="cv-gate-website"
-                          type="text"
-                          name="website"
-                          tabIndex={-1}
-                          autoComplete="off"
-                          value={gateForm.website}
-                          onChange={(e) => setGateForm((prev) => ({ ...prev, website: e.target.value }))}
-                        />
-                      </div>
-
-                      {gateError && (
-                        <div
-                          role="alert"
-                          aria-live="polite"
-                          className="p-3 rounded-xl bg-rose-950/40 border border-rose-500/40 text-rose-300 text-xs"
-                        >
-                          {gateError}
-                        </div>
-                      )}
-
-                      <div>
-                        <label
-                          htmlFor="cv-gate-name"
-                          className="flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1.5"
-                        >
-                          <User className="w-3 h-3 text-cyan-400" />
-                          <span>Full Name (Optional)</span>
-                        </label>
-                        <input
-                          id="cv-gate-name"
-                          type="text"
-                          autoFocus
-                          maxLength={120}
-                          value={gateForm.name}
-                          onChange={(e) => {
-                            if (gateError) setGateError(null);
-                            setGateForm((prev) => ({ ...prev, name: e.target.value }));
-                          }}
-                          placeholder="e.g. Alex Rivera"
-                          className="w-full px-3.5 py-2.5 rounded-xl bg-[#090d16] border border-slate-800 text-xs sm:text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-500/60 transition-colors"
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <div>
-                            <label
-                              htmlFor="cv-gate-email"
-                              className="flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1.5"
-                            >
-                              <Mail className="w-3 h-3 text-cyan-400" />
-                              <span>Email ID</span>
-                            </label>
-                            <input
-                              id="cv-gate-email"
-                              type="email"
-                              maxLength={254}
-                              value={gateForm.email}
-                              onChange={(e) => {
-                                if (gateError) setGateError(null);
-                                setGateForm((prev) => ({ ...prev, email: e.target.value }));
-                              }}
-                              placeholder="you@company.com"
-                              className="w-full px-3.5 py-2.5 rounded-xl bg-[#090d16] border border-slate-800 text-xs sm:text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-500/60 transition-colors"
-                            />
-                          </div>
-
-                          <div>
-                            <label
-                              htmlFor="cv-gate-phone"
-                              className="flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1.5"
-                            >
-                              <Phone className="w-3 h-3 text-cyan-400" />
-                              <span>Phone Number</span>
-                            </label>
-                            <input
-                              id="cv-gate-phone"
-                              type="tel"
-                              maxLength={40}
-                              value={gateForm.phone}
-                              onChange={(e) => {
-                                if (gateError) setGateError(null);
-                                setGateForm((prev) => ({ ...prev, phone: e.target.value }));
-                              }}
-                              placeholder="+1 (555) 000-0000"
-                              className="w-full px-3.5 py-2.5 rounded-xl bg-[#090d16] border border-slate-800 text-xs sm:text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-500/60 transition-colors"
-                            />
-                          </div>
-                        </div>
-                        <p className="text-[11px] font-mono text-slate-500">
-                          Provide at least an Email ID or Phone Number.
-                        </p>
-                      </div>
-
-                      <div>
-                        <label
-                          htmlFor="cv-gate-reason"
-                          className="flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-2"
-                        >
-                          <FileText className="w-3 h-3 text-cyan-400" />
-                          <span>Why do you want to download / print this CV? *</span>
-                        </label>
-
-                        <div className="flex flex-wrap gap-1.5 mb-2.5">
-                          {REASON_QUICK_PICKS.map((pick) => {
-                            const active = gateForm.reason.trim() === pick;
-                            return (
-                              <button
-                                key={pick}
-                                type="button"
-                                onClick={() => {
-                                  if (gateError) setGateError(null);
-                                  setGateForm((prev) => ({ ...prev, reason: pick }));
-                                }}
-                                className={`px-2.5 py-1 rounded-md text-[11px] font-mono border transition-colors cursor-pointer ${
-                                  active
-                                    ? 'bg-cyan-500/20 border-cyan-400 text-cyan-200'
-                                    : 'bg-[#090d16] border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
-                                }`}
-                              >
-                                {pick}
-                              </button>
-                            );
-                          })}
-                        </div>
-
-                        <textarea
-                          id="cv-gate-reason"
-                          rows={3}
-                          required
-                          minLength={3}
-                          maxLength={5000}
-                          value={gateForm.reason}
-                          onChange={(e) => {
-                            if (gateError) setGateError(null);
-                            setGateForm((prev) => ({ ...prev, reason: e.target.value }));
-                          }}
-                          placeholder="e.g. Evaluating for Principal Cloud Architect role, technical review, or advisory discussion..."
-                          className="w-full px-3.5 py-2.5 rounded-xl bg-[#090d16] border border-slate-800 text-xs sm:text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-500/60 transition-colors resize-none"
-                        />
-                      </div>
-
-                      <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-800/80">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setPendingAction(null);
-                            setGateError(null);
-                          }}
-                          disabled={gateSubmitting}
-                          className="px-4 py-2 rounded-xl border border-slate-700 bg-slate-900/70 hover:bg-slate-800 text-xs font-medium text-slate-300 hover:text-white transition-colors cursor-pointer disabled:opacity-50"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          type="submit"
-                          disabled={gateSubmitting}
-                          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#38bdf8] hover:bg-sky-300 disabled:opacity-60 text-slate-950 font-semibold text-xs transition-colors shadow-sm shadow-sky-500/20 cursor-pointer"
-                        >
-                          {gateSubmitting ? (
-                            <>
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              <span>Verifying &amp; Notifying...</span>
-                            </>
-                          ) : pendingAction === 'print' ? (
-                            <>
-                              <Printer className="w-3.5 h-3.5" />
-                              <span>Verify &amp; Print CV</span>
-                            </>
-                          ) : pendingAction === 'ats' ? (
-                            <>
-                              <Copy className="w-3.5 h-3.5" />
-                              <span>Verify &amp; Copy ATS Text</span>
-                            </>
-                          ) : (
-                            <>
-                              <Download className="w-3.5 h-3.5" />
-                              <span>Verify &amp; Download PDF</span>
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    </form>
-                  </motion.div>
-                </motion.div>
-              )}
-            </AnimatePresence>
           </motion.div>
         </motion.div>
       )}
+
+      <AccessGateModal
+        action={pendingAction === 'install' ? null : pendingAction}
+        formatLabel={getFormatLabel()}
+        isLight={isLight}
+        onClose={() => setPendingAction(null)}
+        onVerified={handleAccessVerified}
+      />
     </AnimatePresence>
   );
 }

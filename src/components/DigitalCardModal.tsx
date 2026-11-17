@@ -15,6 +15,7 @@ import {
   X,
 } from 'lucide-react';
 import { PERSONAL_INFO } from '../data/portfolioData';
+import { useTheme } from '../theme/ThemeProvider';
 import { buildVCardString, downloadVCard, PORTFOLIO_CANONICAL_URL } from '../utils/vcard';
 import { EASE_OUT_EXPO } from './MotionPrimitives';
 
@@ -26,6 +27,7 @@ interface DigitalCardModalProps {
 type QrMode = 'url' | 'vcard';
 
 export default function DigitalCardModal({ isOpen, onClose }: DigitalCardModalProps) {
+  const { isLight } = useTheme();
   const [qrMode, setQrMode] = useState<QrMode>('url');
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [copiedUrl, setCopiedUrl] = useState(false);
@@ -120,16 +122,20 @@ export default function DigitalCardModal({ isOpen, onClose }: DigitalCardModalPr
             exit={{ opacity: 0, scale: 0.96, y: 10 }}
             transition={{ duration: 0.24, ease: EASE_OUT_EXPO }}
             onClick={(e) => e.stopPropagation()}
-            className="relative w-full max-w-md rounded-2xl border border-slate-700/80 bg-[#080b13] shadow-2xl overflow-hidden my-auto"
+            className={`relative w-full max-w-md rounded-2xl shadow-2xl overflow-hidden my-auto ${
+              isLight
+                ? 'border border-slate-200 bg-white'
+                : 'border border-slate-700/80 bg-[#080b13]'
+            }`}
           >
-            {/* Header */}
+            {/* Header — always dark for brand consistency */}
             <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-slate-800/90 bg-[#0b101b]">
               <div className="flex items-center gap-2.5">
                 <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-950/60 border border-cyan-500/40 text-cyan-400">
                   <QrCode className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="font-display font-bold text-white text-sm sm:text-base">
+                  <h3 className="font-display font-bold text-sm sm:text-base text-white">
                     Digital Business Card
                   </h3>
                   <p className="text-[11px] font-mono text-slate-400">
@@ -150,9 +156,21 @@ export default function DigitalCardModal({ isOpen, onClose }: DigitalCardModalPr
 
             <div className="p-5 space-y-5">
               {/* Executive Identity Pass */}
-              <div className="rounded-xl border border-slate-800 bg-gradient-to-br from-[#0d1424] via-[#0a101d] to-[#070b14] p-4 space-y-3">
+              <div
+                className={`rounded-xl border p-4 space-y-3 ${
+                  isLight
+                    ? 'border-slate-200 bg-gradient-to-br from-slate-50 via-white to-sky-50'
+                    : 'border-slate-800 bg-gradient-to-br from-[#0d1424] via-[#0a101d] to-[#070b14]'
+                }`}
+              >
                 <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-xl overflow-hidden border border-cyan-500/35 bg-[#06080d] shrink-0">
+                  <div
+                    className={`w-12 h-12 rounded-xl overflow-hidden shrink-0 ${
+                      isLight
+                        ? 'border border-sky-200 bg-slate-100'
+                        : 'border border-cyan-500/35 bg-[#06080d]'
+                    }`}
+                  >
                     <img
                       src="/assets/aistudio/Sufyan_hero_portrait.png"
                       alt="Mohammed Sufyan"
@@ -160,46 +178,68 @@ export default function DigitalCardModal({ isOpen, onClose }: DigitalCardModalPr
                     />
                   </div>
                   <div className="min-w-0">
-                    <div className="font-display font-bold text-white text-base leading-tight">
+                    <div
+                      className={`font-display font-bold text-base leading-tight ${
+                        isLight ? 'text-slate-900' : 'text-white'
+                      }`}
+                    >
                       {PERSONAL_INFO.name}
                     </div>
-                    <div className="text-[11px] font-mono text-cyan-400 mt-0.5 leading-snug">
+                    <div
+                      className={`text-[11px] font-mono mt-0.5 leading-snug ${
+                        isLight ? 'text-sky-700' : 'text-cyan-400'
+                      }`}
+                    >
                       Cisco STO · Principal Cloud Solutions Architect
                     </div>
                   </div>
                 </div>
 
-                <div className="pt-2.5 border-t border-slate-800/80 space-y-1.5 text-xs font-mono text-slate-300">
+                <div
+                  className={`pt-2.5 space-y-1.5 text-xs font-mono ${
+                    isLight
+                      ? 'border-t border-slate-200 text-slate-600'
+                      : 'border-t border-slate-800/80 text-slate-300'
+                  }`}
+                >
                   <div className="flex items-center gap-2">
-                    <MapPin className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                    <MapPin className={`w-3.5 h-3.5 shrink-0 ${isLight ? 'text-sky-700' : 'text-cyan-400'}`} />
                     <span className="truncate">{PERSONAL_INFO.location}</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Mail className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                    <Mail className={`w-3.5 h-3.5 shrink-0 ${isLight ? 'text-sky-700' : 'text-cyan-400'}`} />
                     <a
                       href={`mailto:${PERSONAL_INFO.email}`}
-                      className="hover:text-cyan-300 truncate"
+                      className={`truncate ${isLight ? 'hover:text-sky-800' : 'hover:text-cyan-300'}`}
                     >
                       {PERSONAL_INFO.email}
                     </a>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Globe className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-                    <span className="text-cyan-300 truncate">www.mohammedsufyan.com</span>
+                    <Globe className={`w-3.5 h-3.5 shrink-0 ${isLight ? 'text-sky-700' : 'text-cyan-400'}`} />
+                    <span className={`truncate ${isLight ? 'text-sky-700' : 'text-cyan-300'}`}>
+                      www.mohammedsufyan.com
+                    </span>
                   </div>
                 </div>
               </div>
 
               {/* QR Mode Toggle + Crisp Frame */}
               <div className="flex flex-col items-center space-y-3">
-                <div className="inline-flex items-center gap-1 p-1 rounded-xl bg-[#0d121f] border border-slate-800">
+                <div
+                  className={`inline-flex items-center gap-1 p-1 rounded-xl border ${
+                    isLight ? 'bg-slate-100 border-slate-200' : 'bg-[#0d121f] border-slate-800'
+                  }`}
+                >
                   <button
                     type="button"
                     onClick={() => setQrMode('url')}
                     className={`px-3 py-1.5 rounded-lg text-[11px] font-mono transition-colors cursor-pointer ${
                       qrMode === 'url'
                         ? 'bg-cyan-500 text-slate-950 font-semibold'
-                        : 'text-slate-400 hover:text-white'
+                        : isLight
+                          ? 'text-slate-500 hover:text-slate-900'
+                          : 'text-slate-400 hover:text-white'
                     }`}
                   >
                     Website QR
@@ -210,7 +250,9 @@ export default function DigitalCardModal({ isOpen, onClose }: DigitalCardModalPr
                     className={`px-3 py-1.5 rounded-lg text-[11px] font-mono transition-colors cursor-pointer ${
                       qrMode === 'vcard'
                         ? 'bg-cyan-500 text-slate-950 font-semibold'
-                        : 'text-slate-400 hover:text-white'
+                        : isLight
+                          ? 'text-slate-500 hover:text-slate-900'
+                          : 'text-slate-400 hover:text-white'
                     }`}
                   >
                     Instant Contact QR
@@ -265,9 +307,13 @@ export default function DigitalCardModal({ isOpen, onClose }: DigitalCardModalPr
                 <button
                   type="button"
                   onClick={handleDownloadQrPng}
-                  className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-slate-700 bg-slate-900/70 hover:bg-slate-800 text-slate-200 hover:text-white font-medium text-xs transition-colors cursor-pointer"
+                  className={`inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border font-medium text-xs transition-colors cursor-pointer ${
+                    isLight
+                      ? 'border-slate-300 bg-white hover:bg-slate-50 text-slate-800'
+                      : 'border-slate-700 bg-slate-900/70 hover:bg-slate-800 text-slate-200 hover:text-white'
+                  }`}
                 >
-                  <Download className="w-4 h-4 text-cyan-400" />
+                  <Download className={`w-4 h-4 ${isLight ? 'text-sky-700' : 'text-cyan-400'}`} />
                   <span>Download QR PNG</span>
                 </button>
               </div>

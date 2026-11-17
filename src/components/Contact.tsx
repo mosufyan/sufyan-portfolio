@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { PERSONAL_INFO } from '../data/portfolioData';
+import { useTheme } from '../theme/ThemeProvider';
 import { downloadVCard } from '../utils/vcard';
 import { Reveal, EASE_OUT_EXPO } from './MotionPrimitives';
 
@@ -66,6 +67,7 @@ function formatSanJoseTime(): string {
 }
 
 export default function Contact({ onOpenDigitalCard }: ContactProps) {
+  const { isLight } = useTheme();
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -162,7 +164,7 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
 
   return (
     <section id="contact" className="py-16 lg:py-24 border-b border-slate-800/80 bg-[#06080d]">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div className="page-shell">
         {/* Main 2-column split */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-stretch">
           {/* Left Column: Direct channels and bio */}
@@ -202,7 +204,13 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
                 className="p-4 rounded-xl border border-slate-800 hover:border-cyan-500/40 bg-[#0d121f]/80 flex items-center justify-between gap-3 transition-colors"
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="p-2.5 rounded-lg bg-cyan-950/50 border border-cyan-500/30 text-cyan-400 shrink-0">
+                  <div
+                    className={`p-2.5 rounded-lg shrink-0 ${
+                      isLight
+                        ? 'bg-sky-100 border border-sky-300 text-sky-700'
+                        : 'bg-cyan-950/50 border border-cyan-500/30 text-cyan-400'
+                    }`}
+                  >
                     <Mail className="w-4 h-4" />
                   </div>
                   <div className="min-w-0">
@@ -236,7 +244,13 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
                 className="p-4 rounded-xl border border-slate-800 bg-[#0d121f]/80 flex items-center justify-between gap-3 hover:border-cyan-500/40 transition-colors group"
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="p-2.5 rounded-lg bg-blue-950/50 border border-blue-500/30 text-blue-400 shrink-0">
+                  <div
+                    className={`p-2.5 rounded-lg shrink-0 ${
+                      isLight
+                        ? 'brand-on-color bg-[#0A66C2] border border-[#0A66C2] text-white'
+                        : 'bg-blue-950/50 border border-blue-500/30 text-blue-400'
+                    }`}
+                  >
                     <Linkedin className="w-4 h-4" />
                   </div>
                   <div className="min-w-0">
@@ -252,7 +266,7 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
               {/* One-Tap Digital Business Card (.vcf + QR) */}
               <div className="p-4 rounded-xl border border-slate-800 bg-[#0d121f]/80 flex flex-wrap items-center justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="text-[10px] font-mono uppercase text-cyan-400">Digital Business Card</div>
+                  <div className="text-[10px] font-mono uppercase text-slate-400">Digital Business Card</div>
                   <div className="text-xs text-slate-300 mt-0.5">
                     Save directly to Contacts or scan QR
                   </div>
@@ -261,16 +275,20 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
                   <button
                     type="button"
                     onClick={handleSaveVcf}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-950/60 hover:bg-cyan-900/70 border border-cyan-500/40 text-cyan-200 text-xs font-mono transition-colors cursor-pointer"
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-mono transition-colors cursor-pointer ${
+                      isLight
+                        ? 'border-sky-300 bg-sky-50 hover:bg-sky-100 text-sky-800'
+                        : 'border-cyan-500/40 bg-cyan-950/60 hover:bg-cyan-900/70 text-cyan-200'
+                    }`}
                   >
                     {vcfSaved ? (
                       <>
-                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        <Check className={`w-3.5 h-3.5 ${isLight ? 'text-emerald-600' : 'text-emerald-400'}`} />
                         <span>Saved .vcf</span>
                       </>
                     ) : (
                       <>
-                        <UserPlus className="w-3.5 h-3.5 text-cyan-400" />
+                        <UserPlus className="w-3.5 h-3.5" />
                         <span>Save .vcf</span>
                       </>
                     )}
@@ -279,9 +297,13 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
                     <button
                       type="button"
                       onClick={onOpenDigitalCard}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-900/80 hover:bg-slate-800 text-slate-200 text-xs font-mono transition-colors cursor-pointer"
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-mono transition-colors cursor-pointer ${
+                        isLight
+                          ? 'border-slate-300 bg-white hover:bg-slate-50 text-slate-800'
+                          : 'border-slate-700 bg-slate-900/80 hover:bg-slate-800 text-slate-200'
+                      }`}
                     >
-                      <QrCode className="w-3.5 h-3.5 text-cyan-400" />
+                      <QrCode className={`w-3.5 h-3.5 ${isLight ? 'text-sky-700' : 'text-cyan-400'}`} />
                       <span>QR Code</span>
                     </button>
                   )}
