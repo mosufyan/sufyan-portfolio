@@ -15,7 +15,9 @@ import {
   X,
 } from 'lucide-react';
 import { useTheme } from '../theme/ThemeProvider';
+import ModalHeaderScan from './ModalHeaderScan';
 import { EASE_OUT_EXPO } from './MotionPrimitives';
+import ShineSurface from './ShineSurface';
 
 export type AccessGateAction = 'pdf' | 'print' | 'ats' | 'install';
 
@@ -231,7 +233,8 @@ export default function AccessGateModal({
             className={`access-gate-modal w-full max-w-lg rounded-2xl border shadow-2xl overflow-hidden my-auto ${panel}`}
           >
             {/* Always-dark header — must stay outside .site-theme remapping (ported to body) */}
-            <div className={`flex items-start justify-between gap-3 px-5 py-4 border-b ${header}`}>
+            <div className={`relative flex items-start justify-between gap-3 px-5 py-4 border-b ${header}`}>
+              <ModalHeaderScan active={action !== null} />
               <div className="flex items-center gap-3 min-w-0">
                 <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${lockBox}`}>
                   <Lock className="w-4 h-4" />
@@ -421,23 +424,25 @@ export default function AccessGateModal({
                 >
                   Cancel
                 </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#38bdf8] hover:bg-sky-300 disabled:opacity-60 text-slate-950 font-semibold text-xs transition-colors shadow-sm shadow-sky-500/20 cursor-pointer"
-                >
-                  {submitting ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      <span>Verifying &amp; Notifying...</span>
-                    </>
-                  ) : (
-                    <>
-                      <SubmitIcon className="w-3.5 h-3.5" />
-                      <span>{submitLabel(action).text}</span>
-                    </>
-                  )}
-                </button>
+                <ShineSurface className="rounded-xl" shineClassName="via-white/45">
+                  <button
+                    type="submit"
+                    disabled={submitting}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#38bdf8] hover:bg-sky-300 disabled:opacity-60 text-slate-950 font-semibold text-xs transition-colors shadow-sm shadow-sky-500/20 cursor-pointer"
+                  >
+                    {submitting ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Verifying &amp; Notifying...</span>
+                      </>
+                    ) : (
+                      <>
+                        <SubmitIcon className="w-3.5 h-3.5" />
+                        <span>{submitLabel(action).text}</span>
+                      </>
+                    )}
+                  </button>
+                </ShineSurface>
               </div>
             </form>
           </motion.div>

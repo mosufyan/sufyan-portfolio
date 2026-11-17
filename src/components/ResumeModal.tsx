@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import html2canvas from 'html2canvas-pro';
 import { jsPDF } from 'jspdf';
 import { AnimatePresence, motion } from 'motion/react';
+import ModalHeaderScan from './ModalHeaderScan';
 import { EASE_OUT_EXPO } from './MotionPrimitives';
+import ShineSurface from './ShineSurface';
 import {
   X,
   Printer,
@@ -852,14 +854,19 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
             onClick={(e) => e.stopPropagation()}
           >
         {/* Top Modal Action Bar & Format Selector (hidden when printing) */}
-        <div className="border-b border-slate-800 bg-[#080b13] shrink-0 print:hidden">
+        <div className="relative border-b border-slate-800 bg-[#080b13] shrink-0 print:hidden">
+          <ModalHeaderScan active={isOpen} />
           <div className="flex flex-col gap-3 px-4 sm:px-6 py-3 sm:py-3.5">
             {/* Title row — always full width so it never collides with actions */}
             <div className="flex items-start justify-between gap-3 min-w-0">
               <div className="flex items-start gap-2.5 min-w-0 flex-1">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-500/20 to-blue-600/30 border border-cyan-500/30 text-cyan-400 font-bold font-display text-xs">
+                <motion.div
+                  whileHover={{ rotate: 360, scale: 1.06 }}
+                  transition={{ rotate: { duration: 0.65, ease: EASE_OUT_EXPO }, scale: { type: 'spring', stiffness: 400, damping: 20 } }}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-500/20 to-blue-600/30 border border-cyan-500/30 text-cyan-400 font-bold font-display text-xs"
+                >
                   MS
-                </div>
+                </motion.div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-display font-bold text-white text-sm sm:text-base">
@@ -895,24 +902,41 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
               <button
                 type="button"
                 onClick={() => setCvTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer overflow-hidden ${
                   isLight
                     ? 'border-amber-400/60 bg-amber-500/15 text-amber-200 hover:bg-amber-500/25'
                     : 'border-slate-700 bg-slate-900/70 hover:bg-slate-800 text-slate-300 hover:text-white'
                 }`}
                 title={isLight ? 'Switch CV preview & export to Dark Theme' : 'Switch CV preview & export to Light Paper (ink-friendly)'}
               >
-                {isLight ? (
-                  <>
-                    <Sun className="w-3.5 h-3.5 text-amber-300" />
-                    <span>Light Paper</span>
-                  </>
-                ) : (
-                  <>
-                    <Moon className="w-3.5 h-3.5 text-cyan-400" />
-                    <span>Dark Theme</span>
-                  </>
-                )}
+                <span className="relative h-3.5 w-3.5">
+                  <AnimatePresence mode="wait" initial={false}>
+                    {isLight ? (
+                      <motion.span
+                        key="cv-sun"
+                        initial={{ opacity: 0, rotate: -50, scale: 0.5 }}
+                        animate={{ opacity: 1, rotate: 0, scale: 1 }}
+                        exit={{ opacity: 0, rotate: 50, scale: 0.5 }}
+                        transition={{ duration: 0.25, ease: EASE_OUT_EXPO }}
+                        className="absolute inset-0 flex items-center justify-center"
+                      >
+                        <Sun className="w-3.5 h-3.5 text-amber-300" />
+                      </motion.span>
+                    ) : (
+                      <motion.span
+                        key="cv-moon"
+                        initial={{ opacity: 0, rotate: 50, scale: 0.5 }}
+                        animate={{ opacity: 1, rotate: 0, scale: 1 }}
+                        exit={{ opacity: 0, rotate: -50, scale: 0.5 }}
+                        transition={{ duration: 0.25, ease: EASE_OUT_EXPO }}
+                        className="absolute inset-0 flex items-center justify-center"
+                      >
+                        <Moon className="w-3.5 h-3.5 text-cyan-400" />
+                      </motion.span>
+                    )}
+                  </AnimatePresence>
+                </span>
+                <span>{isLight ? 'Light Paper' : 'Dark Theme'}</span>
               </button>
 
               <button
@@ -927,28 +951,37 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
                 <span>Customize</span>
               </button>
 
-              <button
-                onClick={handleRequestPdf}
-                disabled={isGeneratingPdf || selectedSectionCount === 0}
-                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-[#38bdf8] hover:bg-sky-300 disabled:opacity-60 text-slate-950 font-semibold text-xs transition-colors shadow-sm shadow-sky-500/20 cursor-pointer"
-              >
-                {isGeneratingPdf ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>Generating PDF...</span>
-                  </>
-                ) : pdfSuccess ? (
-                  <>
-                    <Check className="w-3.5 h-3.5" />
-                    <span>PDF Downloaded!</span>
-                  </>
-                ) : (
-                  <>
-                    <Download className="w-3.5 h-3.5" />
-                    <span>Print / PDF</span>
-                  </>
-                )}
-              </button>
+              <ShineSurface className="rounded-lg" shineClassName="via-white/45">
+                <button
+                  onClick={handleRequestPdf}
+                  disabled={isGeneratingPdf || selectedSectionCount === 0}
+                  className="relative flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-[#38bdf8] hover:bg-sky-300 disabled:opacity-60 text-slate-950 font-semibold text-xs transition-colors shadow-sm shadow-sky-500/20 cursor-pointer overflow-hidden"
+                >
+                  {isGeneratingPdf ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Generating PDF...</span>
+                    </>
+                  ) : pdfSuccess ? (
+                    <>
+                      <Check className="w-3.5 h-3.5" />
+                      <span>PDF Downloaded!</span>
+                      <motion.span
+                        aria-hidden="true"
+                        initial={{ scale: 0.4, opacity: 0.7 }}
+                        animate={{ scale: 2.4, opacity: 0 }}
+                        transition={{ duration: 0.9, ease: EASE_OUT_EXPO }}
+                        className="pointer-events-none absolute left-1/2 top-1/2 h-6 w-6 -translate-x-1/2 -translate-y-1/2 rounded-full border border-emerald-300/70"
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Print / PDF</span>
+                    </>
+                  )}
+                </button>
+              </ShineSurface>
 
               <button
                 onClick={handleRequestPrint}
@@ -964,7 +997,7 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
                 type="button"
                 onClick={handleRequestAtsCopy}
                 disabled={selectedSectionCount === 0}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border font-medium text-xs transition-colors cursor-pointer disabled:opacity-60 ${
+                className={`relative overflow-hidden flex items-center gap-1.5 px-3 py-1.5 rounded-lg border font-medium text-xs transition-colors cursor-pointer disabled:opacity-60 ${
                   atsCopied
                     ? 'border-emerald-500/60 bg-emerald-950/50 text-emerald-300'
                     : 'border-slate-700 bg-slate-900/70 hover:bg-slate-800 text-slate-300 hover:text-white'
@@ -975,6 +1008,13 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
                   <>
                     <Check className="w-3.5 h-3.5 text-emerald-400" />
                     <span>ATS Copied!</span>
+                    <motion.span
+                      aria-hidden="true"
+                      initial={{ scale: 0.35, opacity: 0.65 }}
+                      animate={{ scale: 2.2, opacity: 0 }}
+                      transition={{ duration: 0.85, ease: EASE_OUT_EXPO }}
+                      className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 rounded-full border border-emerald-400/60"
+                    />
                   </>
                 ) : (
                   <>
@@ -995,38 +1035,42 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
           {/* Preset Mode Switcher Strip */}
           <div className="px-4 sm:px-6 pb-3 flex flex-col gap-2">
             <div className="flex flex-wrap items-center gap-1.5 p-1 rounded-xl bg-[#0d121f] border border-slate-800 w-full">
-              <button
-                onClick={() => applyPreset('summary')}
-                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all cursor-pointer whitespace-nowrap ${
-                  preset === 'summary'
-                    ? 'bg-cyan-500 text-slate-950 font-semibold shadow-sm'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                <span className="sm:hidden">Summary</span>
-                <span className="hidden sm:inline">Executive Summary (Recommended)</span>
-              </button>
-              <button
-                onClick={() => applyPreset('concise')}
-                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all cursor-pointer whitespace-nowrap ${
-                  preset === 'concise'
-                    ? 'bg-cyan-500 text-slate-950 font-semibold shadow-sm'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                Concise CV
-              </button>
-              <button
-                onClick={() => applyPreset('full')}
-                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all cursor-pointer whitespace-nowrap ${
-                  preset === 'full'
-                    ? 'bg-cyan-500 text-slate-950 font-semibold shadow-sm'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                <span className="sm:hidden">Full Portfolio</span>
-                <span className="hidden sm:inline">Entire Portfolio (All Details)</span>
-              </button>
+              {(
+                [
+                  { id: 'summary' as const, short: 'Summary', long: 'Executive Summary (Recommended)' },
+                  { id: 'concise' as const, short: 'Concise CV', long: 'Concise CV' },
+                  { id: 'full' as const, short: 'Full Portfolio', long: 'Entire Portfolio (All Details)' },
+                ]
+              ).map((item) => {
+                const active = preset === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => applyPreset(item.id)}
+                    className={`relative px-3 py-1.5 text-xs font-medium rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
+                      active ? 'text-slate-950 font-semibold' : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {active && (
+                      <motion.span
+                        layoutId="cv-preset-pill"
+                        transition={{ type: 'spring', stiffness: 380, damping: 32 }}
+                        className="absolute inset-0 rounded-lg bg-cyan-500 shadow-sm"
+                      />
+                    )}
+                    <span className="relative z-10">
+                      {item.id === 'concise' ? (
+                        item.long
+                      ) : (
+                        <>
+                          <span className="sm:hidden">{item.short}</span>
+                          <span className="hidden sm:inline">{item.long}</span>
+                        </>
+                      )}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
 
             <div className="text-[11px] font-mono text-slate-400 leading-snug">

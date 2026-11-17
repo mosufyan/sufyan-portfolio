@@ -1,8 +1,45 @@
 import { useEffect, useState } from 'react';
 import { Download, Menu, X, Mail, Search, Sun, Moon } from 'lucide-react';
-import { AnimatePresence, motion, useScroll, useSpring } from 'motion/react';
+import {
+  AnimatePresence,
+  MotionValue,
+  motion,
+  useReducedMotion,
+  useScroll,
+  useSpring,
+  useTransform,
+} from 'motion/react';
 import { useTheme } from '../theme/ThemeProvider';
 import { EASE_OUT_EXPO } from './MotionPrimitives';
+
+const CONSTELLATION_DOTS = 14;
+
+function ConstellationDot({
+  progress,
+  threshold,
+}: {
+  progress: MotionValue<number>;
+  threshold: number;
+}) {
+  const opacity = useTransform(
+    progress,
+    [Math.max(0, threshold - 0.04), threshold, Math.min(1, threshold + 0.12)],
+    [0.12, 1, 0.28]
+  );
+  const scale = useTransform(
+    progress,
+    [Math.max(0, threshold - 0.04), threshold, Math.min(1, threshold + 0.14)],
+    [0.55, 1.45, 0.8]
+  );
+
+  return (
+    <motion.span
+      aria-hidden="true"
+      style={{ left: `${threshold * 100}%`, opacity, scale }}
+      className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 h-1.5 w-1.5 rounded-full bg-cyan-300 shadow-[0_0_8px_rgba(103,232,249,0.85)]"
+    />
+  );
+}
 
 interface NavbarProps {
   onOpenResume: () => void;
@@ -24,13 +61,24 @@ const NAV_LINKS = [
 export default function Navbar({ onOpenResume, onOpenAnnouncements, onOpenCommandPalette }: NavbarProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeSection, setActiveSection] = useState<string>('overview');
+  const [themeWash, setThemeWash] = useState<'light' | 'dark' | null>(null);
   const { isLight, toggleTheme } = useTheme();
+  const shouldReduceMotion = useReducedMotion();
   const { scrollYProgress } = useScroll();
   const scaleX = useSpring(scrollYProgress, {
     stiffness: 220,
     damping: 32,
     restDelta: 0.001,
   });
+
+  const handleThemeToggle = () => {
+    const next = isLight ? 'dark' : 'light';
+    if (!shouldReduceMotion) {
+      setThemeWash(next);
+      window.setTimeout(() => setThemeWash(null), 520);
+    }
+    toggleTheme();
+  };
 
   useEffect(() => {
     const sections = NAV_LINKS.map((link) => document.getElementById(link.id)).filter(
@@ -107,8 +155,10 @@ export default function Navbar({ onOpenResume, onOpenAnnouncements, onOpenComman
                   <motion.span
                     layoutId="navbar-active-underline"
                     transition={{ type: 'spring', stiffness: 420, damping: 34 }}
-                    className="absolute bottom-0 left-0 right-0 h-[2px] rounded-full bg-gradient-to-r from-cyan-400 to-sky-400 shadow-[0_0_8px_rgba(34,211,238,0.5)]"
-                  />
+                    className="absolute bottom-0 left-0 right-0 h-[2px] rounded-full bg-gradient-to-r from-cyan-400 to-sky-400 shadow-[0_0_10px_rgba(34,211,238,0.7)]"
+                  >
+                    <span className="absolute inset-0 rounded-full bg-cyan-300/40 blur-[3px]" />
+                  </motion.span>
                 )}
               </a>
             );
@@ -118,8 +168,8 @@ export default function Navbar({ onOpenResume, onOpenAnnouncements, onOpenComman
         <div className="ml-auto flex items-center gap-1.5 sm:gap-2 shrink-0 min-w-0 pl-2 sm:pl-3 border-l border-slate-800/70">
           <button
             type="button"
-            onClick={toggleTheme}
-            className={`hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors whitespace-nowrap ${
+            onClick={handleThemeToggle}
+            className={`hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors whitespace-nowrap overflow-hidden ${
               isLight
                 ? 'border-amber-400/70 bg-amber-50 text-amber-800 hover:bg-amber-100'
                 : 'border-slate-700/90 bg-slate-900/70 text-slate-300 hover:text-cyan-300 hover:border-cyan-500/40'
@@ -127,11 +177,33 @@ export default function Navbar({ onOpenResume, onOpenAnnouncements, onOpenComman
             title={isLight ? 'Switch to Dark Theme' : 'Switch to Light Theme'}
             aria-label={isLight ? 'Switch to dark theme' : 'Switch to light theme'}
           >
-            {isLight ? (
-              <Sun className="w-3.5 h-3.5 text-amber-600" />
-            ) : (
-              <Moon className="w-3.5 h-3.5 text-cyan-400" />
-            )}
+            <span className="relative h-3.5 w-3.5">
+              <AnimatePresence mode="wait" initial={false}>
+                {isLight ? (
+                  <motion.span
+                    key="sun"
+                    initial={{ opacity: 0, rotate: -60, scale: 0.5 }}
+                    animate={{ opacity: 1, rotate: 0, scale: 1 }}
+                    exit={{ opacity: 0, rotate: 60, scale: 0.5 }}
+                    transition={{ duration: 0.28, ease: EASE_OUT_EXPO }}
+                    className="absolute inset-0 flex items-center justify-center"
+                  >
+                    <Sun className="w-3.5 h-3.5 text-amber-600" />
+                  </motion.span>
+                ) : (
+                  <motion.span
+                    key="moon"
+                    initial={{ opacity: 0, rotate: 60, scale: 0.5 }}
+                    animate={{ opacity: 1, rotate: 0, scale: 1 }}
+                    exit={{ opacity: 0, rotate: -60, scale: 0.5 }}
+                    transition={{ duration: 0.28, ease: EASE_OUT_EXPO }}
+                    className="absolute inset-0 flex items-center justify-center"
+                  >
+                    <Moon className="w-3.5 h-3.5 text-cyan-400" />
+                  </motion.span>
+                )}
+              </AnimatePresence>
+            </span>
             <span className="hidden 2xl:inline">{isLight ? 'Light' : 'Dark'}</span>
           </button>
 
@@ -178,15 +250,41 @@ export default function Navbar({ onOpenResume, onOpenAnnouncements, onOpenComman
           <div className="flex xl:hidden items-center gap-1.5 sm:gap-2">
             <button
               type="button"
-              onClick={toggleTheme}
-              className={`sm:hidden p-1.5 rounded-md border transition-colors ${
+              onClick={handleThemeToggle}
+              className={`sm:hidden relative p-1.5 rounded-md border transition-colors overflow-hidden ${
                 isLight
                   ? 'border-amber-400/70 bg-amber-50 text-amber-700'
                   : 'border-slate-700 bg-slate-900/70 text-slate-300 hover:text-cyan-300'
               }`}
               aria-label={isLight ? 'Switch to dark theme' : 'Switch to light theme'}
             >
-              {isLight ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              <span className="relative block h-4 w-4">
+                <AnimatePresence mode="wait" initial={false}>
+                  {isLight ? (
+                    <motion.span
+                      key="sun-m"
+                      initial={{ opacity: 0, rotate: -50, scale: 0.5 }}
+                      animate={{ opacity: 1, rotate: 0, scale: 1 }}
+                      exit={{ opacity: 0, rotate: 50, scale: 0.5 }}
+                      transition={{ duration: 0.28, ease: EASE_OUT_EXPO }}
+                      className="absolute inset-0 flex items-center justify-center"
+                    >
+                      <Sun className="w-4 h-4" />
+                    </motion.span>
+                  ) : (
+                    <motion.span
+                      key="moon-m"
+                      initial={{ opacity: 0, rotate: 50, scale: 0.5 }}
+                      animate={{ opacity: 1, rotate: 0, scale: 1 }}
+                      exit={{ opacity: 0, rotate: -50, scale: 0.5 }}
+                      transition={{ duration: 0.28, ease: EASE_OUT_EXPO }}
+                      className="absolute inset-0 flex items-center justify-center"
+                    >
+                      <Moon className="w-4 h-4" />
+                    </motion.span>
+                  )}
+                </AnimatePresence>
+              </span>
             </button>
             <button
               type="button"
@@ -276,10 +374,48 @@ export default function Navbar({ onOpenResume, onOpenAnnouncements, onOpenComman
         )}
       </AnimatePresence>
 
-      <motion.div
-        style={{ scaleX }}
-        className="h-[2px] w-full origin-left bg-gradient-to-r from-cyan-400 via-sky-400 to-blue-500"
-      />
+      {/* Scroll progress + constellation dots */}
+      <div className="relative h-[3px] w-full bg-slate-800/40 overflow-visible">
+        <motion.div
+          style={{ scaleX }}
+          className="absolute inset-y-0 left-0 w-full origin-left bg-gradient-to-r from-cyan-400 via-sky-400 to-blue-500"
+        />
+        {!shouldReduceMotion && (
+          <div className="pointer-events-none absolute inset-0">
+            {Array.from({ length: CONSTELLATION_DOTS }, (_, i) => {
+              const threshold = i / (CONSTELLATION_DOTS - 1);
+              return (
+                <ConstellationDot
+                  key={i}
+                  progress={scrollYProgress}
+                  threshold={threshold}
+                />
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Theme toggle ambient wash */}
+      <AnimatePresence>
+        {themeWash && (
+          <motion.div
+            key={themeWash}
+            aria-hidden="true"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: [0, 0.55, 0] }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.5, ease: EASE_OUT_EXPO }}
+            className="pointer-events-none fixed inset-0 z-[45]"
+            style={{
+              background:
+                themeWash === 'light'
+                  ? 'radial-gradient(ellipse 80% 60% at 50% 0%, rgba(251,191,36,0.28), transparent 70%)'
+                  : 'radial-gradient(ellipse 80% 60% at 50% 0%, rgba(34,211,238,0.22), transparent 70%)',
+            }}
+          />
+        )}
+      </AnimatePresence>
     </header>
   );
 }

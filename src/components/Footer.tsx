@@ -21,8 +21,11 @@ export default function Footer({ onOpenDigitalCard }: FooterProps) {
           <div className="md:col-span-5 space-y-4">
             <div className="flex items-center gap-2.5">
               <motion.div
-                whileHover={{ scale: 1.06, rotate: -2 }}
-                transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+                whileHover={{ scale: 1.08, rotate: 360 }}
+                transition={{
+                  scale: { type: 'spring', stiffness: 400, damping: 20 },
+                  rotate: { duration: 0.65, ease: [0.22, 1, 0.36, 1] },
+                }}
                 className="flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-950/60 border border-cyan-500/40 text-cyan-400 font-bold font-display text-xs"
               >
                 MS
@@ -35,13 +38,6 @@ export default function Footer({ onOpenDigitalCard }: FooterProps) {
             <p className="text-xs sm:text-sm text-slate-400 leading-relaxed max-w-md font-light">
               Software Engineer & Principal Cloud Solutions Architect with 13+ years of enterprise engineering experience across Cisco Systems Inc. America, HCL Technologies, and Tata Consultancy Services in the United States, United Kingdom, and India.
             </p>
-
-            <div className="flex flex-wrap gap-2 pt-1">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[10px] font-mono bg-cyan-950/40 border border-cyan-500/30 text-cyan-300">
-                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
-                AVAILABLE FOR ARCHITECT ADVISORY
-              </span>
-            </div>
           </div>
 
           {/* Col 2: Navigation Links */}

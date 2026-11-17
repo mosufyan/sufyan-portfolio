@@ -17,7 +17,9 @@ import {
 import { PERSONAL_INFO } from '../data/portfolioData';
 import { useTheme } from '../theme/ThemeProvider';
 import { buildVCardString, downloadVCard, PORTFOLIO_CANONICAL_URL } from '../utils/vcard';
+import ModalHeaderScan from './ModalHeaderScan';
 import { EASE_OUT_EXPO } from './MotionPrimitives';
+import ShineSurface from './ShineSurface';
 
 interface DigitalCardModalProps {
   isOpen: boolean;
@@ -129,11 +131,16 @@ export default function DigitalCardModal({ isOpen, onClose }: DigitalCardModalPr
             }`}
           >
             {/* Header — always dark for brand consistency */}
-            <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-slate-800/90 bg-[#0b101b]">
+            <div className="relative flex items-center justify-between gap-3 px-5 py-4 border-b border-slate-800/90 bg-[#0b101b]">
+              <ModalHeaderScan active={isOpen} />
               <div className="flex items-center gap-2.5">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-950/60 border border-cyan-500/40 text-cyan-400">
+                <motion.div
+                  animate={{ rotate: [0, -6, 6, 0] }}
+                  transition={{ duration: 2.8, repeat: Infinity, repeatDelay: 3.5, ease: 'easeInOut' }}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-950/60 border border-cyan-500/40 text-cyan-400"
+                >
                   <QrCode className="w-4 h-4" />
-                </div>
+                </motion.div>
                 <div>
                   <h3 className="font-display font-bold text-sm sm:text-base text-white">
                     Digital Business Card
@@ -286,36 +293,50 @@ export default function DigitalCardModal({ isOpen, onClose }: DigitalCardModalPr
 
               {/* Action Buttons */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
-                <button
-                  type="button"
-                  onClick={handleDownloadVcf}
-                  className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[#38bdf8] hover:bg-sky-300 text-slate-950 font-semibold text-xs transition-colors shadow-sm shadow-sky-500/20 cursor-pointer"
-                >
-                  {vcfSaved ? (
-                    <>
-                      <Check className="w-4 h-4" />
-                      <span>Saved .vcf!</span>
-                    </>
-                  ) : (
-                    <>
-                      <UserPlus className="w-4 h-4" />
-                      <span>Save Contact (.vcf)</span>
-                    </>
-                  )}
-                </button>
+                <ShineSurface className="rounded-xl w-full" shineClassName="via-white/45">
+                  <button
+                    type="button"
+                    onClick={handleDownloadVcf}
+                    className="relative w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[#38bdf8] hover:bg-sky-300 text-slate-950 font-semibold text-xs transition-colors shadow-sm shadow-sky-500/20 cursor-pointer overflow-hidden"
+                  >
+                    {vcfSaved ? (
+                      <>
+                        <Check className="w-4 h-4" />
+                        <span>Saved .vcf!</span>
+                        <motion.span
+                          aria-hidden="true"
+                          initial={{ scale: 0.4, opacity: 0.7 }}
+                          animate={{ scale: 2.3, opacity: 0 }}
+                          transition={{ duration: 0.9, ease: EASE_OUT_EXPO }}
+                          className="pointer-events-none absolute left-1/2 top-1/2 h-6 w-6 -translate-x-1/2 -translate-y-1/2 rounded-full border border-emerald-300/70"
+                        />
+                      </>
+                    ) : (
+                      <>
+                        <UserPlus className="w-4 h-4" />
+                        <span>Save Contact (.vcf)</span>
+                      </>
+                    )}
+                  </button>
+                </ShineSurface>
 
-                <button
-                  type="button"
-                  onClick={handleDownloadQrPng}
-                  className={`inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border font-medium text-xs transition-colors cursor-pointer ${
-                    isLight
-                      ? 'border-slate-300 bg-white hover:bg-slate-50 text-slate-800'
-                      : 'border-slate-700 bg-slate-900/70 hover:bg-slate-800 text-slate-200 hover:text-white'
-                  }`}
+                <ShineSurface
+                  className="rounded-xl w-full"
+                  shineClassName={isLight ? 'via-sky-300/35' : 'via-cyan-200/25'}
                 >
-                  <Download className={`w-4 h-4 ${isLight ? 'text-sky-700' : 'text-cyan-400'}`} />
-                  <span>Download QR PNG</span>
-                </button>
+                  <button
+                    type="button"
+                    onClick={handleDownloadQrPng}
+                    className={`w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border font-medium text-xs transition-colors cursor-pointer ${
+                      isLight
+                        ? 'border-slate-300 bg-white hover:bg-slate-50 text-slate-800'
+                        : 'border-slate-700 bg-slate-900/70 hover:bg-slate-800 text-slate-200 hover:text-white'
+                    }`}
+                  >
+                    <Download className={`w-4 h-4 ${isLight ? 'text-sky-700' : 'text-cyan-400'}`} />
+                    <span>Download QR PNG</span>
+                  </button>
+                </ShineSurface>
               </div>
 
               <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-800/80 text-[11px] font-mono">
