@@ -1,0 +1,215 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    --font-display: 'Outfit', 'Plus Jakarta Sans', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+  }
+
+  html {
+    background-color: #06080d;
+    color: #e2e8f0;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background-color: #06080d;
+    color: #e2e8f0;
+    overflow-x: hidden;
+  }
+
+  h1, h2, h3, h4, .font-display {
+    font-family: var(--font-display);
+  }
+
+  code, pre, .font-mono {
+    font-family: var(--font-mono);
+  }
+
+  button:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
+/* Subtle tech grid background */
+.bg-tech-grid {
+  background-image: radial-gradient(rgba(56, 189, 248, 0.08) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+.bg-dot-pattern {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+
+/* Custom sleek scrollbar */
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+::-webkit-scrollbar-track {
+  background: #090c13;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1e293b;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #334155;
+}
+
+/* High-fidelity Dark Mode Print / PDF preservation */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 9mm 8mm;
+  }
+
+  *,
+  *::before,
+  *::after {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+    animation: none !important;
+    transition: none !important;
+  }
+
+  html,
+  body {
+    background-color: #06080d !important;
+    color: #e2e8f0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  html[data-cv-print-theme="light"],
+  html[data-cv-print-theme="light"] body {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+  }
+
+  .print-no-blur {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  .print-reset-motion {
+    transform: none !important;
+    opacity: 1 !important;
+  }
+
+  .print-force-visible {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  /* Ensure gradient-clipped headings render crisp solid color in browser print */
+  [class*="bg-clip-text"] {
+    -webkit-text-fill-color: #38bdf8 !important;
+    color: #38bdf8 !important;
+    background-image: none !important;
+  }
+
+  html[data-cv-print-theme="light"] [class*="bg-clip-text"] {
+    -webkit-text-fill-color: #0369a1 !important;
+    color: #0369a1 !important;
+  }
+
+  .pdf-keep-together {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  .pdf-keep-next {
+    break-after: avoid !important;
+    page-break-after: avoid !important;
+  }
+
+  .pdf-doc .pdf-section {
+    padding: 20px 24px !important;
+  }
+
+  .pdf-doc .pdf-row-sm {
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+  }
+
+  .pdf-doc .pdf-footer-row {
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+  }
+
+  .pdf-doc .pdf-cols-4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  }
+
+  .pdf-doc .pdf-cols-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+
+  .pdf-doc .pdf-cols-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .pdf-doc .pdf-title-lg {
+    font-size: 2.25rem !important;
+    line-height: 1.08 !important;
+  }
+
+  .pdf-doc .pdf-h2 {
+    font-size: 1.5rem !important;
+    line-height: 1.2 !important;
+  }
+}
+
+/* Force desktop multi-column grids and horizontal rows during offscreen PDF capture regardless of preview pane width */
+.pdf-capture .pdf-section {
+  padding: 24px 32px !important;
+}
+.pdf-capture .pdf-row-sm {
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+}
+.pdf-capture .pdf-footer-row {
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+}
+.pdf-capture .pdf-title-lg {
+  font-size: 2.5rem !important;
+  line-height: 1.08 !important;
+}
+.pdf-capture .pdf-h2 {
+  font-size: 1.65rem !important;
+  line-height: 1.2 !important;
+}
+.pdf-capture .pdf-cols-4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+}
+.pdf-capture .pdf-cols-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+}
+.pdf-capture .pdf-cols-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+.pdf-capture .pdf-cols-12 {
+  grid-template-columns: repeat(12, minmax(0, 1fr)) !important;
+}
+.pdf-capture .pdf-span-7 {
+  grid-column: span 7 / span 7 !important;
+}
+.pdf-capture .pdf-span-5 {
+  grid-column: span 5 / span 5 !important;
+}
+
