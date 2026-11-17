@@ -21,7 +21,10 @@ import ShineSurface from './ShineSurface';
 
 export type AccessGateAction = 'pdf' | 'print' | 'ats' | 'install';
 
+/** @deprecated Prefer CV_EXPORT_UNLOCK_KEY / PWA_INSTALL_UNLOCK_KEY — kept for session migration */
 export const ACCESS_UNLOCK_STORAGE_KEY = 'ms_cv_download_unlocked';
+export const CV_EXPORT_UNLOCK_KEY = 'ms_cv_export_unlocked';
+export const PWA_INSTALL_UNLOCK_KEY = 'ms_pwa_install_unlocked';
 
 const REASON_QUICK_PICKS = [
   'Recruiting / Hiring Role',
@@ -65,17 +68,43 @@ function submitLabel(action: AccessGateAction): { icon: typeof Download; text: s
   return { icon: Download, text: 'Verify & Download PDF' };
 }
 
-export function isAccessUnlocked(): boolean {
+function readUnlockFlag(key: string): boolean {
   try {
-    return typeof window !== 'undefined' && window.sessionStorage.getItem(ACCESS_UNLOCK_STORAGE_KEY) === '1';
+    return typeof window !== 'undefined' && window.sessionStorage.getItem(key) === '1';
   } catch {
     return false;
   }
 }
 
-export function markAccessUnlocked(): void {
+function writeUnlockFlag(key: string): void {
   try {
-    window.sessionStorage.setItem(ACCESS_UNLOCK_STORAGE_KEY, '1');
+    window.sessionStorage.setItem(key, '1');
+  } catch {
+    /* ignore */
+  }
+}
+
+/** CV export actions share one unlock; install is tracked separately. */
+export function isAccessUnlocked(action: AccessGateAction = 'pdf'): boolean {
+  if (action === 'install') {
+    return readUnlockFlag(PWA_INSTALL_UNLOCK_KEY);
+  }
+  // Migrate legacy shared key so an already-unlocked CV session still works once
+  if (readUnlockFlag(CV_EXPORT_UNLOCK_KEY) || readUnlockFlag(ACCESS_UNLOCK_STORAGE_KEY)) {
+    return true;
+  }
+  return false;
+}
+
+export function markAccessUnlocked(action: AccessGateAction): void {
+  if (action === 'install') {
+    writeUnlockFlag(PWA_INSTALL_UNLOCK_KEY);
+    return;
+  }
+  writeUnlockFlag(CV_EXPORT_UNLOCK_KEY);
+  // Clear legacy shared key so install is no longer implied by a CV unlock
+  try {
+    window.sessionStorage.removeItem(ACCESS_UNLOCK_STORAGE_KEY);
   } catch {
     /* ignore */
   }
@@ -164,12 +193,21 @@ export default function AccessGateModal({
         }),
       });
 
-      const data = (await response.json().catch(() => ({}))) as { error?: string };
+      const data = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        ok?: boolean;
+        provider?: string;
+      };
       if (!response.ok) {
         throw new Error(data.error || 'Could not verify request right now. Please try again.');
       }
+      // Honeypot hits return 200 + provider:"filtered" — fake success, never unlock
+      if (data.ok !== true || data.provider === 'filtered') {
+        onClose();
+        return;
+      }
 
-      markAccessUnlocked();
+      markAccessUnlocked(action);
       onVerified(action);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not verify request right now. Please try again.');

@@ -188,7 +188,7 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
   const [atsCopied, setAtsCopied] = useState(false);
   const [pdfError, setPdfError] = useState<string | null>(null);
 
-  const [cvUnlocked, setCvUnlocked] = useState<boolean>(() => isAccessUnlocked());
+  const [cvUnlocked, setCvUnlocked] = useState<boolean>(() => isAccessUnlocked('pdf'));
   const [pendingAction, setPendingAction] = useState<AccessGateAction | null>(null);
 
   useEffect(() => {
@@ -704,7 +704,7 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
 
   const handleRequestPdf = () => {
     if (isGeneratingPdf || selectedSectionCount === 0) return;
-    if (cvUnlocked || isAccessUnlocked()) {
+    if (cvUnlocked || isAccessUnlocked('pdf')) {
       setCvUnlocked(true);
       void handleDownloadPdf();
       return;
@@ -714,7 +714,7 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
 
   const handleRequestPrint = () => {
     if (selectedSectionCount === 0) return;
-    if (cvUnlocked || isAccessUnlocked()) {
+    if (cvUnlocked || isAccessUnlocked('print')) {
       setCvUnlocked(true);
       handleNativePrint();
       return;
@@ -724,7 +724,7 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
 
   const handleRequestAtsCopy = () => {
     if (selectedSectionCount === 0) return;
-    if (cvUnlocked || isAccessUnlocked()) {
+    if (cvUnlocked || isAccessUnlocked('ats')) {
       setCvUnlocked(true);
       void handleCopyAtsText();
       return;

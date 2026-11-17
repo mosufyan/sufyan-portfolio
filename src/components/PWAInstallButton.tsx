@@ -84,37 +84,47 @@ export default function PWAInstallButton() {
 
   const [showManualGuide, setShowManualGuide] = useState(false);
   const [gateAction, setGateAction] = useState<AccessGateAction | null>(null);
-  const [pendingInstallMode, setPendingInstallMode] = useState<'direct' | 'manual' | null>(null);
 
   if (isInstalled || !canOfferInstall) {
     return null;
   }
 
-  const runInstall = async (mode: 'direct' | 'manual') => {
-    if (mode === 'direct') {
-      const ok = await install();
-      // If prompt was dismissed/unavailable, fall back to platform guide
-      if (!ok) setShowManualGuide(true);
+  /** Native prompt only on a fresh user gesture (same click stack). */
+  const runDirectInstall = async () => {
+    const ok = await install();
+    if (!ok) setShowManualGuide(true);
+  };
+
+  const beginInstall = () => {
+    if (!isAccessUnlocked('install')) {
+      setGateAction('install');
+      return;
+    }
+    if (canDirectInstall) {
+      void runDirectInstall();
       return;
     }
     setShowManualGuide(true);
   };
 
-  const beginInstall = () => {
-    const mode: 'direct' | 'manual' = canDirectInstall ? 'direct' : 'manual';
-    if (isAccessUnlocked()) {
-      void runInstall(mode);
-      return;
-    }
-    setPendingInstallMode(mode);
-    setGateAction('install');
+  /**
+   * After async verification the original click gesture is gone, so Chromium will
+   * reject deferredPrompt.prompt(). Open the guide and let "Install now" supply
+   * a fresh gesture.
+   */
+  const handleVerified = (_action: AccessGateAction) => {
+    setGateAction(null);
+    setShowManualGuide(true);
   };
 
-  const handleVerified = async (_action: AccessGateAction) => {
-    setGateAction(null);
-    const mode = pendingInstallMode ?? (canDirectInstall ? 'direct' : 'manual');
-    setPendingInstallMode(null);
-    await runInstall(mode);
+  const handleGuideInstallNow = () => {
+    if (!isAccessUnlocked('install')) {
+      setShowManualGuide(false);
+      setGateAction('install');
+      return;
+    }
+    setShowManualGuide(false);
+    void runDirectInstall();
   };
 
   const steps = manualSteps(platform, surface);
@@ -138,7 +148,7 @@ export default function PWAInstallButton() {
               </h3>
               <p className="text-[11px] font-mono text-slate-400 mt-0.5">
                 {canDirectInstall
-                  ? 'Native install is available in supported browsers'
+                  ? 'Tap Install now to open the native browser prompt'
                   : 'One-time browser steps for this device'}
               </p>
             </div>
@@ -162,10 +172,7 @@ export default function PWAInstallButton() {
         {canDirectInstall && (
           <button
             type="button"
-            onClick={() => {
-              setShowManualGuide(false);
-              void install();
-            }}
+            onClick={handleGuideInstallNow}
             className="mt-5 w-full rounded-xl bg-cyan-500 hover:bg-cyan-400 py-2.5 text-xs font-semibold text-slate-950 transition-colors"
           >
             Install now
@@ -204,11 +211,8 @@ export default function PWAInstallButton() {
         formatLabel="Portfolio PWA"
         onClose={() => {
           setGateAction(null);
-          setPendingInstallMode(null);
         }}
-        onVerified={(action) => {
-          void handleVerified(action);
-        }}
+        onVerified={handleVerified}
       />
 
       {showManualGuide &&

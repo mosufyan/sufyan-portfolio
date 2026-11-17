@@ -23,6 +23,7 @@ const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
 const RATE_LIMIT_MAX_REQUESTS = 15;
 const RATE_LIMIT_MAX_ENTRIES = 1000;
 const contactRateLimitMap = new Map<string, { count: number; resetAt: number }>();
+const cvAccessRateLimitMap = new Map<string, { count: number; resetAt: number }>();
 
 // Strict email regex rejecting URI delimiter/control chars (?, #, &, spaces, brackets, etc.)
 const STRICT_EMAIL_REGEX = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+$/;
@@ -656,18 +657,21 @@ async function sendCvAccessEmail(payload: CvAccessPayload, userAgent: string): P
   });
 }
 
-function isRateLimited(clientIp: string): boolean {
+function isRateLimited(
+  clientIp: string,
+  bucket: Map<string, { count: number; resetAt: number }> = contactRateLimitMap
+): boolean {
   const now = Date.now();
-  if (contactRateLimitMap.size >= RATE_LIMIT_MAX_ENTRIES) {
-    for (const [ip, record] of contactRateLimitMap.entries()) {
+  if (bucket.size >= RATE_LIMIT_MAX_ENTRIES) {
+    for (const [ip, record] of bucket.entries()) {
       if (now > record.resetAt) {
-        contactRateLimitMap.delete(ip);
+        bucket.delete(ip);
       }
     }
   }
-  const entry = contactRateLimitMap.get(clientIp);
+  const entry = bucket.get(clientIp);
   if (!entry || now > entry.resetAt) {
-    contactRateLimitMap.set(clientIp, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    bucket.set(clientIp, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
     return false;
   }
   if (entry.count >= RATE_LIMIT_MAX_REQUESTS) {
@@ -680,12 +684,46 @@ function isRateLimited(clientIp: string): boolean {
 async function startServer() {
   const app = express();
   app.disable('x-powered-by');
-  app.set('trust proxy', 1);
+  // Only trust X-Forwarded-* when explicitly enabled or in production behind a reverse proxy
+  const trustProxyEnv = process.env.TRUST_PROXY;
+  if (trustProxyEnv !== undefined) {
+    if (trustProxyEnv === '0' || trustProxyEnv === 'false') {
+      app.set('trust proxy', false);
+    } else if (trustProxyEnv === '1' || trustProxyEnv === 'true') {
+      app.set('trust proxy', 1);
+    } else {
+      const hops = Number(trustProxyEnv);
+      app.set('trust proxy', Number.isFinite(hops) ? hops : false);
+    }
+  } else if (process.env.NODE_ENV === 'production') {
+    app.set('trust proxy', 1);
+  }
 
   app.use((req: Request, res: Response, next: NextFunction) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
+    const isDev = process.env.NODE_ENV !== 'production';
+    res.setHeader(
+      'Content-Security-Policy',
+      [
+        "default-src 'self'",
+        // Vite HMR needs unsafe-eval in dev; production builds stay stricter
+        isDev
+          ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
+          : "script-src 'self' 'unsafe-inline'",
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data: blob:",
+        "font-src 'self' data:",
+        isDev ? "connect-src 'self' ws: wss:" : "connect-src 'self'",
+        "worker-src 'self' blob:",
+        "manifest-src 'self'",
+        "base-uri 'self'",
+        "form-action 'self'",
+        "frame-ancestors 'none'",
+        "object-src 'none'",
+      ].join('; ')
+    );
     if (req.secure || req.headers['x-forwarded-proto'] === 'https') {
       res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
     }
@@ -718,7 +756,7 @@ async function startServer() {
       }
 
       const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
-      if (isRateLimited(clientIp)) {
+      if (isRateLimited(clientIp, contactRateLimitMap)) {
         res.status(429).json({
           error: 'Too many messages sent from this connection. Please wait a few minutes and try again.',
         });
@@ -790,7 +828,7 @@ async function startServer() {
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : 'Failed to send message.';
       console.error('Contact dispatch error:', errMsg);
-      res.status(500).json({ error: errMsg });
+      res.status(500).json({ error: 'Unable to send your message right now. Please try again later.' });
     }
   });
 
@@ -802,7 +840,7 @@ async function startServer() {
       }
 
       const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
-      if (isRateLimited(clientIp)) {
+      if (isRateLimited(clientIp, cvAccessRateLimitMap)) {
         res.status(429).json({
           error: 'Too many requests from this connection. Please wait a few minutes and try again.',
         });
@@ -907,7 +945,7 @@ async function startServer() {
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : 'Unable to process access request.';
       console.error('CV access dispatch error:', errMsg);
-      res.status(500).json({ error: errMsg });
+      res.status(500).json({ error: 'Unable to process access request right now. Please try again later.' });
     }
   });
 
