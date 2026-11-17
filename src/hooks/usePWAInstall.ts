@@ -110,14 +110,20 @@ export function usePWAInstall() {
 
   const install = useCallback(async () => {
     if (!deferredPrompt) return false;
-    await deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-    setDeferredPrompt(null);
-    if (outcome === 'accepted') {
-      setIsInstalled(true);
-      return true;
+    try {
+      await deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      setDeferredPrompt(null);
+      if (outcome === 'accepted') {
+        setIsInstalled(true);
+        return true;
+      }
+      return false;
+    } catch {
+      // Gesture/timing failures must not become unhandled rejections
+      setDeferredPrompt(null);
+      return false;
     }
-    return false;
   }, [deferredPrompt]);
 
   const label = useMemo(() => {
