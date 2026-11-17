@@ -116,9 +116,8 @@ export function buildAtsPlainTextResume(input: AtsExportInput): string {
     for (const cat of input.visibleCertCategories) {
       lines.push(`[${cat.name}]`);
       for (const cert of cat.certs) {
-        const exp = cert.expiryDate ? ` | Expires: ${cert.expiryDate}` : '';
         const cred = cert.credentialId ? ` | Credential ID: ${cert.credentialId}` : '';
-        lines.push(`- ${cert.title} — ${cert.issuer} (Issued: ${cert.issueDate}${exp}${cred})`);
+        lines.push(`- ${cert.title} — ${cert.issuer} (Issued: ${cert.issueDate}${cred})`);
       }
     }
     lines.push('Verification: https://www.linkedin.com/in/mohammed-sufyan/details/certifications/');

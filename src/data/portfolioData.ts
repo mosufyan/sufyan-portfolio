@@ -17,10 +17,30 @@ export interface ExperienceRole {
   location: string;
   employmentType?: string;
   domain?: string;
+  /** One-line outcome / proof metric shown in Experience role headers */
+  proofMetric?: string;
   highlights: string[];
   recognitionBadge?: string;
   technologies: string[];
 }
+
+export const SKILL_FILTER_PRESETS = [
+  {
+    id: 'python-databricks',
+    label: 'Python + Databricks',
+    skills: ['Python (Programming Language)', 'Databricks'],
+  },
+  {
+    id: 'aws-zero-trust',
+    label: 'AWS + Zero Trust',
+    skills: ['AWS (S3, Redshift, DynamoDB)', 'Zero Trust Architecture'],
+  },
+  {
+    id: 'k8s-cicd',
+    label: 'Kubernetes + CI/CD',
+    skills: ['Kubernetes (EKS/AKS/GKE)', 'CI/CD Pipelines'],
+  },
+] as const;
 
 export interface CompanyExperience {
   company: string;
@@ -53,21 +73,27 @@ export interface Recommendation {
 
 export const PERSONAL_INFO = {
   name: 'Mohammed Sufyan',
-  title: 'Software Engineer — Cloud Solutions Architect / Trust Organization DFOV / DFS Operations / Cloud Solutions Architect',
+  title: 'Software Engineer — Cisco Systems Inc. STO CTO Operations',
   tagline: 'Architecting high-velocity systems for distributed platforms, multi-cloud scalability, resilience and cloud governance across diverse ecosystems. 13+ years of enterprise experience with Cisco Systems Inc., HCL America Inc./HCLTech, and Tata Consultancy Services in the United States, United Kingdom, and India.',
   email: 'sufyan.net@gmail.com',
   linkedin: 'https://www.linkedin.com/in/mohammed-sufyan',
+  /** Schedule CTA — LinkedIn for now; swap for Calendly when available */
+  calendarUrl: 'https://www.linkedin.com/in/mohammed-sufyan',
+  openTo:
+    'Open to Software Engineer and platform roles spanning security data platforms, multi-cloud systems, and applied AI — San Jose / hybrid.',
   location: 'San Jose, California, United States · Hybrid',
   experienceYears: '13+',
   certificationsCount: '20x',
   enterpriseClients: '28+',
   academicCgpa: '9.5/10',
   philosophy: {
-    quote1: "Throughout my life, I've approached every challenge with enthusiasm, creativity, and commitment to achieve success. Thousand and One Rare achievements continue to fuel my unique experience and exceptional commitment to personal and professional integrity.",
-    body: 'Senior Systems and Cloud Solutions Architect with 13+ years of experience spanning Cisco Systems Inc., HCL America Inc./HCLTech, and Tata Consultancy Services across high-throughput and high-compliance enterprise domains. Lead and build architectures across multi-cloud footprints (AWS, Azure, GCP), with deep specialization in Zero Trust architectures, telemetry pipelines, distributed cloud infrastructure, microservices, and cross-platform resilience.',
+    quote1:
+      'Build systems that stay trustworthy under change — governed data, Zero Trust boundaries, and telemetry that makes reliability measurable.',
+    body:
+      'Software Engineer with 13+ years across Cisco Systems Inc., HCL America Inc./HCLTech, and Tata Consultancy Services. I design multi-cloud security data platforms, resilient services, and AI-assisted engineering workflows that scale without losing auditability.',
     poem: 'Knowledge is my companion,\nit boasts me wherever I go.\nMy heart is its container, and\nnot the bookshelf.',
-    poemAuthor: 'Mohammed Sufyan, Principal Cloud Architect'
-  }
+    poemAuthor: 'Mohammed Sufyan, Software Engineer',
+  },
 };
 
 export const STATS = [
@@ -158,6 +184,7 @@ export const WORK_EXPERIENCE: CompanyExperience[] = [
         location: 'San Jose, California, United States · Hybrid',
         employmentType: 'Full-time',
         domain: 'Cisco Systems Inc. Security & Trust Organization (STO) CTO Operations · Project Atlas',
+        proofMetric: 'Project Atlas MVA · STO security data platform in production build',
         highlights: [
           'Software Engineer in Cisco Systems Inc. Security & Trust Organization (STO) CTO Operations, building the security data platform at the core of Project Atlas — a unified, governed foundation that consolidates shared services, standardizes data, and enables teams to build, automate, and innovate with confidence.',
           'Design and implement APIs and data pipelines to ingest, process, and manage large volumes of structured and unstructured security data across the STO data platform.',
@@ -182,6 +209,7 @@ export const WORK_EXPERIENCE: CompanyExperience[] = [
         location: 'San Francisco Bay Area · Hybrid',
         employmentType: 'Full-time',
         domain: 'Multi-Cloud Vulnerability Orchestration & AI Document Retrieval · Cisco Systems Inc. Account',
+        proofMetric: '4 consecutive quarterly awards · enterprise vuln orchestration + RAG search',
         recognitionBadge: '4 Consecutive Quarterly Awards (ERS Star Champion, HCL Achievers League)',
         highlights: [
           'Architected a multi-cloud vulnerability orchestration platform for Cisco Systems Inc. — integrating Tenable scanner plugins, async Python, AWS S3/DynamoDB, and DuckDB to orchestrate enterprise-scale scan scheduling, execution, and result ingestion across global infrastructure.',
@@ -198,6 +226,7 @@ export const WORK_EXPERIENCE: CompanyExperience[] = [
         location: 'San Francisco Bay Area',
         employmentType: 'Full-time',
         domain: 'SVIC JupiterOne API & Security Graph Data Pipelines · Cisco Systems Inc. Account',
+        proofMetric: '5 live JupiterOne ingestion pipelines · graph-to-SQL analytics bridge',
         highlights: [
           'Led engineering of the SVIC JupiterOne API — a Django 5 + Django REST Framework REST service with async J1QL query jobs, Wiz findings integration, and Tenable findings endpoints, bridging Cisco Systems Inc.\'s security graph data to downstream analytics consumers.',
           'Designed and implemented a J1QL-to-SQL translation library enabling Cisco Systems Inc.\'s JupiterOne security graph data to be queried against a relational data warehouse — unlocking SQL-native analytics across graph-origin vulnerability data.',
@@ -211,6 +240,7 @@ export const WORK_EXPERIENCE: CompanyExperience[] = [
         location: 'Bengaluru, Karnataka, India',
         employmentType: 'Full-time',
         domain: 'UCT/CSBIT Cloud Security Audit Platform & CSEO Compliance Pipelines',
+        proofMetric: 'Event-driven compliance platform · 4 awards for delivery excellence',
         recognitionBadge: 'HCL Achievers League O3, Shining Star (×2), and ERS Knowledge Champion',
         highlights: [
           'Architected and maintained the UCT/CSBIT cloud security audit platform — an event-driven microservices system (Flask, OpenShift, RabbitMQ, MongoDB, HashiCorp Vault, Celery) for running pluggable compliance guardrail scans (Nmap, OWASP ZAP, SSL/TLS auditing) against Cisco Systems Inc. cloud tenants.',
@@ -226,6 +256,7 @@ export const WORK_EXPERIENCE: CompanyExperience[] = [
         location: 'Bengaluru, Karnataka, India',
         employmentType: 'Full-time',
         domain: 'Initial Cloud Compliance Infrastructure & Cisco Systems Inc. Continuous Security Buddy Project',
+        proofMetric: 'Foundational CISBIT guardrail platform · 6 delivery awards',
         recognitionBadge: '6 Awards: Delivery Excellence, Technical Excellence, ERS Knowledge Champion (×2), Spark Award',
         highlights: [
           'Led development of initial UCT/CSBIT cloud compliance scanning infrastructure for Cisco Systems Inc. — establishing the microservices architecture, scan service REST API, and audit orchestration layer that became Cisco Systems Inc.\'s internal cloud security guardrail platform.',
@@ -249,6 +280,7 @@ export const WORK_EXPERIENCE: CompanyExperience[] = [
         location: 'Bengaluru, Karnataka, India',
         employmentType: 'Full-time',
         domain: 'Technical Analysis & Enterprise Solution Delivery',
+        proofMetric: 'Client solution ownership · mentoring + delivery automation',
         recognitionBadge: 'On the Spot award (Aug 2017) & Service Commitment award (Jan 2019)',
         highlights: [
           'Progressed to IT Analyst level, taking ownership of technical analysis, solution design, and end-to-end delivery of software components for enterprise clients.',
@@ -265,6 +297,7 @@ export const WORK_EXPERIENCE: CompanyExperience[] = [
         location: 'Bengaluru, Karnataka, India',
         employmentType: 'Full-time',
         domain: 'System Engineering & Knowledge Transition',
+        proofMetric: 'Cross-site knowledge transfer · onboarding process lift',
         highlights: [
           'Re-integrated with the Bengaluru delivery centre following international assignment — transitioned project knowledge and continued contributing to system engineering and application support activities.',
           'Supported knowledge transfer for new team members and documented technical processes to improve team onboarding efficiency.'
@@ -277,6 +310,7 @@ export const WORK_EXPERIENCE: CompanyExperience[] = [
         location: 'Greater London, England, United Kingdom',
         employmentType: 'Full-time',
         domain: 'International Client Engagement & Production Operations',
+        proofMetric: 'London onshore engagement · SLA-backed production support',
         highlights: [
           'Deployed to a London-based client engagement — delivered technical solutions in an onshore capacity, working directly with client stakeholders to gather requirements, resolve issues, and drive timely delivery.',
           'Acted as a bridge between the offshore development team in Bengaluru and the onshore client — coordinating daily stand-ups, managing task hand-offs, and ensuring alignment on deliverables.',
@@ -291,6 +325,7 @@ export const WORK_EXPERIENCE: CompanyExperience[] = [
         location: 'Bengaluru, Karnataka, India',
         employmentType: 'Full-time',
         domain: 'Application Engineering & Automated Regression Testing',
+        proofMetric: 'Lifecycle delivery · automated regression coverage gains',
         highlights: [
           'Contributed to the design, development, and testing of enterprise application modules — delivering features across the full development lifecycle from requirements analysis through to deployment.',
           'Performed root cause analysis and resolution of production issues, reducing recurring defects and improving system stability for client environments.',
@@ -305,6 +340,7 @@ export const WORK_EXPERIENCE: CompanyExperience[] = [
         location: 'Bengaluru, Karnataka, India',
         employmentType: 'Full-time',
         domain: 'Initial Learning Program (ILP) & Agile Delivery',
+        proofMetric: 'ILP foundation · agile delivery in enterprise programs',
         highlights: [
           'Completed TCS Initial Learning Program (ILP) — full-stack technical training covering software development fundamentals, Java, SQL, Unix, and SDLC methodologies.',
           'Developed and unit-tested software modules as part of an enterprise application delivery team, gaining hands-on experience with agile development practices and code review workflows.',

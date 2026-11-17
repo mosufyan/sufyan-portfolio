@@ -1,15 +1,26 @@
 import { Cpu, Layers, Server, Shield, Terminal, Activity, Sparkles, CheckCircle2, X, ArrowUpRight, Share2, Check } from 'lucide-react';
-import { MouseEvent as ReactMouseEvent, useRef, useState } from 'react';
+import { MouseEvent as ReactMouseEvent, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, useMotionValue, useReducedMotion, useSpring } from 'motion/react';
-import { CERTIFICATIONS, TECHNICAL_DISCIPLINES, WORK_EXPERIENCE } from '../data/portfolioData';
-import { doesCertMatchSkill, doesRoleMatchSkill } from '../utils/skillMatcher';
+import {
+  CERTIFICATIONS,
+  SKILL_FILTER_PRESETS,
+  TECHNICAL_DISCIPLINES,
+  WORK_EXPERIENCE,
+} from '../data/portfolioData';
+import {
+  doesCertMatchSkill,
+  doesRoleMatchSkill,
+  doesTechTagMatchSkill,
+  formatSkillFilterSummary,
+} from '../utils/skillMatcher';
 import HeaderSpotlight from './HeaderSpotlight';
 import { Reveal, StaggerContainer, StaggerItem, EASE_OUT_EXPO, SpotlightCard } from './MotionPrimitives';
 import SectionScanLine from './SectionScanLine';
 
 interface SkillsProps {
-  selectedSkill: string | null;
+  selectedSkills: string[];
   onSelectSkill: (skill: string | null) => void;
+  onApplySkills: (skills: string[]) => void;
 }
 
 function MagneticSkillTag({
@@ -51,19 +62,30 @@ function MagneticSkillTag({
       onMouseMove={handleMove}
       onMouseLeave={handleLeave}
       onClick={onToggle}
-      className={`px-2.5 py-1 rounded text-[11px] font-mono transition-colors ${
+      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-mono transition-colors ${
         highlighted
-          ? 'bg-cyan-500 text-slate-950 font-semibold shadow-sm shadow-cyan-500/30'
+          ? 'skill-chip-active bg-cyan-500 border border-cyan-500 text-slate-950 font-semibold shadow-sm shadow-cyan-500/30'
           : 'bg-[#090d16] border border-slate-800/80 text-slate-300 hover:border-cyan-500/40 hover:text-cyan-200'
       }`}
+      title={highlighted ? `Remove ${label} from skill filters` : `Add ${label} to skill filters`}
+      aria-pressed={highlighted}
     >
       {label}
+      {highlighted && <X className="w-3 h-3 shrink-0 opacity-80" aria-hidden="true" />}
     </motion.button>
   );
 }
 
-export default function Skills({ selectedSkill, onSelectSkill }: SkillsProps) {
+export default function Skills({ selectedSkills, onSelectSkill, onApplySkills }: SkillsProps) {
   const [linkCopied, setLinkCopied] = useState(false);
+  const [countPulse, setCountPulse] = useState(0);
+  const skillFilter = formatSkillFilterSummary(selectedSkills);
+  const hasSkillFilter = skillFilter.count > 0;
+
+  useEffect(() => {
+    if (!hasSkillFilter) return;
+    setCountPulse((n) => n + 1);
+  }, [hasSkillFilter, selectedSkills]);
 
   const copySkillLink = () => {
     navigator.clipboard?.writeText(window.location.href).then(() => {
@@ -72,14 +94,14 @@ export default function Skills({ selectedSkill, onSelectSkill }: SkillsProps) {
     }).catch(() => {});
   };
 
-  const matchingRolesCount = selectedSkill
+  const matchingRolesCount = hasSkillFilter
     ? WORK_EXPERIENCE.reduce(
-        (acc, comp) => acc + comp.roles.filter((r) => doesRoleMatchSkill(r, selectedSkill)).length,
+        (acc, comp) => acc + comp.roles.filter((r) => doesRoleMatchSkill(r, selectedSkills)).length,
         0
       )
     : 0;
-  const matchingCertsCount = selectedSkill
-    ? CERTIFICATIONS.filter((c) => doesCertMatchSkill(c, selectedSkill)).length
+  const matchingCertsCount = hasSkillFilter
+    ? CERTIFICATIONS.filter((c) => doesCertMatchSkill(c, selectedSkills)).length
     : 0;
 
   const getIcon = (id: string) => {
@@ -118,41 +140,78 @@ export default function Skills({ selectedSkill, onSelectSkill }: SkillsProps) {
           <p className="mt-2 text-sm sm:text-base text-slate-400 max-w-3xl">
             Enterprise expertise across multi-cloud infrastructure, autonomous agentic AI systems, Zero Trust security governance, and high-throughput telemetry pipelines.
           </p>
-          {!selectedSkill && (
-            <p className="mt-3 text-[11px] sm:text-xs font-mono text-cyan-400/90 tracking-wide print:hidden">
-              Tip: click a technology tag to cross-filter Experience &amp; Certifications
-            </p>
-          )}
+          <div className="mt-3 flex flex-col gap-2 print:hidden">
+            {!hasSkillFilter && (
+              <p className="text-[11px] sm:text-xs font-mono text-cyan-400/90 tracking-wide">
+                Tip: click technology tags to cross-filter Experience &amp; Certifications — select multiple skills to refine
+              </p>
+            )}
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-slate-500 mr-0.5">
+                Saved views
+              </span>
+              {SKILL_FILTER_PRESETS.map((preset) => {
+                const active =
+                  preset.skills.length === selectedSkills.length &&
+                  preset.skills.every((skill) =>
+                    selectedSkills.some((s) => s.toLowerCase() === skill.toLowerCase())
+                  );
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => onApplySkills([...preset.skills])}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-mono border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 ${
+                      active
+                        ? 'skill-chip-active bg-cyan-500 border-cyan-500 text-slate-950 font-semibold'
+                        : 'bg-[#090d16] border-slate-800 text-slate-400 hover:text-slate-200 hover:border-cyan-500/40'
+                    }`}
+                  >
+                    {preset.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           </HeaderSpotlight>
 
           <AnimatePresence>
-            {selectedSkill && (
+            {hasSkillFilter && (
               <motion.div
                 initial={{ opacity: 0, y: -6, scale: 0.96 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -4, scale: 0.96 }}
                 transition={{ duration: 0.2, ease: EASE_OUT_EXPO }}
-                className="mt-4 flex flex-wrap items-center gap-2.5 px-3.5 py-2 rounded-xl bg-cyan-950/50 border border-cyan-500/40 text-xs font-mono text-cyan-200 w-fit print:hidden"
+                className="skill-filter-banner mt-4 sticky top-16 z-20 flex flex-wrap items-center gap-2.5 px-3.5 py-2.5 rounded-xl bg-cyan-950/90 border border-cyan-500/40 text-xs font-mono text-cyan-200 w-full sm:w-fit shadow-lg shadow-cyan-950/20 backdrop-blur-md print:hidden"
               >
-                <span>
-                  Cross-filtering by <strong className="text-cyan-300">{selectedSkill}</strong>
+                <span className="min-w-0">
+                  {skillFilter.label}:{' '}
+                  <strong className="text-cyan-300 break-words">{skillFilter.names}</strong>
                 </span>
                 <span className="text-slate-500">·</span>
-                <a
+                <motion.a
+                  key={`roles-${countPulse}`}
+                  initial={{ scale: 1 }}
+                  animate={{ scale: [1, 1.06, 1] }}
+                  transition={{ duration: 0.35, ease: EASE_OUT_EXPO }}
                   href="#experience"
                   className="inline-flex items-center gap-1 text-cyan-300 hover:text-white underline underline-offset-2 whitespace-nowrap shrink-0"
                 >
                   <span>{matchingRolesCount} matching {matchingRolesCount === 1 ? 'role' : 'roles'}</span>
                   <ArrowUpRight className="w-3 h-3" />
-                </a>
+                </motion.a>
                 <span className="text-slate-500">·</span>
-                <a
+                <motion.a
+                  key={`certs-${countPulse}`}
+                  initial={{ scale: 1 }}
+                  animate={{ scale: [1, 1.06, 1] }}
+                  transition={{ duration: 0.35, ease: EASE_OUT_EXPO }}
                   href="#certifications"
                   className="inline-flex items-center gap-1 text-cyan-300 hover:text-white underline underline-offset-2 whitespace-nowrap shrink-0"
                 >
                   <span>{matchingCertsCount} matching {matchingCertsCount === 1 ? 'cert' : 'certs'}</span>
                   <ArrowUpRight className="w-3 h-3" />
-                </a>
+                </motion.a>
                 <button
                   type="button"
                   onClick={copySkillLink}
@@ -163,11 +222,13 @@ export default function Skills({ selectedSkill, onSelectSkill }: SkillsProps) {
                   <span>{linkCopied ? 'Copied!' : 'Share Filter'}</span>
                 </button>
                 <button
+                  type="button"
                   onClick={() => onSelectSkill(null)}
-                  className="ml-0.5 p-1 rounded hover:bg-cyan-500/20 text-cyan-300 hover:text-white transition-colors"
-                  aria-label="Clear selected skill"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-cyan-500 text-slate-950 font-semibold hover:bg-cyan-400 transition-colors"
+                  aria-label={skillFilter.count > 1 ? 'Clear all skill filters' : 'Clear selected skill'}
                 >
                   <X className="w-3.5 h-3.5" />
+                  <span>{skillFilter.count > 1 ? 'Clear filters' : 'Clear filter'}</span>
                 </button>
               </motion.div>
             )}
@@ -209,14 +270,14 @@ export default function Skills({ selectedSkill, onSelectSkill }: SkillsProps) {
                     {/* Skills tags — magnetic hover pull */}
                     <div className="mt-5 flex flex-wrap gap-1.5">
                       {discipline.technologies.map((tech, idx) => {
-                        const isHighlighted = selectedSkill === tech;
+                        const isHighlighted = doesTechTagMatchSkill(tech, selectedSkills);
 
                         return (
                           <MagneticSkillTag
                             key={idx}
                             label={tech}
                             highlighted={isHighlighted}
-                            onToggle={() => onSelectSkill(isHighlighted ? null : tech)}
+                            onToggle={() => onSelectSkill(tech)}
                           />
                         );
                       })}

@@ -186,7 +186,7 @@ export default function Hero({ onOpenResume, onOpenDigitalCard }: HeroProps) {
   const handleShare = () => {
     if (navigator.share) {
       navigator.share({
-        title: 'Mohammed Sufyan — Cloud Solutions Architect',
+        title: 'Mohammed Sufyan — Software Engineer',
         url: window.location.href,
       }).catch(() => {});
     } else {
@@ -513,7 +513,7 @@ export default function Hero({ onOpenResume, onOpenDigitalCard }: HeroProps) {
                   {/* Real full portrait cutout including shoulders, white shirt, and bow tie */}
                   <motion.img
                     src="/assets/aistudio/Sufyan_hero_portrait.png"
-                    alt="Mohammed Sufyan — Software Engineer & Cloud Solutions Architect"
+                    alt="Mohammed Sufyan — Software Engineer"
                     animate={shouldReduceMotion ? undefined : { y: [1, -1.5, 1] }}
                     transition={{ duration: 5.5, repeat: Infinity, ease: 'easeInOut' }}
                     className="relative z-10 w-full h-full object-contain object-bottom scale-[1.01] drop-shadow-[0_10px_24px_rgba(0,0,0,0.65)]"

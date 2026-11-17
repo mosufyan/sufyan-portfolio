@@ -118,6 +118,7 @@ html[data-theme='light'] .site-theme .hover\:bg-cyan-900\/50:hover {
   background-color: rgb(240 249 255 / 0.95) !important;
 }
 
+html[data-theme='light'] .site-theme .bg-cyan-500\/20,
 html[data-theme='light'] .site-theme .bg-cyan-500\/15,
 html[data-theme='light'] .site-theme .hover\:bg-cyan-500\/25:hover,
 html[data-theme='light'] .site-theme .hover\:bg-cyan-500\/20:hover {
@@ -153,6 +154,7 @@ html[data-theme='light'] .site-theme .hover\:border-slate-600:hover {
   border-color: #e2e8f0 !important;
 }
 
+html[data-theme='light'] .site-theme .border-cyan-400,
 html[data-theme='light'] .site-theme .border-cyan-500\/40,
 html[data-theme='light'] .site-theme .border-cyan-500\/35,
 html[data-theme='light'] .site-theme .border-cyan-500\/30,
@@ -161,7 +163,7 @@ html[data-theme='light'] .site-theme .hover\:border-cyan-500\/40:hover,
 html[data-theme='light'] .site-theme .hover\:border-cyan-500\/35:hover,
 html[data-theme='light'] .site-theme .group-hover\:border-cyan-500\/30:hover,
 html[data-theme='light'] .site-theme .group:hover .group-hover\:border-cyan-500\/30 {
-  border-color: #bae6fd !important;
+  border-color: #7dd3fc !important;
 }
 
 html[data-theme='light'] .site-theme .border-emerald-500\/40 {
@@ -199,8 +201,10 @@ html[data-theme='light'] .site-theme .text-slate-500 {
 }
 
 html[data-theme='light'] .site-theme .text-cyan-400,
+html[data-theme='light'] .site-theme .text-cyan-400\/90,
 html[data-theme='light'] .site-theme .text-cyan-300,
 html[data-theme='light'] .site-theme .text-cyan-300\/90,
+html[data-theme='light'] .site-theme .text-cyan-200,
 html[data-theme='light'] .site-theme .text-\[\#38bdf8\],
 html[data-theme='light'] .site-theme .hover\:text-cyan-400:hover,
 html[data-theme='light'] .site-theme .hover\:text-cyan-300:hover,
@@ -208,6 +212,52 @@ html[data-theme='light'] .site-theme .hover\:text-cyan-200:hover,
 html[data-theme='light'] .site-theme .group-hover\:text-cyan-300:hover,
 html[data-theme='light'] .site-theme .group:hover .group-hover\:text-cyan-300 {
   color: #0369a1 !important;
+}
+
+/* Selected skill chips stay high-contrast on solid cyan fills */
+html[data-theme='light'] .site-theme .bg-cyan-500.text-slate-950,
+html[data-theme='light'] .site-theme button.bg-cyan-500.text-slate-950,
+html[data-theme='light'] .site-theme .skill-chip-active,
+html[data-theme='light'] .site-theme .skill-chip-active.text-slate-950 {
+  color: #020617 !important;
+  background-color: #0ea5e9 !important;
+  border-color: #0284c7 !important;
+}
+
+/* Skill filter banner: pale surface + dark readable text in light mode */
+html[data-theme='light'] .site-theme .skill-filter-banner {
+  background-color: #f0f9ff !important;
+  border-color: #7dd3fc !important;
+  color: #0c4a6e !important;
+  box-shadow: 0 8px 24px rgb(14 165 233 / 0.12) !important;
+  backdrop-filter: none !important;
+}
+
+html[data-theme='light'] .site-theme .skill-filter-banner,
+html[data-theme='light'] .site-theme .skill-filter-banner .text-cyan-300,
+html[data-theme='light'] .site-theme .skill-filter-banner .text-cyan-200,
+html[data-theme='light'] .site-theme .skill-filter-banner a,
+html[data-theme='light'] .site-theme .skill-filter-banner strong {
+  color: #0c4a6e !important;
+}
+
+html[data-theme='light'] .site-theme .skill-filter-banner .text-slate-500 {
+  color: #64748b !important;
+}
+
+html[data-theme='light'] .site-theme .skill-filter-banner a:hover {
+  color: #0369a1 !important;
+}
+
+html[data-theme='light'] .site-theme .skill-filter-banner button.bg-cyan-500\/15,
+html[data-theme='light'] .site-theme .skill-filter-banner .bg-cyan-500\/15 {
+  background-color: #e0f2fe !important;
+  color: #0c4a6e !important;
+}
+
+html[data-theme='light'] .site-theme .skill-filter-banner button.bg-cyan-500 {
+  background-color: #0ea5e9 !important;
+  color: #020617 !important;
 }
 
 html[data-theme='light'] .site-theme .text-emerald-300,

@@ -14,9 +14,9 @@ export default defineConfig(() => {
         includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'icon.svg', 'og-social-banner.jpg'],
         manifest: {
           id: '/',
-          name: 'Mohammed Sufyan — Cloud Solutions Architect',
+          name: 'Mohammed Sufyan — Software Engineer',
           short_name: 'M. Sufyan',
-          description: 'Executive portfolio, verified credentials, and career timeline of Mohammed Sufyan, Principal Cloud Solutions Architect.',
+          description: 'Software Engineer at Cisco Systems Inc. STO — security data platforms, multi-cloud systems, and enterprise credentials.',
           theme_color: '#06080d',
           background_color: '#06080d',
           display: 'standalone',

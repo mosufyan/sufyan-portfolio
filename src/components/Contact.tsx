@@ -10,7 +10,8 @@ import {
   Clock,
   QrCode,
   UserPlus,
-  Sparkles
+  Sparkles,
+  CalendarDays,
 } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { PERSONAL_INFO } from '../data/portfolioData';
@@ -27,10 +28,10 @@ interface ContactProps {
 const INTENT_PRESETS = [
   {
     id: 'role',
-    label: 'Staff / Principal Role',
-    subject: 'Opportunity: Principal / Staff Cloud Solutions Architect',
+    label: 'Software Engineer Role',
+    subject: 'Opportunity: Software Engineer — Security / Platform',
     starter:
-      'Hi Mohammed,\n\nWe are hiring for a Principal / Staff Cloud & Security Architecture role and would love to connect regarding team scope, timeline, and availability.',
+      'Hi Mohammed,\n\nWe are hiring for a Software Engineer role focused on security data platforms or multi-cloud systems and would love to connect regarding scope, timeline, and availability.',
   },
   {
     id: 'architecture',
@@ -44,7 +45,7 @@ const INTENT_PRESETS = [
     label: 'Advisory / Consulting',
     subject: 'Advisory & Cloud Governance Discussion',
     starter:
-      'Hi Mohammed,\n\nWe are looking for executive technical advisory on multi-cloud resilience, DevSecOps governance, or FinOps optimization.',
+      'Hi Mohammed,\n\nWe are looking for technical advisory on multi-cloud resilience, DevSecOps governance, or FinOps optimization.',
   },
   {
     id: 'speaking',
@@ -183,21 +184,37 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
                 Let&apos;s Connect &amp; Collaborate
               </h2>
               <p className="mt-3 text-sm sm:text-base text-slate-300 leading-relaxed font-light">
-                Interested in discussing Enterprise Cloud Architecture, Zero Trust implementations, Multi-Cloud scale, or Senior Engineering leadership opportunities?
+                {PERSONAL_INFO.openTo}
               </p>
               </HeaderSpotlight>
 
               {/* Live Local Time & Role Readiness Indicator */}
-              <div className="mt-5 inline-flex flex-wrap items-center gap-2.5 px-3.5 py-2 rounded-xl border border-slate-800 bg-[#0b101d] text-xs font-mono">
-                <span className="inline-flex items-center gap-1.5 text-emerald-300">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                  <span>Active · San Jose, CA</span>
-                </span>
-                <span className="text-slate-600">|</span>
-                <span className="inline-flex items-center gap-1.5 text-cyan-300">
-                  <Clock className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>{localTime}</span>
-                </span>
+              <div className="mt-5 flex flex-col gap-2.5">
+                <div className="inline-flex flex-wrap items-center gap-2.5 px-3.5 py-2 rounded-xl border border-slate-800 bg-[#0b101d] text-xs font-mono w-fit">
+                  <span className="inline-flex items-center gap-1.5 text-emerald-300">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    <span>Active · San Jose, CA</span>
+                  </span>
+                  <span className="text-slate-600">|</span>
+                  <span className="inline-flex items-center gap-1.5 text-cyan-300">
+                    <Clock className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>{localTime}</span>
+                  </span>
+                </div>
+                <a
+                  href={PERSONAL_INFO.calendarUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className={`inline-flex w-fit items-center gap-2 px-3.5 py-2 rounded-xl border text-xs font-mono font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 ${
+                    isLight
+                      ? 'border-sky-300 bg-sky-50 text-sky-800 hover:bg-sky-100'
+                      : 'border-cyan-500/40 bg-cyan-950/50 text-cyan-200 hover:bg-cyan-900/60'
+                  }`}
+                >
+                  <CalendarDays className="w-3.5 h-3.5" />
+                  <span>Schedule a conversation</span>
+                  <ArrowUpRight className="w-3.5 h-3.5" />
+                </a>
               </div>
             </div>
 
@@ -446,9 +463,9 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
                           key={preset.id}
                           type="button"
                           onClick={() => applyIntentPreset(preset)}
-                          className={`px-2.5 py-1 rounded-lg text-[11px] font-mono border transition-colors cursor-pointer ${
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-mono border transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 ${
                             active
-                              ? 'bg-cyan-500/20 border-cyan-400 text-cyan-200'
+                              ? 'skill-chip-active bg-cyan-500 border-cyan-500 text-slate-950 font-semibold'
                               : 'bg-[#090d16] border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
                           }`}
                         >
@@ -475,7 +492,7 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
                       value={formData.name}
                       onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                       placeholder="e.g. John Doe"
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#090d16] border border-slate-800 text-xs sm:text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-500/60 transition-colors"
+                      className="contact-field w-full px-3.5 py-2.5 rounded-xl bg-[#090d16] border border-slate-800 text-xs sm:text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-400 focus:shadow-[0_0_0_3px_rgba(34,211,238,0.18)] transition-all"
                     />
                   </div>
 
@@ -495,7 +512,7 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
                       value={formData.email}
                       onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                       placeholder="e.g. john@enterprise.com"
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#090d16] border border-slate-800 text-xs sm:text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-500/60 transition-colors"
+                      className="contact-field w-full px-3.5 py-2.5 rounded-xl bg-[#090d16] border border-slate-800 text-xs sm:text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-400 focus:shadow-[0_0_0_3px_rgba(34,211,238,0.18)] transition-all"
                     />
                   </div>
                 </div>
@@ -516,7 +533,7 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
                       value={formData.subject}
                       onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
                       placeholder="e.g. Multi-Cloud Architecture Discussion"
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#090d16] border border-slate-800 text-xs sm:text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-500/60 transition-colors"
+                      className="contact-field w-full px-3.5 py-2.5 rounded-xl bg-[#090d16] border border-slate-800 text-xs sm:text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-400 focus:shadow-[0_0_0_3px_rgba(34,211,238,0.18)] transition-all"
                     />
                   </div>
 
@@ -535,7 +552,7 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
                       value={formData.phone}
                       onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                       placeholder="+1 (555) 000-0000"
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#090d16] border border-slate-800 text-xs sm:text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-500/60 transition-colors"
+                      className="contact-field w-full px-3.5 py-2.5 rounded-xl bg-[#090d16] border border-slate-800 text-xs sm:text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-400 focus:shadow-[0_0_0_3px_rgba(34,211,238,0.18)] transition-all"
                     />
                   </div>
                 </div>
@@ -556,7 +573,7 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
                     value={formData.message}
                     onChange={(e) => setFormData({ ...formData, message: e.target.value })}
                     placeholder="Describe your architectural requirements, project scope, or opportunity..."
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#090d16] border border-slate-800 text-xs sm:text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-500/60 transition-colors resize-none"
+                    className="contact-field w-full px-3.5 py-2.5 rounded-xl bg-[#090d16] border border-slate-800 text-xs sm:text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-400 focus:shadow-[0_0_0_3px_rgba(34,211,238,0.18)] transition-all resize-none"
                   ></textarea>
                 </div>
 

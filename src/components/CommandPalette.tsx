@@ -177,6 +177,17 @@ export default function CommandPalette({
         action: () => jumpToSection('skills'),
       },
       {
+        id: 'action-clear-skills',
+        group: 'Actions',
+        title: 'Clear all skill filters',
+        subtitle: 'Reset multi-select cross-filtering on Experience & Certifications',
+        keywords: 'clear reset skill filter skills remove',
+        action: () => {
+          onSelectSkill(null);
+          jumpToSection('skills');
+        },
+      },
+      {
         id: 'sec-certifications',
         group: 'Sections',
         title: 'Licenses & Official Certifications',
@@ -234,8 +245,8 @@ export default function CommandPalette({
         items.push({
           id: `skill-${tech}`,
           group: 'Skills',
-          title: `Filter by ${tech}`,
-          subtitle: `${disc.title} · Cross-filter Experience & Certifications`,
+          title: `Add skill filter: ${tech}`,
+          subtitle: `${disc.title} · Multi-select cross-filter Experience & Certifications`,
           keywords: `${tech} ${disc.title}`,
           action: () => {
             onSelectSkill(tech);

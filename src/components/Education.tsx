@@ -26,6 +26,21 @@ export default function Education() {
           </HeaderSpotlight>
         </Reveal>
 
+        <Reveal className="mb-8">
+          <div className="rounded-2xl border border-slate-800 bg-[#0d121f]/80 p-5 sm:p-6">
+            <div className="text-[10px] font-mono uppercase tracking-wider text-cyan-400 mb-2">
+              Featured academic note
+            </div>
+            <h3 className="text-lg sm:text-xl font-display font-bold text-white tracking-tight">
+              Strong CS foundation, applied in production systems
+            </h3>
+            <p className="mt-2 text-sm text-slate-300 leading-relaxed max-w-3xl">
+              Formal training in computer science, algorithms, and systems thinking underpins 13+ years of
+              shipping enterprise platforms — from compliance microservices to STO security data pipelines.
+            </p>
+          </div>
+        </Reveal>
+
         {/* 2-Card Grid */}
         <StaggerContainer className="grid grid-cols-1 md:grid-cols-2 print:grid-cols-2 gap-6" staggerDelay={0.09}>
           {EDUCATION.map((edu, idx) => (
