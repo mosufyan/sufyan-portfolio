@@ -229,6 +229,29 @@ html[data-theme='light'] .site-theme .brand-on-color svg {
   stroke: currentColor;
 }
 
+/* Portrait welcome stage stays high-contrast in light mode */
+html[data-theme='light'] .site-theme .portrait-welcome,
+html[data-theme='light'] .site-theme .portrait-welcome .text-white {
+  color: #ffffff !important;
+}
+
+html[data-theme='light'] .site-theme .portrait-welcome button {
+  color: #e0f2fe !important;
+  background-color: rgba(2, 6, 23, 0.75) !important;
+  border-color: rgba(34, 211, 238, 0.45) !important;
+}
+
+/* Keep scan-line / constellation cyan visible on light pages */
+html[data-theme='light'] .site-theme .via-cyan-400 {
+  --tw-gradient-to: transparent;
+  --tw-gradient-stops: var(--tw-gradient-from), #0891b2, var(--tw-gradient-to, transparent);
+}
+
+/* Timeline node core stays cyan in light mode */
+html[data-theme='light'] .site-theme .bg-cyan-400 {
+  background-color: #0891b2 !important;
+}
+
 /* Keep high-contrast CTA labels on cyan buttons */
 html[data-theme='light'] .site-theme .bg-cyan-500,
 html[data-theme='light'] .site-theme .bg-\[\#38bdf8\],

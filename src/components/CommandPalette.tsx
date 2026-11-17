@@ -29,6 +29,7 @@ import {
   TECHNICAL_DISCIPLINES,
   WORK_EXPERIENCE,
 } from '../data/portfolioData';
+import { useTheme } from '../theme/ThemeProvider';
 import { EASE_OUT_EXPO } from './MotionPrimitives';
 
 interface CommandPaletteProps {
@@ -61,6 +62,7 @@ export default function CommandPalette({
   onOpenAnnouncements,
   onOpenDigitalCard,
 }: CommandPaletteProps) {
+  const { isLight } = useTheme();
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -365,6 +367,28 @@ export default function CommandPalette({
     }
   };
 
+  const panel = isLight
+    ? 'border-slate-200 bg-white text-slate-800 shadow-2xl shadow-slate-300/40'
+    : 'border-slate-700/80 bg-[#0a0f1c] text-slate-200 shadow-2xl shadow-cyan-950/40';
+  const rowActive = isLight
+    ? 'bg-sky-50 border border-sky-300 text-slate-900'
+    : 'bg-cyan-500/15 border border-cyan-500/40 text-white';
+  const rowIdle = isLight
+    ? 'border border-transparent text-slate-700 hover:bg-slate-50'
+    : 'border border-transparent text-slate-300 hover:bg-slate-900/70';
+  const iconBox = isLight
+    ? 'bg-slate-50 border-slate-200'
+    : 'bg-[#0d1424] border-slate-800';
+  const titleCls = isLight ? 'text-slate-900' : 'text-white';
+  const subtitleCls = isLight ? 'text-slate-500' : 'text-slate-400';
+  const metaCls = isLight ? 'text-slate-500' : 'text-slate-400';
+  const accent = isLight ? 'text-sky-700' : 'text-cyan-400';
+  const emptyCls = isLight ? 'text-slate-500' : 'text-slate-400';
+  const footer = isLight
+    ? 'border-slate-200 bg-slate-50 text-slate-500'
+    : 'border-slate-800/80 bg-[#070b14] text-slate-500';
+  const backdrop = isLight ? 'bg-slate-900/45' : 'bg-slate-950/80';
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -374,7 +398,7 @@ export default function CommandPalette({
           exit={{ opacity: 0 }}
           transition={{ duration: 0.16 }}
           onClick={onClose}
-          className="fixed inset-0 z-50 flex items-start justify-center bg-slate-950/80 backdrop-blur-sm px-3 sm:px-4 pt-[max(4rem,env(safe-area-inset-top))] sm:pt-24 pb-[max(2rem,env(safe-area-inset-bottom))] overflow-y-auto print:hidden"
+          className={`fixed inset-0 z-50 flex items-start justify-center backdrop-blur-sm px-3 sm:px-4 pt-[max(4rem,env(safe-area-inset-top))] sm:pt-24 pb-[max(2rem,env(safe-area-inset-bottom))] overflow-y-auto print:hidden ${backdrop}`}
           role="dialog"
           aria-modal="true"
           aria-label="Quick command palette"
@@ -386,9 +410,9 @@ export default function CommandPalette({
             transition={{ duration: 0.18, ease: EASE_OUT_EXPO }}
             onClick={(e) => e.stopPropagation()}
             onKeyDown={handleKeyDown}
-            className="command-palette w-full max-w-2xl rounded-2xl border border-slate-700/80 bg-[#0a0f1c] text-slate-200 shadow-2xl shadow-cyan-950/40 overflow-hidden"
+            className={`command-palette w-full max-w-2xl rounded-2xl border overflow-hidden ${panel}`}
           >
-            {/* Search Input Header — always dark */}
+            {/* Search bar only — always dark for brand consistency */}
             <div className="flex items-center gap-3 px-4 py-3.5 border-b border-slate-800/90 bg-[#070b14]">
               <Search className="w-4 h-4 text-cyan-400 shrink-0" />
               <input
@@ -419,7 +443,7 @@ export default function CommandPalette({
               </button>
             </div>
 
-            {/* Results List */}
+            {/* Results list — follows site theme */}
             <div ref={listRef} className="max-h-[60vh] overflow-y-auto p-2 space-y-1">
               {filteredItems.length > 0 ? (
                 filteredItems.map((item, idx) => {
@@ -432,47 +456,45 @@ export default function CommandPalette({
                       onMouseEnter={() => setActiveIndex(idx)}
                       onClick={item.action}
                       className={`w-full flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-xl text-left transition-colors ${
-                        isActive
-                          ? 'bg-cyan-500/15 border border-cyan-500/40 text-white'
-                          : 'border border-transparent text-slate-300 hover:bg-slate-900/70'
+                        isActive ? rowActive : rowIdle
                       }`}
                     >
                       <div className="flex items-center gap-3 min-w-0">
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#0d1424] border border-slate-800">
+                        <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${iconBox}`}>
                           {getGroupIcon(item.group, item.id)}
                         </div>
                         <div className="min-w-0">
-                          <div className="text-xs sm:text-sm font-medium text-white truncate">
+                          <div className={`text-xs sm:text-sm font-medium truncate ${titleCls}`}>
                             {item.title}
                           </div>
-                          <div className="text-[11px] font-mono text-slate-400 truncate">
+                          <div className={`text-[11px] font-mono truncate ${subtitleCls}`}>
                             {item.subtitle}
                           </div>
                         </div>
                       </div>
 
                       <div className="flex items-center gap-2 shrink-0">
-                        <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
+                        <span className={`text-[10px] font-mono uppercase tracking-wider ${metaCls}`}>
                           {item.group}
                         </span>
                         {item.id === 'act-linkedin-recs' ? (
-                          <ExternalLink className="w-3.5 h-3.5 text-cyan-400" />
+                          <ExternalLink className={`w-3.5 h-3.5 ${accent}`} />
                         ) : (
-                          isActive && <CornerDownLeft className="w-3.5 h-3.5 text-cyan-400" />
+                          isActive && <CornerDownLeft className={`w-3.5 h-3.5 ${accent}`} />
                         )}
                       </div>
                     </button>
                   );
                 })
               ) : (
-                <div className="py-10 text-center text-xs font-mono text-slate-400">
+                <div className={`py-10 text-center text-xs font-mono ${emptyCls}`}>
                   No matches found for &ldquo;{query}&rdquo;. Try &ldquo;AWS&rdquo;, &ldquo;Project Atlas&rdquo;, &ldquo;Databricks&rdquo;, or &ldquo;CV&rdquo;.
                 </div>
               )}
             </div>
 
-            {/* Footer Hints */}
-            <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 border-t border-slate-800/80 bg-[#070b14] text-[11px] font-mono text-slate-500">
+            {/* Footer Hints — follows site theme */}
+            <div className={`flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 border-t text-[11px] font-mono ${footer}`}>
               <div className="flex items-center gap-3">
                 <span>↑↓ Navigate</span>
                 <span>↵ Open / Filter</span>

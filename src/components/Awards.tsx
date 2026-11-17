@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { Award, AWARDS_BY_ORGANIZATION, LINKEDIN_RECOMMENDATIONS } from '../data/portfolioData';
 import { CollapseTimeline, CollapseTimelineNode } from './CollapseTimeline';
 import { Reveal, EASE_OUT_EXPO, SpotlightCard } from './MotionPrimitives';
+import SectionScanLine from './SectionScanLine';
 
 export default function Awards() {
   const [filterOrg, setFilterOrg] = useState<'all' | 'Cisco' | 'HCL' | 'TCS'>('all');
@@ -154,7 +155,8 @@ export default function Awards() {
   );
 
   return (
-    <section id="honors" className="py-16 lg:py-24 border-b border-slate-800/80 bg-[#06080d]">
+    <section id="honors" className="relative py-16 lg:py-24 border-b border-slate-800/80 bg-[#06080d]">
+      <SectionScanLine />
       <div className="page-shell">
         {/* Section Header */}
         <Reveal className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10">
@@ -257,7 +259,7 @@ export default function Awards() {
               const isExpanded = expandedOrgs[group.organization] ?? false;
 
               return (
-                <CollapseTimelineNode key={group.organization}>
+                <CollapseTimelineNode key={group.organization} pulse={isExpanded}>
                 <motion.div
                   layout
                   initial={{ opacity: 0, y: 16 }}
@@ -352,7 +354,7 @@ export default function Awards() {
         )}
 
         {/* LinkedIn Peer Recommendations & Endorsements (All 23 Verified) */}
-        <CollapseTimelineNode className="mt-10">
+        <CollapseTimelineNode className="mt-10" pulse={recsExpanded}>
         <div
           id="linkedin-recommendations"
           className="rounded-2xl border border-slate-800 bg-[#0d121f]/70 overflow-hidden shadow-xl"

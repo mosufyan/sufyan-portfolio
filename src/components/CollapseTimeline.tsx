@@ -1,5 +1,6 @@
 import { ReactNode, useRef } from 'react';
-import { motion, useScroll, useSpring } from 'motion/react';
+import { motion, useReducedMotion, useScroll, useSpring } from 'motion/react';
+import { EASE_OUT_EXPO } from './MotionPrimitives';
 
 interface CollapseTimelineProps {
   children: ReactNode;
@@ -49,21 +50,60 @@ interface CollapseTimelineNodeProps {
   className?: string;
   /** Vertical offset of the glowing node relative to the card header */
   nodeTopClassName?: string;
+  /** When true (e.g. section expanded), node pulses once */
+  pulse?: boolean;
 }
 
 export function CollapseTimelineNode({
   children,
   className = '',
   nodeTopClassName = 'top-7',
+  pulse = false,
 }: CollapseTimelineNodeProps) {
+  const shouldReduceMotion = useReducedMotion();
+
   return (
     <div className={`relative ${className}`}>
-      <div
+      <motion.div
         aria-hidden="true"
+        animate={
+          shouldReduceMotion
+            ? undefined
+            : pulse
+              ? {
+                  scale: [1, 1.18, 1],
+                  borderColor: [
+                    'rgba(34,211,238,0.5)',
+                    'rgba(103,232,249,1)',
+                    'rgba(34,211,238,0.5)',
+                  ],
+                  boxShadow: [
+                    '0 0 12px rgba(34,211,238,0.2)',
+                    '0 0 24px rgba(34,211,238,0.7)',
+                    '0 0 12px rgba(34,211,238,0.2)',
+                  ],
+                }
+              : {
+                  scale: 1,
+                  borderColor: 'rgba(34,211,238,0.5)',
+                  boxShadow: '0 0 12px rgba(34,211,238,0.2)',
+                }
+        }
+        transition={{ duration: 0.55, ease: EASE_OUT_EXPO }}
         className={`hidden md:flex print:hidden absolute -left-9 ${nodeTopClassName} w-6 h-6 items-center justify-center rounded-full bg-[#07090e] border border-cyan-500/50 shadow-[0_0_12px_rgba(34,211,238,0.2)] z-10`}
       >
-        <span className="w-2 h-2 rounded-full bg-cyan-400" />
-      </div>
+        <motion.span
+          animate={
+            shouldReduceMotion
+              ? undefined
+              : pulse
+                ? { scale: [1, 1.45, 1], opacity: [1, 1, 1] }
+                : { scale: 1 }
+          }
+          transition={{ duration: 0.55, ease: EASE_OUT_EXPO }}
+          className="w-2 h-2 rounded-full bg-cyan-400"
+        />
+      </motion.div>
       {children}
     </div>
   );

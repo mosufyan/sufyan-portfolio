@@ -5,8 +5,10 @@ import { CERTIFICATION_CATEGORIES, CERTIFICATIONS, Certification } from '../data
 import { doesCertMatchSkill, doesTechTagMatchSkill } from '../utils/skillMatcher';
 import { useTheme } from '../theme/ThemeProvider';
 import { CollapseTimeline, CollapseTimelineNode } from './CollapseTimeline';
+import HeaderSpotlight from './HeaderSpotlight';
 import IssuerMark from './IssuerMark';
 import { Reveal, EASE_OUT_EXPO, SpotlightCard } from './MotionPrimitives';
+import SectionScanLine from './SectionScanLine';
 
 interface CertificationsProps {
   selectedSkill: string | null;
@@ -14,12 +16,23 @@ interface CertificationsProps {
   onSelectCertification: (cert: Certification) => void;
 }
 
+const FEATURED_CERT_IDS = [
+  'cert-aws-devops-pro',
+  'cert-aws-saa',
+  'cert-google-ace',
+  'cert-ms-az400',
+  'cert-ms-devops-expert',
+  'cert-db-ai-agent',
+  'cert-google-genai',
+  'cert-aws-genai',
+] as const;
+
 export default function Certifications({
   selectedSkill,
   onSelectSkill,
   onSelectCertification,
 }: CertificationsProps) {
-  const { theme } = useTheme();
+  const { theme, isLight } = useTheme();
   const [activeTab, setActiveTab] = useState<'all' | 'ai' | 'cloud' | 'data'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [linkCopied, setLinkCopied] = useState(false);
@@ -106,6 +119,18 @@ export default function Certifications({
   };
 
   const visibleCertCount = filteredCategories.reduce((acc, c) => acc + c.certs.length, 0);
+
+  const featuredCerts = FEATURED_CERT_IDS.map((id) => CERTIFICATIONS.find((c) => c.id === id)).filter(
+    (c): c is Certification => Boolean(c)
+  ).filter((cert) => {
+    if (selectedSkill && !doesCertMatchSkill(cert, selectedSkill)) return false;
+    if (!normalizedSearch) return true;
+    return (
+      cert.title.toLowerCase().includes(normalizedSearch) ||
+      cert.issuer.toLowerCase().includes(normalizedSearch) ||
+      cert.skills.some((s) => s.toLowerCase().includes(normalizedSearch))
+    );
+  });
 
   const renderCertCards = (certs: Certification[]) => (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 print:grid-cols-2 gap-5">
@@ -202,10 +227,12 @@ export default function Certifications({
   );
 
   return (
-    <section id="certifications" className="py-16 lg:py-24 border-b border-slate-800/80 bg-[#07090e]">
+    <section id="certifications" className="relative py-16 lg:py-24 border-b border-slate-800/80 bg-[#07090e]">
+      <SectionScanLine />
       <div className="page-shell">
         {/* Section Header */}
         <Reveal className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10">
+          <HeaderSpotlight className="min-w-0">
           <div>
             <div className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-cyan-400 tracking-wider uppercase mb-2">
               <Award className="w-3.5 h-3.5" />
@@ -229,6 +256,7 @@ export default function Certifications({
               </a>
             </div>
           </div>
+          </HeaderSpotlight>
 
           {/* Search Box */}
           <div className="relative w-full md:w-72 shrink-0 print:hidden">
@@ -252,6 +280,52 @@ export default function Certifications({
             )}
           </div>
         </Reveal>
+
+        {/* Featured credentials strip */}
+        {featuredCerts.length > 0 && (
+          <div className="mb-10 print:hidden">
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <div className="text-[11px] font-mono uppercase tracking-wider text-cyan-400">
+                Featured Credentials
+              </div>
+              <div className="text-[10px] font-mono text-slate-500">
+                {featuredCerts.length} highlighted
+              </div>
+            </div>
+            <div className="flex gap-3 overflow-x-auto pb-2 scroll-chips">
+              {featuredCerts.map((cert, idx) => (
+                <motion.button
+                  key={cert.id}
+                  type="button"
+                  initial={{ opacity: 0, y: 10 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true, amount: 0.2 }}
+                  transition={{ duration: 0.35, delay: idx * 0.04, ease: EASE_OUT_EXPO }}
+                  whileHover={{ y: -3 }}
+                  onClick={() => onSelectCertification(cert)}
+                  className={`min-w-[220px] max-w-[260px] shrink-0 rounded-xl border p-3.5 text-left transition-colors ${
+                    isLight
+                      ? 'border-slate-200 bg-white hover:border-sky-400 shadow-sm'
+                      : 'border-slate-800 bg-[#0d121f]/80 hover:border-cyan-500/40'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <IssuerMark issuer={cert.issuer} size="sm" theme={theme} />
+                    <span className={`text-[10px] font-mono uppercase truncate ${isLight ? 'text-sky-700' : 'text-cyan-400'}`}>
+                      {cert.issuer}
+                    </span>
+                  </div>
+                  <div className={`text-xs font-display font-bold leading-snug line-clamp-2 ${isLight ? 'text-slate-900' : 'text-white'}`}>
+                    {cert.title}
+                  </div>
+                  <div className={`mt-2 text-[10px] font-mono ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
+                    {cert.issueDate}
+                  </div>
+                </motion.button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Filter Tabs + Expand/Collapse All */}
         <div className="flex flex-wrap items-center justify-between gap-3 mb-10 print:hidden">
@@ -364,7 +438,7 @@ export default function Certifications({
               const isExpanded = expandedCategories[category.id] ?? false;
 
               return (
-                <CollapseTimelineNode key={category.id}>
+                <CollapseTimelineNode key={category.id} pulse={isExpanded}>
                 <motion.div
                   layout
                   initial={{ opacity: 0, y: 16 }}

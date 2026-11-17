@@ -1,18 +1,160 @@
-import { MouseEvent as ReactMouseEvent, useState } from 'react';
+import { MouseEvent as ReactMouseEvent, ReactNode, useCallback, useEffect, useState } from 'react';
 import { Download, Mail, Share2, AtSign, Check, MonitorSmartphone, QrCode } from 'lucide-react';
 import { AnimatePresence, motion, useMotionValue, useReducedMotion, useSpring } from 'motion/react';
 import { PERSONAL_INFO, STATS } from '../data/portfolioData';
 import { AnimatedMetric, EASE_OUT_EXPO, SpotlightCard } from './MotionPrimitives';
+import PortraitWelcome, { PortraitWelcomePhase } from './PortraitWelcome';
 
 interface HeroProps {
   onOpenResume?: () => void;
   onOpenDigitalCard?: () => void;
 }
 
+const ROLE_MOBILE = 'Software Engineer — Cisco STO CTO Ops | Cloud Solutions Architect';
+const ROLE_DESKTOP =
+  'Software Engineer — Cisco Security & Trust Organization (STO) CTO Operations | Cloud Solutions Architect';
+
+function StaggerLetters({
+  text,
+  active,
+  className = '',
+  delay = 0,
+}: {
+  text: string;
+  active: boolean;
+  className?: string;
+  delay?: number;
+}) {
+  return (
+    <span>
+      {text.split('').map((char, i) => (
+        <motion.span
+          key={`${text}-${i}-${char}`}
+          initial={{ opacity: 0, y: 14, filter: 'blur(4px)' }}
+          animate={
+            active
+              ? { opacity: 1, y: 0, filter: 'blur(0px)' }
+              : { opacity: 0, y: 14, filter: 'blur(4px)' }
+          }
+          transition={{
+            duration: 0.38,
+            delay: active ? delay + i * 0.045 : 0,
+            ease: EASE_OUT_EXPO,
+          }}
+          className={`inline-block ${className}`}
+        >
+          {char === ' ' ? '\u00A0' : char}
+        </motion.span>
+      ))}
+    </span>
+  );
+}
+
+function TypeInLine({
+  text,
+  active,
+  className = '',
+}: {
+  text: string;
+  active: boolean;
+  className?: string;
+}) {
+  const shouldReduceMotion = useReducedMotion();
+  const [shown, setShown] = useState(0);
+
+  useEffect(() => {
+    if (!active) {
+      setShown(0);
+      return;
+    }
+    if (shouldReduceMotion) {
+      setShown(text.length);
+      return;
+    }
+
+    setShown(0);
+    let i = 0;
+    const id = window.setInterval(() => {
+      i += 1;
+      setShown(i);
+      if (i >= text.length) window.clearInterval(id);
+    }, 18);
+
+    return () => window.clearInterval(id);
+  }, [active, shouldReduceMotion, text]);
+
+  return (
+    <span className={className}>
+      {text.slice(0, shown)}
+      {active && shown < text.length && !shouldReduceMotion && (
+        <span className="inline-block w-[0.55ch] ml-0.5 -mb-0.5 border-r-2 border-cyan-400/80 animate-pulse" />
+      )}
+    </span>
+  );
+}
+
+function ShineCta({
+  children,
+  className = '',
+  shineClassName = 'via-white/40',
+}: {
+  children: ReactNode;
+  className?: string;
+  shineClassName?: string;
+}) {
+  const shouldReduceMotion = useReducedMotion();
+
+  return (
+    <span className={`relative inline-flex overflow-hidden rounded-lg max-w-full ${className}`}>
+      {children}
+      {!shouldReduceMotion && (
+        <motion.span
+          aria-hidden="true"
+          animate={{ x: ['-130%', '230%'], opacity: [0, 0.85, 0] }}
+          transition={{
+            duration: 1.35,
+            repeat: Infinity,
+            repeatDelay: 4.8,
+            ease: 'easeInOut',
+          }}
+          className={`pointer-events-none absolute inset-y-0 left-0 w-1/3 bg-gradient-to-r from-transparent ${shineClassName} to-transparent skew-x-[-20deg] print:hidden`}
+        />
+      )}
+    </span>
+  );
+}
+
 export default function Hero({ onOpenResume, onOpenDigitalCard }: HeroProps) {
   const [copied, setCopied] = useState(false);
   const [shared, setShared] = useState(false);
+  const [portraitPhase, setPortraitPhase] = useState<PortraitWelcomePhase>('checking');
+  const [roleActive, setRoleActive] = useState(false);
   const shouldReduceMotion = useReducedMotion();
+  const handlePortraitPhase = useCallback((phase: PortraitWelcomePhase) => {
+    setPortraitPhase(phase);
+  }, []);
+
+  const heroUnlocked =
+    Boolean(shouldReduceMotion) ||
+    portraitPhase === 'reveal' ||
+    portraitPhase === 'live';
+  const ringsHunting =
+    !shouldReduceMotion &&
+    (portraitPhase === 'welcome' || portraitPhase === 'finale' || portraitPhase === 'checking');
+  const ringsLocked = heroUnlocked;
+
+  useEffect(() => {
+    if (!heroUnlocked) {
+      setRoleActive(false);
+      return;
+    }
+    if (shouldReduceMotion) {
+      setRoleActive(true);
+      return;
+    }
+    const t = window.setTimeout(() => setRoleActive(true), 1050);
+    return () => window.clearTimeout(t);
+  }, [heroUnlocked, shouldReduceMotion]);
 
   const tiltX = useMotionValue(0);
   const tiltY = useMotionValue(0);
@@ -103,28 +245,44 @@ export default function Hero({ onOpenResume, onOpenDigitalCard }: HeroProps) {
             <span className="hidden sm:inline">GLOBAL CLOUD INFRASTRUCTURE • SECOPS • MULTI-CLOUD ARCHITECTURE</span>
           </motion.div>
 
-          {/* Main Headline */}
-          <motion.h1
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.55, delay: 0.1, ease: EASE_OUT_EXPO }}
-            className="text-[1.85rem] sm:text-5xl lg:text-6xl 2xl:text-7xl font-display font-extrabold tracking-tight text-white leading-[1.08] text-balance break-words"
-          >
-            Hello! I&apos;m <span className="bg-gradient-to-r from-[#38bdf8] via-cyan-300 to-sky-400 bg-clip-text text-transparent">Mohammed</span>
-            <br />
-            <span className="bg-gradient-to-r from-[#38bdf8] via-cyan-300 to-sky-400 bg-clip-text text-transparent">Sufyan</span>
-          </motion.h1>
+          {/* Main Headline — letter stagger unlocks with portrait reveal */}
+          <h1 className="text-[1.85rem] sm:text-5xl lg:text-6xl 2xl:text-7xl font-display font-extrabold tracking-tight text-white leading-[1.08] text-balance break-words">
+            <span className="sr-only">Hello! I&apos;m Mohammed Sufyan</span>
+            <span aria-hidden="true">
+              <motion.span
+                initial={{ opacity: 0, y: 10 }}
+                animate={heroUnlocked ? { opacity: 1, y: 0 } : { opacity: 0.25, y: 6 }}
+                transition={{ duration: 0.45, ease: EASE_OUT_EXPO }}
+                className="inline-block"
+              >
+                Hello! I&apos;m{' '}
+              </motion.span>
+              <StaggerLetters
+                text="Mohammed"
+                active={heroUnlocked}
+                delay={0.08}
+                className="bg-gradient-to-r from-[#38bdf8] via-cyan-300 to-sky-400 bg-clip-text text-transparent [-webkit-text-fill-color:transparent]"
+              />
+              <br />
+              <StaggerLetters
+                text="Sufyan"
+                active={heroUnlocked}
+                delay={0.08 + 'Mohammed'.length * 0.045}
+                className="bg-gradient-to-r from-[#38bdf8] via-cyan-300 to-sky-400 bg-clip-text text-transparent [-webkit-text-fill-color:transparent]"
+              />
+            </span>
+          </h1>
 
-          {/* Subtitle / Role */}
-          <motion.h2
-            initial={{ opacity: 0, y: 14 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.18, ease: EASE_OUT_EXPO }}
-            className="text-sm sm:text-base 2xl:text-lg font-normal text-slate-300 leading-snug pt-1 max-w-3xl text-pretty"
-          >
-            <span className="sm:hidden">Software Engineer — Cisco STO CTO Ops | Cloud Solutions Architect</span>
-            <span className="hidden sm:inline">Software Engineer — Cisco Security &amp; Trust Organization (STO) CTO Operations | Cloud Solutions Architect</span>
-          </motion.h2>
+          {/* Subtitle / Role — types in after name stagger */}
+          <h2 className="text-sm sm:text-base 2xl:text-lg font-normal text-slate-300 leading-snug pt-1 max-w-3xl text-pretty min-h-[2.75rem] sm:min-h-[1.5rem]">
+            <span className="sr-only">{ROLE_DESKTOP}</span>
+            <span aria-hidden="true" className="sm:hidden">
+              <TypeInLine text={ROLE_MOBILE} active={roleActive} />
+            </span>
+            <span aria-hidden="true" className="hidden sm:inline">
+              <TypeInLine text={ROLE_DESKTOP} active={roleActive} />
+            </span>
+          </h2>
 
           {/* Lead Narrative */}
           <motion.p
@@ -144,28 +302,32 @@ export default function Hero({ onOpenResume, onOpenDigitalCard }: HeroProps) {
             className="flex flex-wrap items-center gap-2.5 sm:gap-3 pt-3 print:hidden"
           >
             {/* Button 1: View Architecture & Experience */}
-            <motion.a
-              whileHover={{ y: -2, scale: 1.01 }}
-              whileTap={{ scale: 0.98 }}
-              href="#experience"
-              className="inline-flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 rounded-lg bg-[#38bdf8] hover:bg-sky-300 text-slate-950 font-semibold text-xs sm:text-sm transition-colors shadow-md shadow-sky-500/20 max-w-full"
-            >
-              <MonitorSmartphone className="w-4 h-4 shrink-0" />
-              <span className="sm:hidden">View Experience</span>
-              <span className="hidden sm:inline">View Architecture &amp; Experience</span>
-            </motion.a>
+            <ShineCta shineClassName="via-white/45">
+              <motion.a
+                whileHover={{ y: -2, scale: 1.01 }}
+                whileTap={{ scale: 0.98 }}
+                href="#experience"
+                className="inline-flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 rounded-lg bg-[#38bdf8] hover:bg-sky-300 text-slate-950 font-semibold text-xs sm:text-sm transition-colors shadow-md shadow-sky-500/20 max-w-full"
+              >
+                <MonitorSmartphone className="w-4 h-4 shrink-0" />
+                <span className="sm:hidden">View Experience</span>
+                <span className="hidden sm:inline">View Architecture &amp; Experience</span>
+              </motion.a>
+            </ShineCta>
 
             {/* Button 2: Download Official CV */}
-            <motion.button
-              whileHover={{ y: -2, scale: 1.01 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={onOpenResume}
-              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-slate-700 bg-[#161c28] hover:bg-slate-800 text-slate-200 text-xs sm:text-sm font-medium transition-colors max-w-full"
-            >
-              <Download className="w-4 h-4 text-slate-300 shrink-0" />
-              <span className="sm:hidden">Download CV</span>
-              <span className="hidden sm:inline">Download Official CV</span>
-            </motion.button>
+            <ShineCta shineClassName="via-cyan-200/25">
+              <motion.button
+                whileHover={{ y: -2, scale: 1.01 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={onOpenResume}
+                className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-slate-700 bg-[#161c28] hover:bg-slate-800 text-slate-200 text-xs sm:text-sm font-medium transition-colors max-w-full"
+              >
+                <Download className="w-4 h-4 text-slate-300 shrink-0" />
+                <span className="sm:hidden">Download CV</span>
+                <span className="hidden sm:inline">Download Official CV</span>
+              </motion.button>
+            </ShineCta>
 
             {/* Icon Buttons */}
             <div className="flex items-center gap-2">
@@ -276,12 +438,27 @@ export default function Hero({ onOpenResume, onOpenDigitalCard }: HeroProps) {
                 className="absolute inset-2 rounded-full bg-gradient-to-tr from-cyan-500/25 via-sky-400/10 to-blue-600/25 blur-2xl pointer-events-none print:hidden"
               />
 
-              {/* Outer dashed telemetry orbit ring */}
+              {/* Outer dashed telemetry orbit ring — fast hunt, then lock-on */}
               <motion.div
                 aria-hidden="true"
-                animate={shouldReduceMotion ? undefined : { rotate: 360 }}
-                transition={{ duration: 42, repeat: Infinity, ease: 'linear' }}
-                className="absolute inset-0 rounded-full border border-dashed border-cyan-400/30 pointer-events-none print:hidden"
+                animate={
+                  shouldReduceMotion
+                    ? undefined
+                    : ringsHunting
+                      ? { rotate: 360, scale: 1 }
+                      : { rotate: 360, scale: [1.06, 1] }
+                }
+                transition={
+                  ringsHunting
+                    ? { rotate: { duration: 12, repeat: Infinity, ease: 'linear' }, scale: { duration: 0.3 } }
+                    : {
+                        rotate: { duration: 42, repeat: Infinity, ease: 'linear', delay: 0.55 },
+                        scale: { duration: 0.55, ease: EASE_OUT_EXPO },
+                      }
+                }
+                className={`absolute inset-0 rounded-full border border-dashed pointer-events-none print:hidden ${
+                  ringsLocked ? 'border-cyan-300/55' : 'border-cyan-400/35'
+                }`}
               >
                 <span className="absolute -top-1 left-1/2 -translate-x-1/2 h-2 w-2 rounded-full bg-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.9)]" />
                 <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 h-1.5 w-1.5 rounded-full bg-sky-400/80 shadow-[0_0_8px_rgba(56,189,248,0.8)]" />
@@ -290,10 +467,39 @@ export default function Hero({ onOpenResume, onOpenDigitalCard }: HeroProps) {
               {/* Inner counter-rotating arc ring */}
               <motion.div
                 aria-hidden="true"
-                animate={shouldReduceMotion ? undefined : { rotate: -360 }}
-                transition={{ duration: 30, repeat: Infinity, ease: 'linear' }}
-                className="absolute inset-3 rounded-full border border-slate-700/60 border-t-cyan-400/70 border-r-sky-400/35 pointer-events-none print:hidden"
+                animate={
+                  shouldReduceMotion
+                    ? undefined
+                    : ringsHunting
+                      ? { rotate: -360 }
+                      : { rotate: -360 }
+                }
+                transition={
+                  ringsHunting
+                    ? { duration: 9, repeat: Infinity, ease: 'linear' }
+                    : { duration: 30, repeat: Infinity, ease: 'linear', delay: 0.55 }
+                }
+                className={`absolute inset-3 rounded-full border pointer-events-none print:hidden ${
+                  ringsLocked
+                    ? 'border-slate-600/70 border-t-cyan-300 border-r-sky-300/70'
+                    : 'border-slate-700/60 border-t-cyan-400/70 border-r-sky-400/35'
+                }`}
               />
+
+              {/* Lock-on flash when portrait reveals */}
+              <AnimatePresence>
+                {ringsLocked && !shouldReduceMotion && (
+                  <motion.div
+                    key="orbit-lock-flash"
+                    aria-hidden="true"
+                    initial={{ opacity: 0.8, scale: 0.92 }}
+                    animate={{ opacity: 0, scale: 1.12 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.7, ease: EASE_OUT_EXPO }}
+                    className="absolute inset-1 rounded-full border border-cyan-300/60 shadow-[0_0_28px_rgba(34,211,238,0.35)] pointer-events-none print:hidden"
+                  />
+                )}
+              </AnimatePresence>
 
               {/* Portrait dark glass frame (zero white background) */}
               <motion.div
@@ -312,38 +518,41 @@ export default function Hero({ onOpenResume, onOpenDigitalCard }: HeroProps) {
                   }}
                 />
 
-                {/* Real full portrait cutout including shoulders, white shirt, and bow tie */}
-                <motion.img
-                  src="/assets/aistudio/Sufyan_hero_portrait.png"
-                  alt="Mohammed Sufyan — Software Engineer & Cloud Solutions Architect"
-                  animate={shouldReduceMotion ? undefined : { y: [1, -1.5, 1] }}
-                  transition={{ duration: 5.5, repeat: Infinity, ease: 'easeInOut' }}
-                  className="relative z-10 w-full h-full object-contain object-bottom scale-[1.01] drop-shadow-[0_10px_24px_rgba(0,0,0,0.65)]"
-                />
+                {/* Welcome → spark burst → photo (inside the circle only) */}
+                <PortraitWelcome onPhaseChange={handlePortraitPhase}>
+                  {/* Real full portrait cutout including shoulders, white shirt, and bow tie */}
+                  <motion.img
+                    src="/assets/aistudio/Sufyan_hero_portrait.png"
+                    alt="Mohammed Sufyan — Software Engineer & Cloud Solutions Architect"
+                    animate={shouldReduceMotion ? undefined : { y: [1, -1.5, 1] }}
+                    transition={{ duration: 5.5, repeat: Infinity, ease: 'easeInOut' }}
+                    className="relative z-10 w-full h-full object-contain object-bottom scale-[1.01] drop-shadow-[0_10px_24px_rgba(0,0,0,0.65)]"
+                  />
 
-                {/* Subtle bottom vignette keeping bow tie and shirt crisp */}
-                <div
-                  aria-hidden="true"
-                  className="pointer-events-none absolute inset-x-0 bottom-0 h-10 z-20 bg-gradient-to-t from-[#06080d]/45 via-[#06080d]/15 to-transparent"
-                />
+                  {/* Subtle bottom vignette keeping bow tie and shirt crisp */}
+                  <div
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-x-0 bottom-0 h-10 z-20 bg-gradient-to-t from-[#06080d]/45 via-[#06080d]/15 to-transparent"
+                  />
 
-                {/* Subtle glass light sweep */}
-                <motion.div
-                  aria-hidden="true"
-                  animate={
-                    shouldReduceMotion
-                      ? undefined
-                      : { x: ['-130%', '230%'], opacity: [0, 0.5, 0] }
-                  }
-                  transition={{ duration: 3.4, repeat: Infinity, repeatDelay: 5.5, ease: 'easeInOut' }}
-                  className="pointer-events-none absolute inset-y-0 left-0 w-1/3 z-30 bg-gradient-to-r from-transparent via-cyan-200/15 to-transparent skew-x-[-20deg] print:hidden"
-                />
+                  {/* Subtle glass light sweep */}
+                  <motion.div
+                    aria-hidden="true"
+                    animate={
+                      shouldReduceMotion
+                        ? undefined
+                        : { x: ['-130%', '230%'], opacity: [0, 0.5, 0] }
+                    }
+                    transition={{ duration: 3.4, repeat: Infinity, repeatDelay: 5.5, ease: 'easeInOut' }}
+                    className="pointer-events-none absolute inset-y-0 left-0 w-1/3 z-30 bg-gradient-to-r from-transparent via-cyan-200/15 to-transparent skew-x-[-20deg] print:hidden"
+                  />
+                </PortraitWelcome>
               </motion.div>
             </motion.div>
           </div>
         </div>
 
-        {/* 4-Column Statistics Strip */}
+        {/* 4-Column Statistics Strip — count-up syncs with portrait reveal */}
         <div className="mt-12 sm:mt-16 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 print:grid-cols-4 gap-4">
           {STATS.map((stat, idx) => (
             <SpotlightCard
@@ -352,13 +561,21 @@ export default function Hero({ onOpenResume, onOpenDigitalCard }: HeroProps) {
               animate={{ opacity: 1, y: 0 }}
               whileHover={{ y: -4 }}
               transition={{
-                opacity: { duration: 0.45, delay: 0.28 + idx * 0.07, ease: EASE_OUT_EXPO },
-                y: { duration: 0.45, delay: 0.28 + idx * 0.07, ease: EASE_OUT_EXPO },
+                opacity: {
+                  duration: 0.45,
+                  delay: (heroUnlocked ? 0.08 : 0.28) + idx * 0.07,
+                  ease: EASE_OUT_EXPO,
+                },
+                y: {
+                  duration: 0.45,
+                  delay: (heroUnlocked ? 0.08 : 0.28) + idx * 0.07,
+                  ease: EASE_OUT_EXPO,
+                },
               }}
               className="rounded-xl border border-slate-800/80 bg-[#0d121f]/70 p-5 hover:border-cyan-500/40 hover:shadow-lg hover:shadow-cyan-950/25 transition-colors group"
             >
               <div className="flex items-baseline gap-1 font-display font-extrabold text-3xl sm:text-4xl text-white tabular-nums tracking-tight group-hover:text-cyan-100 transition-colors">
-                <AnimatedMetric value={stat.value} />
+                <AnimatedMetric value={stat.value} active={heroUnlocked} />
                 {stat.fraction && (
                   <span className="text-lg text-slate-400 font-normal">{stat.fraction}</span>
                 )}

@@ -2,7 +2,9 @@ import { Quote, Compass } from 'lucide-react';
 import { motion } from 'motion/react';
 import { PERSONAL_INFO } from '../data/portfolioData';
 import { useTheme } from '../theme/ThemeProvider';
+import HeaderSpotlight from './HeaderSpotlight';
 import { Reveal, EASE_OUT_EXPO } from './MotionPrimitives';
+import SectionScanLine from './SectionScanLine';
 
 export default function Philosophy() {
   const { isLight } = useTheme();
@@ -16,16 +18,19 @@ export default function Philosophy() {
 
   return (
     <section id="philosophy" className="py-16 lg:py-24 border-b border-slate-800/80 bg-[#06080d] relative overflow-hidden">
+      <SectionScanLine />
       <div className="page-shell">
         {/* Section Heading */}
         <Reveal className="mb-10">
-          <div className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-cyan-400 tracking-wider uppercase mb-2">
-            <Compass className="w-3.5 h-3.5" />
-            <span>ARCHITECTURAL PROFILE</span>
-          </div>
-          <h2 className="text-2xl sm:text-3xl lg:text-4xl font-display font-bold text-white tracking-tight">
-            Personal Profile & Engineering Philosophy
-          </h2>
+          <HeaderSpotlight>
+            <div className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-cyan-400 tracking-wider uppercase mb-2">
+              <Compass className="w-3.5 h-3.5" />
+              <span>ARCHITECTURAL PROFILE</span>
+            </div>
+            <h2 className="text-2xl sm:text-3xl lg:text-4xl font-display font-bold text-white tracking-tight">
+              Personal Profile & Engineering Philosophy
+            </h2>
+          </HeaderSpotlight>
         </Reveal>
 
         {/* 2-Card Layout */}

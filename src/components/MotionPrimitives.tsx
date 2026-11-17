@@ -143,17 +143,38 @@ export function StaggerItem({
   );
 }
 
-export function AnimatedMetric({ value }: { value: string }) {
+function metricZero(value: string): string {
+  const match = value.match(/^(\d+(?:\.\d+)?)(.*)$/);
+  if (!match) return value;
+  const hasDecimal = match[1].includes('.');
+  return `${hasDecimal ? '0.0' : '0'}${match[2] || ''}`;
+}
+
+export function AnimatedMetric({
+  value,
+  active = true,
+}: {
+  value: string;
+  /** When false, hold at 0 until unlocked (e.g. after portrait welcome). */
+  active?: boolean;
+}) {
   const ref = useRef<HTMLSpanElement>(null);
   const inView = useInView(ref, { once: true, amount: 0.2 });
   const shouldReduceMotion = useReducedMotion();
-  const [display, setDisplay] = useState(value);
+  const [display, setDisplay] = useState(active || shouldReduceMotion ? value : metricZero(value));
 
   useEffect(() => {
-    if (!inView || shouldReduceMotion) {
+    if (shouldReduceMotion) {
       setDisplay(value);
       return;
     }
+
+    if (!active) {
+      setDisplay(metricZero(value));
+      return;
+    }
+
+    if (!inView) return;
 
     const match = value.match(/^(\d+(?:\.\d+)?)(.*)$/);
     if (!match) {
@@ -164,7 +185,7 @@ export function AnimatedMetric({ value }: { value: string }) {
     const target = parseFloat(match[1]);
     const suffix = match[2] || '';
     const hasDecimal = match[1].includes('.');
-    const durationMs = 950;
+    const durationMs = 1100;
     const start = performance.now();
     let frameId = 0;
 
@@ -186,7 +207,7 @@ export function AnimatedMetric({ value }: { value: string }) {
 
     frameId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frameId);
-  }, [inView, shouldReduceMotion, value]);
+  }, [active, inView, shouldReduceMotion, value]);
 
   return <span ref={ref}>{display}</span>;
 }

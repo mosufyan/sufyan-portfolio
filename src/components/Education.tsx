@@ -2,10 +2,12 @@ import { GraduationCap, Award, Calendar, MapPin } from 'lucide-react';
 import { motion } from 'motion/react';
 import { EDUCATION } from '../data/portfolioData';
 import { Reveal, StaggerContainer, StaggerItem, EASE_OUT_EXPO } from './MotionPrimitives';
+import SectionScanLine from './SectionScanLine';
 
 export default function Education() {
   return (
-    <section id="education" className="py-16 lg:py-24 border-b border-slate-800/80 bg-[#07090e]">
+    <section id="education" className="relative py-16 lg:py-24 border-b border-slate-800/80 bg-[#07090e]">
+      <SectionScanLine />
       <div className="page-shell">
         {/* Section Header */}
         <Reveal className="mb-10">

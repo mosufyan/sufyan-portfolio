@@ -12,11 +12,12 @@ import {
   UserPlus,
   Sparkles
 } from 'lucide-react';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { PERSONAL_INFO } from '../data/portfolioData';
 import { useTheme } from '../theme/ThemeProvider';
 import { downloadVCard } from '../utils/vcard';
 import { Reveal, EASE_OUT_EXPO } from './MotionPrimitives';
+import SectionScanLine from './SectionScanLine';
 
 interface ContactProps {
   onOpenDigitalCard?: () => void;
@@ -68,6 +69,7 @@ function formatSanJoseTime(): string {
 
 export default function Contact({ onOpenDigitalCard }: ContactProps) {
   const { isLight } = useTheme();
+  const shouldReduceMotion = useReducedMotion();
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -163,7 +165,8 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
   };
 
   return (
-    <section id="contact" className="py-16 lg:py-24 border-b border-slate-800/80 bg-[#06080d]">
+    <section id="contact" className="relative py-16 lg:py-24 border-b border-slate-800/80 bg-[#06080d]">
+      <SectionScanLine />
       <div className="page-shell">
         {/* Main 2-column split */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-stretch">
@@ -361,16 +364,48 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
                 {status === 'success' && (
                   <motion.div
                     key="contact-success"
-                    initial={{ opacity: 0, y: -8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -8 }}
-                    transition={{ duration: 0.25 }}
+                    initial={{ opacity: 0, y: -8, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -8, scale: 0.98 }}
+                    transition={{ duration: 0.35, ease: EASE_OUT_EXPO }}
                     role="status"
                     aria-live="polite"
-                    className="mb-6 p-4 rounded-xl bg-emerald-950/40 border border-emerald-500/40 text-emerald-300 text-xs sm:text-sm flex items-start gap-2.5"
+                    className="relative mb-6 overflow-hidden p-4 rounded-xl bg-emerald-950/40 border border-emerald-500/40 text-emerald-300 text-xs sm:text-sm flex items-start gap-2.5"
                   >
-                    <Check className="w-4 h-4 text-emerald-400 mt-0.5 shrink-0" />
-                    <div>
+                    {!shouldReduceMotion && (
+                      <>
+                        <motion.span
+                          aria-hidden="true"
+                          initial={{ scale: 0.35, opacity: 0.7 }}
+                          animate={{ scale: 2.6, opacity: 0 }}
+                          transition={{ duration: 1.05, ease: EASE_OUT_EXPO }}
+                          className="pointer-events-none absolute left-7 top-1/2 h-9 w-9 -translate-y-1/2 rounded-full border-2 border-emerald-400/55"
+                        />
+                        <motion.span
+                          aria-hidden="true"
+                          initial={{ scale: 0.35, opacity: 0.55 }}
+                          animate={{ scale: 3.2, opacity: 0 }}
+                          transition={{ duration: 1.25, delay: 0.12, ease: EASE_OUT_EXPO }}
+                          className="pointer-events-none absolute left-7 top-1/2 h-9 w-9 -translate-y-1/2 rounded-full border border-emerald-300/40"
+                        />
+                        <motion.span
+                          aria-hidden="true"
+                          initial={{ scale: 0.5, opacity: 0.45 }}
+                          animate={{ scale: 1.8, opacity: 0 }}
+                          transition={{ duration: 0.9, ease: EASE_OUT_EXPO }}
+                          className="pointer-events-none absolute left-7 top-1/2 h-9 w-9 -translate-y-1/2 rounded-full bg-emerald-400/25 blur-md"
+                        />
+                      </>
+                    )}
+                    <motion.span
+                      initial={shouldReduceMotion ? false : { scale: 0.6, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      transition={{ duration: 0.35, ease: EASE_OUT_EXPO }}
+                      className="relative z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-500/20 border border-emerald-400/40 mt-0.5"
+                    >
+                      <Check className="w-3.5 h-3.5 text-emerald-300" />
+                    </motion.span>
+                    <div className="relative z-10">
                       <strong className="font-semibold">Message Transmitted Successfully!</strong>
                       <p className="text-xs text-emerald-300/80 mt-1">
                         Your message has been delivered directly to {PERSONAL_INFO.email}. Mohammed will review it and reply promptly.

@@ -4,7 +4,9 @@ import { AnimatePresence, motion } from 'motion/react';
 import { WORK_EXPERIENCE } from '../data/portfolioData';
 import { doesRoleMatchSkill, doesTechTagMatchSkill } from '../utils/skillMatcher';
 import { CollapseTimeline, CollapseTimelineNode } from './CollapseTimeline';
+import HeaderSpotlight from './HeaderSpotlight';
 import { Reveal, EASE_OUT_EXPO } from './MotionPrimitives';
+import SectionScanLine from './SectionScanLine';
 
 interface ExperienceProps {
   selectedSkill: string | null;
@@ -136,10 +138,12 @@ export default function Experience({ selectedSkill, onSelectSkill, focusedCompan
   const totalMatchingRoles = filteredExperience.reduce((acc, comp) => acc + comp.roles.length, 0);
 
   return (
-    <section id="experience" className="py-16 lg:py-24 border-b border-slate-800/80 bg-[#07090e]">
+    <section id="experience" className="relative py-16 lg:py-24 border-b border-slate-800/80 bg-[#07090e]">
+      <SectionScanLine />
       <div className="page-shell">
         {/* Section Header */}
         <Reveal className="flex flex-col gap-6 mb-10">
+          <HeaderSpotlight>
           <div>
             <div className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-cyan-400 tracking-wider uppercase mb-2">
               <Briefcase className="w-3.5 h-3.5" />
@@ -152,6 +156,7 @@ export default function Experience({ selectedSkill, onSelectSkill, focusedCompan
               Comprehensive timeline spanning enterprise systems engineering, cloud architecture, SRE, and consulting engagements across Cisco, HCL Technologies, and Tata Consultancy Services — spanning the US, UK, and India.
             </p>
           </div>
+          </HeaderSpotlight>
 
           {/* Global Career & Delivery Footprint Strip (US · UK · India) */}
           <div className="rounded-2xl border border-slate-800/90 bg-[#0a0f1c]/90 p-4 sm:p-5 print:break-inside-avoid">
@@ -343,7 +348,7 @@ export default function Experience({ selectedSkill, onSelectSkill, focusedCompan
               const isExpanded = expandedCompanies[comp.company] ?? false;
 
               return (
-                <CollapseTimelineNode key={comp.company}>
+                <CollapseTimelineNode key={comp.company} pulse={isExpanded}>
                   <motion.div
                     layout
                     initial={{ opacity: 0, y: 18 }}

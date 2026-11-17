@@ -1,13 +1,65 @@
 import { Cpu, Layers, Server, Shield, Terminal, Activity, Sparkles, CheckCircle2, X, ArrowUpRight, Share2, Check } from 'lucide-react';
-import { useState } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
+import { MouseEvent as ReactMouseEvent, useRef, useState } from 'react';
+import { AnimatePresence, motion, useMotionValue, useReducedMotion, useSpring } from 'motion/react';
 import { CERTIFICATIONS, TECHNICAL_DISCIPLINES, WORK_EXPERIENCE } from '../data/portfolioData';
 import { doesCertMatchSkill, doesRoleMatchSkill } from '../utils/skillMatcher';
+import HeaderSpotlight from './HeaderSpotlight';
 import { Reveal, StaggerContainer, StaggerItem, EASE_OUT_EXPO, SpotlightCard } from './MotionPrimitives';
+import SectionScanLine from './SectionScanLine';
 
 interface SkillsProps {
   selectedSkill: string | null;
   onSelectSkill: (skill: string | null) => void;
+}
+
+function MagneticSkillTag({
+  label,
+  highlighted,
+  onToggle,
+}: {
+  label: string;
+  highlighted: boolean;
+  onToggle: () => void;
+}) {
+  const ref = useRef<HTMLButtonElement>(null);
+  const shouldReduceMotion = useReducedMotion();
+  const x = useMotionValue(0);
+  const y = useMotionValue(0);
+  const springX = useSpring(x, { stiffness: 260, damping: 18, mass: 0.4 });
+  const springY = useSpring(y, { stiffness: 260, damping: 18, mass: 0.4 });
+
+  const handleMove = (e: ReactMouseEvent<HTMLButtonElement>) => {
+    if (shouldReduceMotion || !ref.current) return;
+    const rect = ref.current.getBoundingClientRect();
+    const dx = e.clientX - (rect.left + rect.width / 2);
+    const dy = e.clientY - (rect.top + rect.height / 2);
+    x.set(dx * 0.32);
+    y.set(dy * 0.32);
+  };
+
+  const handleLeave = () => {
+    x.set(0);
+    y.set(0);
+  };
+
+  return (
+    <motion.button
+      ref={ref}
+      type="button"
+      style={shouldReduceMotion ? undefined : { x: springX, y: springY }}
+      whileTap={{ scale: 0.94 }}
+      onMouseMove={handleMove}
+      onMouseLeave={handleLeave}
+      onClick={onToggle}
+      className={`px-2.5 py-1 rounded text-[11px] font-mono transition-colors ${
+        highlighted
+          ? 'bg-cyan-500 text-slate-950 font-semibold shadow-sm shadow-cyan-500/30'
+          : 'bg-[#090d16] border border-slate-800/80 text-slate-300 hover:border-cyan-500/40 hover:text-cyan-200'
+      }`}
+    >
+      {label}
+    </motion.button>
+  );
 }
 
 export default function Skills({ selectedSkill, onSelectSkill }: SkillsProps) {
@@ -50,10 +102,12 @@ export default function Skills({ selectedSkill, onSelectSkill }: SkillsProps) {
   };
 
   return (
-    <section id="skills" className="py-16 lg:py-24 border-b border-slate-800/80 bg-[#06080d]">
+    <section id="skills" className="relative py-16 lg:py-24 border-b border-slate-800/80 bg-[#06080d]">
+      <SectionScanLine />
       <div className="page-shell">
         {/* Section Header */}
         <Reveal className="mb-10">
+          <HeaderSpotlight>
           <div className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-cyan-400 tracking-wider uppercase mb-2">
             <Cpu className="w-3.5 h-3.5" />
             <span>DISCIPLINE TAXONOMY</span>
@@ -64,6 +118,12 @@ export default function Skills({ selectedSkill, onSelectSkill }: SkillsProps) {
           <p className="mt-2 text-sm sm:text-base text-slate-400 max-w-3xl">
             Enterprise expertise across multi-cloud infrastructure, autonomous agentic AI systems, Zero Trust security governance, and high-throughput telemetry pipelines.
           </p>
+          {!selectedSkill && (
+            <p className="mt-3 text-[11px] sm:text-xs font-mono text-cyan-400/90 tracking-wide print:hidden">
+              Tip: click a technology tag to cross-filter Experience &amp; Certifications
+            </p>
+          )}
+          </HeaderSpotlight>
 
           <AnimatePresence>
             {selectedSkill && (
@@ -146,24 +206,18 @@ export default function Skills({ selectedSkill, onSelectSkill }: SkillsProps) {
                       {discipline.description}
                     </p>
 
-                    {/* Skills tags */}
+                    {/* Skills tags — magnetic hover pull */}
                     <div className="mt-5 flex flex-wrap gap-1.5">
                       {discipline.technologies.map((tech, idx) => {
                         const isHighlighted = selectedSkill === tech;
 
                         return (
-                          <motion.button
+                          <MagneticSkillTag
                             key={idx}
-                            whileTap={{ scale: 0.94 }}
-                            onClick={() => onSelectSkill(isHighlighted ? null : tech)}
-                            className={`px-2.5 py-1 rounded text-[11px] font-mono transition-all ${
-                              isHighlighted
-                                ? 'bg-cyan-500 text-slate-950 font-semibold shadow-sm shadow-cyan-500/30'
-                                : 'bg-[#090d16] border border-slate-800/80 text-slate-300 hover:border-cyan-500/40 hover:text-cyan-200'
-                            }`}
-                          >
-                            {tech}
-                          </motion.button>
+                            label={tech}
+                            highlighted={isHighlighted}
+                            onToggle={() => onSelectSkill(isHighlighted ? null : tech)}
+                          />
                         );
                       })}
                     </div>

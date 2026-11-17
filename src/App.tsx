@@ -128,11 +128,6 @@ export default function App() {
           <FloatingBackToTop />
           <OfflineIndicator />
 
-          <AnnouncementsModal
-            isOpen={announcementsOpen}
-            onClose={() => setAnnouncementsOpen(false)}
-          />
-
           <CredentialModal
             certification={selectedCert}
             onClose={() => setSelectedCert(null)}
@@ -140,6 +135,11 @@ export default function App() {
         </div>
 
         {/* Outside site-theme so light remapping cannot wash out dark chrome */}
+        <AnnouncementsModal
+          isOpen={announcementsOpen}
+          onClose={() => setAnnouncementsOpen(false)}
+        />
+
         <CommandPalette
           isOpen={commandPaletteOpen}
           onClose={() => setCommandPaletteOpen(false)}
