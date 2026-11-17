@@ -27,14 +27,14 @@ export default function Education() {
         </Reveal>
 
         <Reveal className="mb-8">
-          <div className="rounded-2xl border border-slate-800 bg-[#0d121f]/80 p-5 sm:p-6">
-            <div className="text-[10px] font-mono uppercase tracking-wider text-cyan-400 mb-2">
+          <div className="featured-story-card rounded-2xl border border-cyan-500/35 bg-gradient-to-br from-cyan-950/40 via-[#0d121f]/90 to-[#0a0e1a] p-5 sm:p-6">
+            <div className="featured-story-eyebrow text-[10px] font-mono uppercase tracking-wider text-cyan-400 mb-2">
               Featured academic note
             </div>
-            <h3 className="text-lg sm:text-xl font-display font-bold text-white tracking-tight">
+            <h3 className="featured-story-title text-lg sm:text-xl font-display font-bold text-white tracking-tight">
               Strong CS foundation, applied in production systems
             </h3>
-            <p className="mt-2 text-sm text-slate-300 leading-relaxed max-w-3xl">
+            <p className="featured-story-body mt-2 text-sm text-slate-300 leading-relaxed max-w-3xl">
               Formal training in computer science, algorithms, and systems thinking underpins 13+ years of
               shipping enterprise platforms — from compliance microservices to STO security data pipelines.
             </p>
