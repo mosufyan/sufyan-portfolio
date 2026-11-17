@@ -11,7 +11,6 @@ import {
   QrCode,
   UserPlus,
   Sparkles,
-  CalendarDays,
 } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { PERSONAL_INFO } from '../data/portfolioData';
@@ -189,32 +188,16 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
               </HeaderSpotlight>
 
               {/* Live Local Time & Role Readiness Indicator */}
-              <div className="mt-5 flex flex-col gap-2.5">
-                <div className="inline-flex flex-wrap items-center gap-2.5 px-3.5 py-2 rounded-xl border border-slate-800 bg-[#0b101d] text-xs font-mono w-fit">
-                  <span className="inline-flex items-center gap-1.5 text-emerald-300">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                    <span>Active · San Jose, CA</span>
-                  </span>
-                  <span className="text-slate-600">|</span>
-                  <span className="inline-flex items-center gap-1.5 text-cyan-300">
-                    <Clock className="w-3.5 h-3.5 text-cyan-400" />
-                    <span>{localTime}</span>
-                  </span>
-                </div>
-                <a
-                  href={PERSONAL_INFO.calendarUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className={`inline-flex w-fit items-center gap-2 px-3.5 py-2 rounded-xl border text-xs font-mono font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 ${
-                    isLight
-                      ? 'border-sky-300 bg-sky-50 text-sky-800 hover:bg-sky-100'
-                      : 'border-cyan-500/40 bg-cyan-950/50 text-cyan-200 hover:bg-cyan-900/60'
-                  }`}
-                >
-                  <CalendarDays className="w-3.5 h-3.5" />
-                  <span>Schedule a conversation</span>
-                  <ArrowUpRight className="w-3.5 h-3.5" />
-                </a>
+              <div className="mt-5 inline-flex flex-wrap items-center gap-2.5 px-3.5 py-2 rounded-xl border border-slate-800 bg-[#0b101d] text-xs font-mono">
+                <span className="inline-flex items-center gap-1.5 text-emerald-300">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>Active · San Jose, CA</span>
+                </span>
+                <span className="text-slate-600">|</span>
+                <span className="inline-flex items-center gap-1.5 text-cyan-300">
+                  <Clock className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>{localTime}</span>
+                </span>
               </div>
             </div>
 

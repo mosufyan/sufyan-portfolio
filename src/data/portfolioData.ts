@@ -77,8 +77,6 @@ export const PERSONAL_INFO = {
   tagline: 'Architecting high-velocity systems for distributed platforms, multi-cloud scalability, resilience and cloud governance across diverse ecosystems. 13+ years of enterprise experience with Cisco Systems Inc., HCL America Inc./HCLTech, and Tata Consultancy Services in the United States, United Kingdom, and India.',
   email: 'sufyan.net@gmail.com',
   linkedin: 'https://www.linkedin.com/in/mohammed-sufyan',
-  /** Schedule CTA — LinkedIn for now; swap for Calendly when available */
-  calendarUrl: 'https://www.linkedin.com/in/mohammed-sufyan',
   openTo:
     'Open to Software Engineer and platform roles spanning security data platforms, multi-cloud systems, and applied AI — San Jose / hybrid.',
   location: 'San Jose, California, United States · Hybrid',
