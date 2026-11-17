@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Briefcase, Building2, Calendar, Check, ChevronDown, ChevronsUpDown, Globe, MapPin, Award, Share2, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { WORK_EXPERIENCE } from '../data/portfolioData';
-import { doesRoleMatchSkill, doesTechTagMatchSkill } from '../utils/skillMatcher';
+import { SKILL_FILTER_PRESETS, WORK_EXPERIENCE } from '../data/portfolioData';
+import { doesRoleMatchSkill, doesTechTagMatchSkill, formatSkillFilterSummary } from '../utils/skillMatcher';
 import { CollapseTimeline, CollapseTimelineNode } from './CollapseTimeline';
 import HeaderSpotlight from './HeaderSpotlight';
 import CiscoName from './CiscoName';
@@ -10,8 +10,9 @@ import { Reveal, EASE_OUT_EXPO } from './MotionPrimitives';
 import SectionScanLine from './SectionScanLine';
 
 interface ExperienceProps {
-  selectedSkill: string | null;
+  selectedSkills: string[];
   onSelectSkill: (skill: string | null) => void;
+  onApplySkills: (skills: string[]) => void;
   focusedCompany?: { name: string; seq: number } | null;
 }
 
@@ -51,7 +52,7 @@ const GLOBAL_FOOTPRINT = [
   },
 ];
 
-export default function Experience({ selectedSkill, onSelectSkill, focusedCompany }: ExperienceProps) {
+export default function Experience({ selectedSkills, onSelectSkill, onApplySkills, focusedCompany }: ExperienceProps) {
   const [activeFilter, setActiveFilter] = useState<'all' | 'cisco' | 'hcl' | 'tcs'>('all');
   const [linkCopied, setLinkCopied] = useState(false);
   const [expandedCompanies, setExpandedCompanies] = useState<Record<string, boolean>>({
@@ -59,20 +60,22 @@ export default function Experience({ selectedSkill, onSelectSkill, focusedCompan
     'HCL America Inc./HCLTech': false,
     'Tata Consultancy Services': false
   });
+  const skillFilter = formatSkillFilterSummary(selectedSkills);
+  const hasSkillFilter = skillFilter.count > 0;
 
   useEffect(() => {
-    if (!selectedSkill) return;
+    if (!hasSkillFilter) return;
     setActiveFilter('all');
     setExpandedCompanies((prev) => {
       const next = { ...prev };
       for (const comp of WORK_EXPERIENCE) {
-        if (comp.roles.some((r) => doesRoleMatchSkill(r, selectedSkill))) {
+        if (comp.roles.some((r) => doesRoleMatchSkill(r, selectedSkills))) {
           next[comp.company] = true;
         }
       }
       return next;
     });
-  }, [selectedSkill]);
+  }, [hasSkillFilter, selectedSkills]);
 
   useEffect(() => {
     if (!focusedCompany) return;
@@ -113,10 +116,10 @@ export default function Experience({ selectedSkill, onSelectSkill, focusedCompan
     return true;
   })
     .map((comp) => {
-      if (!selectedSkill) return comp;
+      if (!hasSkillFilter) return comp;
       return {
         ...comp,
-        roles: comp.roles.filter((role) => doesRoleMatchSkill(role, selectedSkill)),
+        roles: comp.roles.filter((role) => doesRoleMatchSkill(role, selectedSkills)),
       };
     })
     .filter((comp) => comp.roles.length > 0);
@@ -311,18 +314,46 @@ export default function Experience({ selectedSkill, onSelectSkill, focusedCompan
             )}
           </div>
 
+          <div className="flex flex-wrap items-center gap-1.5 print:hidden">
+            <span className="text-[10px] font-mono uppercase tracking-wider text-slate-500 mr-0.5">
+              Saved views
+            </span>
+            {SKILL_FILTER_PRESETS.map((preset) => {
+              const active =
+                preset.skills.length === selectedSkills.length &&
+                preset.skills.every((skill) =>
+                  selectedSkills.some((s) => s.toLowerCase() === skill.toLowerCase())
+                );
+              return (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => onApplySkills([...preset.skills])}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-mono border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 ${
+                    active
+                      ? 'skill-chip-active bg-cyan-500 border-cyan-500 text-slate-950 font-semibold'
+                      : 'bg-[#090d16] border-slate-800 text-slate-400 hover:text-slate-200 hover:border-cyan-500/40'
+                  }`}
+                >
+                  {preset.label}
+                </button>
+              );
+            })}
+          </div>
+
           <AnimatePresence>
-            {selectedSkill && (
+            {hasSkillFilter && (
               <motion.div
                 initial={{ opacity: 0, y: -6, scale: 0.97 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -4, scale: 0.97 }}
                 transition={{ duration: 0.2, ease: EASE_OUT_EXPO }}
-                className="flex flex-wrap items-center gap-2.5 px-3.5 py-2 rounded-xl bg-cyan-950/50 border border-cyan-500/40 text-xs font-mono text-cyan-200 w-fit print:hidden"
+                className="skill-filter-banner sticky top-16 z-20 flex flex-wrap items-center gap-2.5 px-3.5 py-2.5 rounded-xl bg-cyan-950/90 border border-cyan-500/40 text-xs font-mono text-cyan-200 w-full sm:w-fit shadow-lg shadow-cyan-950/20 backdrop-blur-md print:hidden"
               >
-                <span>
-                  Filtered by skill: <strong className="text-cyan-300">{selectedSkill}</strong> ({totalMatchingRoles}{' '}
-                  {totalMatchingRoles === 1 ? 'role' : 'roles'})
+                <span className="min-w-0">
+                  {skillFilter.label}:{' '}
+                  <strong className="text-cyan-300 break-words">{skillFilter.names}</strong>
+                  {' '}({totalMatchingRoles} {totalMatchingRoles === 1 ? 'role' : 'roles'})
                 </span>
                 <button
                   type="button"
@@ -336,10 +367,11 @@ export default function Experience({ selectedSkill, onSelectSkill, focusedCompan
                 <button
                   type="button"
                   onClick={() => onSelectSkill(null)}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 hover:text-white transition-colors"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-cyan-500 text-slate-950 font-semibold hover:bg-cyan-400 transition-colors"
+                  aria-label={skillFilter.count > 1 ? 'Clear all skill filters' : `Clear skill filter for ${skillFilter.names}`}
                 >
-                  <X className="w-3 h-3" />
-                  <span>Clear</span>
+                  <X className="w-3.5 h-3.5" />
+                  <span>{skillFilter.count > 1 ? 'Clear filters' : 'Clear filter'}</span>
                 </button>
               </motion.div>
             )}
@@ -423,29 +455,46 @@ export default function Experience({ selectedSkill, onSelectSkill, focusedCompan
                       initial={{ opacity: 0, height: 0 }}
                       animate={{ opacity: 1, height: 'auto' }}
                       exit={{ opacity: 0, height: 0 }}
-                      transition={{ duration: 0.32, ease: EASE_OUT_EXPO }}
-                      className="overflow-hidden print:!block print:!h-auto print:!opacity-100"
+                      transition={{ duration: 0.36, ease: EASE_OUT_EXPO }}
+                      className="overflow-hidden border-l-2 border-cyan-500/40 print:!block print:!h-auto print:!opacity-100 print:border-l-0"
                     >
                       <div className="p-5 sm:p-6 space-y-8 divide-y divide-slate-800/80">
                         {comp.roles.map((role, rIdx) => (
-                          <div key={rIdx} className={`${rIdx > 0 ? 'pt-8' : ''} print:break-inside-avoid`}>
-                            {/* Role Title and Meta */}
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
-                              <div>
-                                <h4 className="text-base sm:text-lg font-display font-semibold text-white flex items-center gap-2">
-                                  <span>{role.role}</span>
+                          <motion.div
+                            key={rIdx}
+                            initial={{ opacity: 0, y: 8 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ duration: 0.28, delay: rIdx * 0.04, ease: EASE_OUT_EXPO }}
+                            className={`${rIdx > 0 ? 'pt-8' : ''} print:break-inside-avoid`}
+                          >
+                            {/* Role Title and Meta — domain stays full-width so long names don't crush */}
+                            <div className="mb-2 space-y-1.5">
+                              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                <h4 className="min-w-0 text-base sm:text-lg font-display font-semibold text-white text-balance">
+                                  {role.role}
                                 </h4>
-                                <div className="text-xs font-mono text-cyan-400/90 mt-0.5">
-                                  {role.domain}
+                                <div className="flex flex-wrap items-center gap-2 font-mono text-xs text-slate-400 sm:justify-end sm:max-w-[min(100%,22rem)]">
+                                  <span className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-300 whitespace-nowrap">
+                                    {role.period}
+                                  </span>
+                                  <span className="text-slate-500 hidden sm:inline">|</span>
+                                  <span className="min-w-0 leading-snug">{role.location}</span>
                                 </div>
                               </div>
-                              <div className="flex flex-wrap items-center gap-2 font-mono text-xs text-slate-400 shrink-0">
-                                <span className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-300">
-                                  {role.period}
-                                </span>
-                                <span className="text-slate-500 hidden sm:inline">|</span>
-                                <span>{role.location}</span>
-                              </div>
+                              {role.domain && (
+                                <div className="text-xs font-mono text-cyan-400/90 leading-relaxed max-w-prose sm:max-w-none">
+                                  {role.domain}
+                                </div>
+                              )}
+                              {role.proofMetric && (
+                                <div className="inline-flex max-w-full items-start gap-2 rounded-lg border border-cyan-500/30 bg-cyan-950/35 px-2.5 py-1.5 text-[11px] font-mono text-cyan-200">
+                                  <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-cyan-400" aria-hidden="true" />
+                                  <span className="leading-snug">
+                                    <span className="uppercase tracking-wider text-cyan-400/80">Proof · </span>
+                                    {role.proofMetric}
+                                  </span>
+                                </div>
+                              )}
                             </div>
 
                             {/* Bullet Highlights */}
@@ -473,26 +522,35 @@ export default function Experience({ selectedSkill, onSelectSkill, focusedCompan
                                   Stack:
                                 </span>
                                 {role.technologies.map((tech, tIdx) => {
-                                  const isMatch = doesTechTagMatchSkill(tech, selectedSkill);
+                                  const isMatch = doesTechTagMatchSkill(tech, selectedSkills);
                                   return (
-                                    <button
+                                    <motion.button
                                       key={tIdx}
                                       type="button"
-                                      onClick={() => onSelectSkill(selectedSkill === tech ? null : tech)}
-                                      title={`Filter roles & certifications by ${tech}`}
-                                      className={`px-2 py-0.5 rounded text-[11px] font-mono transition-colors ${
+                                      initial={{ opacity: 0, y: 4 }}
+                                      animate={{ opacity: 1, y: 0 }}
+                                      transition={{ duration: 0.22, delay: 0.08 + tIdx * 0.02, ease: EASE_OUT_EXPO }}
+                                      onClick={() => onSelectSkill(tech)}
+                                      title={
                                         isMatch
-                                          ? 'bg-cyan-500/20 border border-cyan-400 text-cyan-200 font-semibold'
+                                          ? `Remove ${tech} from skill filters`
+                                          : `Add ${tech} to skill filters`
+                                      }
+                                      aria-pressed={isMatch}
+                                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 ${
+                                        isMatch
+                                          ? 'skill-chip-active bg-cyan-500 border border-cyan-500 text-slate-950 font-semibold'
                                           : 'bg-[#090d16] border border-slate-800 text-slate-300 hover:border-cyan-500/40 hover:text-cyan-200'
                                       }`}
                                     >
                                       {tech}
-                                    </button>
+                                      {isMatch && <X className="w-3 h-3 shrink-0 opacity-80" aria-hidden="true" />}
+                                    </motion.button>
                                   );
                                 })}
                               </div>
                             )}
-                          </div>
+                          </motion.div>
                         ))}
                       </div>
                     </motion.div>
@@ -504,22 +562,24 @@ export default function Experience({ selectedSkill, onSelectSkill, focusedCompan
                   <div className="hidden print:block p-5 sm:p-6 space-y-6 divide-y divide-slate-800/80">
                     {comp.roles.map((role, rIdx) => (
                       <div key={rIdx} className={`${rIdx > 0 ? 'pt-6' : ''} print:break-inside-avoid`}>
-                        <div className="flex flex-row items-center justify-between gap-2 mb-2">
-                          <div>
-                            <h4 className="text-base font-display font-semibold text-white">
+                        <div className="mb-2 space-y-1.5">
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                            <h4 className="min-w-0 text-base font-display font-semibold text-white">
                               {role.role}
                             </h4>
-                            <div className="text-xs font-mono text-cyan-400/90 mt-0.5">
-                              {role.domain}
+                            <div className="flex flex-wrap items-center gap-2 font-mono text-xs text-slate-400">
+                              <span className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-300 whitespace-nowrap">
+                                {role.period}
+                              </span>
+                              <span className="text-slate-500">|</span>
+                              <span>{role.location}</span>
                             </div>
                           </div>
-                          <div className="flex items-center gap-2 font-mono text-xs text-slate-400 shrink-0">
-                            <span className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-300">
-                              {role.period}
-                            </span>
-                            <span className="text-slate-500">|</span>
-                            <span>{role.location}</span>
-                          </div>
+                          {role.domain && (
+                            <div className="text-xs font-mono text-cyan-400/90 leading-relaxed">
+                              {role.domain}
+                            </div>
+                          )}
                         </div>
 
                         <ul className="space-y-2 text-xs text-slate-300 pl-1 my-3">
@@ -565,7 +625,8 @@ export default function Experience({ selectedSkill, onSelectSkill, focusedCompan
             {filteredExperience.length === 0 && (
               <div className="rounded-2xl border border-slate-800 bg-[#0d121f]/60 p-8 text-center space-y-3">
                 <p className="text-sm text-slate-400">
-                  No roles found in this company filter matching <strong className="text-cyan-300">{selectedSkill}</strong>.
+                  No roles found in this company filter matching{' '}
+                  <strong className="text-cyan-300">{skillFilter.names || 'selected skills'}</strong>.
                 </p>
                 <div className="flex flex-wrap items-center justify-center gap-2">
                   {activeFilter !== 'all' && (
@@ -577,13 +638,13 @@ export default function Experience({ selectedSkill, onSelectSkill, focusedCompan
                       Show All Companies
                     </button>
                   )}
-                  {selectedSkill && (
+                  {hasSkillFilter && (
                     <button
                       type="button"
                       onClick={() => onSelectSkill(null)}
                       className="px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-900 text-xs text-slate-300 hover:text-white transition-colors"
                     >
-                      Clear Skill Filter
+                      {skillFilter.count > 1 ? 'Clear Skill Filters' : 'Clear Skill Filter'}
                     </button>
                   )}
                 </div>

@@ -15,16 +15,31 @@ import AnnouncementsModal from './components/AnnouncementsModal';
 import CredentialModal from './components/CredentialModal';
 import CommandPalette from './components/CommandPalette';
 import FloatingBackToTop from './components/FloatingBackToTop';
+import MobileSectionToc from './components/MobileSectionToc';
 import OfflineIndicator from './components/OfflineIndicator';
 import DigitalCardModal from './components/DigitalCardModal';
 import { Certification } from './data/portfolioData';
+import { normalizeSelectedSkills, toggleSelectedSkill } from './utils/skillMatcher';
 
-function readSkillFromUrl(): string | null {
-  if (typeof window === 'undefined') return null;
-  const raw = new URLSearchParams(window.location.search).get('skill');
-  if (!raw) return null;
-  const cleaned = raw.trim().slice(0, 80);
-  return cleaned.length > 0 ? cleaned : null;
+function readSkillsFromUrl(): string[] {
+  if (typeof window === 'undefined') return [];
+  const params = new URLSearchParams(window.location.search);
+  const values = params.getAll('skill');
+  const skills = values
+    .flatMap((value) => value.split(','))
+    .map((skill) => skill.trim().slice(0, 80))
+    .filter((skill) => skill.length > 0);
+  return normalizeSelectedSkills(skills);
+}
+
+function writeSkillsToUrl(skills: string[]) {
+  if (typeof window === 'undefined') return;
+  const url = new URL(window.location.href);
+  url.searchParams.delete('skill');
+  for (const skill of skills) {
+    url.searchParams.append('skill', skill);
+  }
+  window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
 }
 
 export default function App() {
@@ -33,25 +48,27 @@ export default function App() {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [digitalCardOpen, setDigitalCardOpen] = useState(false);
   const [selectedCert, setSelectedCert] = useState<Certification | null>(null);
-  const [selectedSkill, setSelectedSkillState] = useState<string | null>(() => readSkillFromUrl());
+  const [selectedSkills, setSelectedSkillsState] = useState<string[]>(() => readSkillsFromUrl());
   const [focusedCompany, setFocusedCompany] = useState<{ name: string; seq: number } | null>(null);
 
   const setSelectedSkill = useCallback((skill: string | null) => {
-    setSelectedSkillState(skill);
-    if (typeof window === 'undefined') return;
-    const url = new URL(window.location.href);
-    if (skill) {
-      url.searchParams.set('skill', skill);
-    } else {
-      url.searchParams.delete('skill');
-    }
-    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+    setSelectedSkillsState((prev) => {
+      const next = toggleSelectedSkill(prev, skill);
+      writeSkillsToUrl(next);
+      return next;
+    });
   }, []);
 
-  // Sync browser back/forward navigation with ?skill= query parameter
+  const applySelectedSkills = useCallback((skills: string[]) => {
+    const next = normalizeSelectedSkills(skills);
+    setSelectedSkillsState(next);
+    writeSkillsToUrl(next);
+  }, []);
+
+  // Sync browser back/forward navigation with ?skill= query parameter(s)
   useEffect(() => {
     const onPopState = () => {
-      setSelectedSkillState(readSkillFromUrl());
+      setSelectedSkillsState(readSkillsFromUrl());
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
@@ -59,7 +76,7 @@ export default function App() {
 
   // Smoothly scroll to Experience if visitor arrives via a ?skill=... deep link
   useEffect(() => {
-    if (!readSkillFromUrl() || window.location.hash) return;
+    if (readSkillsFromUrl().length === 0 || window.location.hash) return;
     const timer = window.setTimeout(() => {
       const target = document.getElementById('experience');
       if (target) {
@@ -104,16 +121,18 @@ export default function App() {
               />
               <Philosophy />
               <Experience
-                selectedSkill={selectedSkill}
+                selectedSkills={selectedSkills}
                 onSelectSkill={setSelectedSkill}
+                onApplySkills={applySelectedSkills}
                 focusedCompany={focusedCompany}
               />
               <Skills
-                selectedSkill={selectedSkill}
+                selectedSkills={selectedSkills}
                 onSelectSkill={setSelectedSkill}
+                onApplySkills={applySelectedSkills}
               />
               <Certifications
-                selectedSkill={selectedSkill}
+                selectedSkills={selectedSkills}
                 onSelectSkill={setSelectedSkill}
                 onSelectCertification={(cert) => setSelectedCert(cert)}
               />
@@ -125,6 +144,7 @@ export default function App() {
             <Footer onOpenDigitalCard={() => setDigitalCardOpen(true)} />
           </div>
 
+          <MobileSectionToc />
           <FloatingBackToTop />
           <OfflineIndicator />
         </div>

@@ -65,7 +65,7 @@ interface ResumeModalProps {
   onClose: () => void;
 }
 
-type PresetMode = 'summary' | 'concise' | 'full' | 'custom';
+type PresetMode = 'summary' | 'concise' | 'full' | 'security' | 'platform' | 'fullstack' | 'custom';
 type ExperienceDepth = 'compact' | 'concise' | 'full';
 type SkillsDepth = 'compact' | 'full';
 type CertsDepth = 'top6' | 'top8' | 'full';
@@ -87,7 +87,7 @@ interface ExportConfig {
   awardsDepth: AwardsDepth;
 }
 
-const PRESETS: Record<'summary' | 'concise' | 'full', ExportConfig> = {
+const PRESETS: Record<'summary' | 'concise' | 'full' | 'security' | 'platform' | 'fullstack', ExportConfig> = {
   summary: {
     sections: {
       overview: true,
@@ -132,7 +132,52 @@ const PRESETS: Record<'summary' | 'concise' | 'full', ExportConfig> = {
     skillsDepth: 'full',
     certsDepth: 'full',
     awardsDepth: 'full'
-  }
+  },
+  security: {
+    sections: {
+      overview: true,
+      philosophy: true,
+      experience: true,
+      skills: true,
+      certifications: true,
+      awards: true,
+      education: true
+    },
+    experienceDepth: 'concise',
+    skillsDepth: 'full',
+    certsDepth: 'top8',
+    awardsDepth: 'featured'
+  },
+  platform: {
+    sections: {
+      overview: true,
+      philosophy: false,
+      experience: true,
+      skills: true,
+      certifications: true,
+      awards: true,
+      education: true
+    },
+    experienceDepth: 'full',
+    skillsDepth: 'full',
+    certsDepth: 'top8',
+    awardsDepth: 'featured'
+  },
+  fullstack: {
+    sections: {
+      overview: true,
+      philosophy: false,
+      experience: true,
+      skills: true,
+      certifications: true,
+      awards: false,
+      education: true
+    },
+    experienceDepth: 'concise',
+    skillsDepth: 'full',
+    certsDepth: 'top6',
+    awardsDepth: 'featured'
+  },
 };
 
 const FEATURED_CERT_IDS_SUMMARY = new Set([
@@ -226,7 +271,7 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
     };
   }, [isOpen, isGeneratingPdf, pendingAction, cvTheme, onClose]);
 
-  const applyPreset = (mode: 'summary' | 'concise' | 'full') => {
+  const applyPreset = (mode: keyof typeof PRESETS) => {
     setPreset(mode);
     setConfig(PRESETS[mode]);
   };
@@ -335,6 +380,12 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
         return 'Mohammed_Sufyan_Concise_CV.pdf';
       case 'full':
         return 'Mohammed_Sufyan_Full_Portfolio.pdf';
+      case 'security':
+        return 'Mohammed_Sufyan_Security_Track.pdf';
+      case 'platform':
+        return 'Mohammed_Sufyan_Platform_Track.pdf';
+      case 'fullstack':
+        return 'Mohammed_Sufyan_Fullstack_Track.pdf';
       default:
         return 'Mohammed_Sufyan_Custom_CV.pdf';
     }
@@ -650,7 +701,7 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
         pdf.line(marginX, pageHeight - 10, pageWidth - marginX, pageHeight - 10);
         pdf.setFont('helvetica', 'normal');
         pdf.setFontSize(7.5);
-        pdf.text('Mohammed Sufyan · Cloud Solutions Architect & Staff Engineer', marginX, pageHeight - 5.5);
+        pdf.text('Mohammed Sufyan · Software Engineer', marginX, pageHeight - 5.5);
         pdf.text(`Page ${p} of ${totalPages}`, pageWidth - marginX, pageHeight - 5.5, { align: 'right' });
       }
 
@@ -693,14 +744,24 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
     }
   };
 
-  const getFormatLabel = () =>
-    preset === 'summary'
-      ? 'Executive Summary'
-      : preset === 'concise'
-        ? 'Concise CV'
-        : preset === 'full'
-          ? 'Entire Portfolio'
-          : 'Custom Selection';
+  const getFormatLabel = () => {
+    switch (preset) {
+      case 'summary':
+        return 'Executive Summary';
+      case 'concise':
+        return 'Concise CV';
+      case 'full':
+        return 'Entire Portfolio';
+      case 'security':
+        return 'Security Track';
+      case 'platform':
+        return 'Platform Track';
+      case 'fullstack':
+        return 'Full-stack Track';
+      default:
+        return 'Custom Selection';
+    }
+  };
 
   const handleRequestPdf = () => {
     if (isGeneratingPdf || selectedSectionCount === 0) return;
@@ -873,13 +934,7 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
                       Export CV / Portfolio PDF
                     </span>
                     <span className="text-[10px] font-mono text-cyan-400 bg-cyan-950/40 border border-cyan-500/30 px-2 py-0.5 rounded uppercase whitespace-nowrap">
-                      {preset === 'summary'
-                        ? 'Executive Summary'
-                        : preset === 'concise'
-                          ? 'Concise CV'
-                          : preset === 'full'
-                            ? 'Entire Portfolio'
-                            : 'Custom Selection'}
+                      {getFormatLabel()}
                     </span>
                   </div>
                   <p className="text-[11px] font-mono text-slate-400 mt-0.5 leading-snug">
@@ -1037,9 +1092,12 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
             <div className="flex flex-wrap items-center gap-1.5 p-1 rounded-xl bg-[#0d121f] border border-slate-800 w-full">
               {(
                 [
-                  { id: 'summary' as const, short: 'Summary', long: 'Executive Summary (Recommended)' },
-                  { id: 'concise' as const, short: 'Concise CV', long: 'Concise CV' },
-                  { id: 'full' as const, short: 'Full Portfolio', long: 'Entire Portfolio (All Details)' },
+                  { id: 'summary' as const, short: 'Summary', long: 'Executive Summary' },
+                  { id: 'concise' as const, short: 'Concise', long: 'Concise CV' },
+                  { id: 'full' as const, short: 'Full', long: 'Full Portfolio' },
+                  { id: 'security' as const, short: 'Security', long: 'Security Track' },
+                  { id: 'platform' as const, short: 'Platform', long: 'Platform Track' },
+                  { id: 'fullstack' as const, short: 'Full-stack', long: 'Full-stack Track' },
                 ]
               ).map((item) => {
                 const active = preset === item.id;
@@ -1047,7 +1105,7 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
                   <button
                     key={item.id}
                     onClick={() => applyPreset(item.id)}
-                    className={`relative px-3 py-1.5 text-xs font-medium rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
+                    className={`relative px-3 py-1.5 text-xs font-medium rounded-lg transition-colors cursor-pointer whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 ${
                       active ? 'text-slate-950 font-semibold' : 'text-slate-400 hover:text-white'
                     }`}
                   >
@@ -1059,14 +1117,8 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
                       />
                     )}
                     <span className="relative z-10">
-                      {item.id === 'concise' ? (
-                        item.long
-                      ) : (
-                        <>
-                          <span className="sm:hidden">{item.short}</span>
-                          <span className="hidden sm:inline">{item.long}</span>
-                        </>
-                      )}
+                      <span className="sm:hidden">{item.short}</span>
+                      <span className="hidden sm:inline">{item.long}</span>
                     </span>
                   </button>
                 );
@@ -1077,6 +1129,9 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
               {preset === 'summary' && 'Stats + Recent Roles + Compact Skills + Top 6 Certs + Education'}
               {preset === 'concise' && `All Roles (Top 3 Highlights) + Full Skills + Top 8 Certs + Key Honors + ${visibleRecommendations.length} Endorsements`}
               {preset === 'full' && `Complete Archive: All ${totalRoleCount} Roles + All ${CERTIFICATIONS.length} Certs + All ${AWARDS.length} Honors + ${LINKEDIN_RECOMMENDATIONS.length} Recommendations`}
+              {preset === 'security' && 'Security-leaning CV: philosophy + concise roles + full skills + top certs + featured honors'}
+              {preset === 'platform' && 'Platform-leaning CV: full roles + full skills + top certs + featured honors'}
+              {preset === 'fullstack' && 'Delivery-leaning CV: concise roles + full skills + top 6 certs + education'}
               {preset === 'custom' && `${selectedSectionCount} section${selectedSectionCount === 1 ? '' : 's'} selected for export`}
             </div>
           </div>
@@ -1442,27 +1497,24 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
                         data-pdf-block
                         className={`pdf-keep-together rounded-xl border p-4 sm:p-5 ${t.card}`}
                       >
-                        <div
-                          data-pdf-subblock
-                          className="flex flex-col sm:flex-row pdf-row-sm sm:items-center justify-between gap-2 mb-2.5"
-                        >
-                          <div>
-                            <h4 className={`text-sm sm:text-base font-display font-semibold ${t.heading}`}>
+                        <div data-pdf-subblock className="mb-2.5 space-y-1.5">
+                          <div className="flex flex-col gap-2 sm:flex-row pdf-row-sm sm:items-start sm:justify-between">
+                            <h4 className={`min-w-0 text-sm sm:text-base font-display font-semibold text-balance ${t.heading}`}>
                               {role.role}
                             </h4>
-                            {role.domain && (
-                              <div className={`text-xs font-mono mt-0.5 ${t.accentSoft}`}>
-                                {role.domain}
-                              </div>
-                            )}
+                            <div className={`flex flex-wrap items-center gap-2 font-mono text-[11px] sm:justify-end sm:max-w-[min(100%,22rem)] ${t.muted}`}>
+                              <span className={`px-2 py-0.5 rounded border whitespace-nowrap ${t.periodPill}`}>
+                                {role.period}
+                              </span>
+                              <span className={t.subtle}>|</span>
+                              <span className="min-w-0 leading-snug">{role.location}</span>
+                            </div>
                           </div>
-                          <div className={`flex flex-wrap items-center gap-2 font-mono text-[11px] shrink-0 ${t.muted}`}>
-                            <span className={`px-2 py-0.5 rounded border ${t.periodPill}`}>
-                              {role.period}
-                            </span>
-                            <span className={t.subtle}>|</span>
-                            <span>{role.location}</span>
-                          </div>
+                          {role.domain && (
+                            <div className={`text-xs font-mono leading-relaxed ${t.accentSoft}`}>
+                              {role.domain}
+                            </div>
+                          )}
                         </div>
 
                         <ul className={`space-y-1.5 text-xs pl-1 my-3 ${t.body}`}>
@@ -1664,7 +1716,6 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
                                   <div className={`flex items-center justify-between pb-2.5 border-b text-[10px] font-mono ${t.divider}`}>
                                     <span className={t.muted}>
                                       {cert.issueDate}
-                                      {cert.expiryDate ? ` · EXP: ${cert.expiryDate}` : ''}
                                     </span>
                                     <span className={`flex items-center gap-1 font-medium ${t.emeraldText}`}>
                                       <CheckCircle className="w-3 h-3" />

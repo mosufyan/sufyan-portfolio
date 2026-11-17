@@ -109,7 +109,7 @@ export default function CredentialModal({ certification, onClose }: CredentialMo
                 <span>Issued by {certification.issuer}</span>
               </div>
 
-              <div className={`grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 rounded-xl border text-xs font-mono ${meta}`}>
+              <div className={`grid grid-cols-1 gap-3 p-4 rounded-xl border text-xs font-mono ${meta}`}>
                 <div>
                   <div className={`uppercase text-[10px] tracking-wider flex items-center gap-1 ${muted}`}>
                     <Calendar className="w-3 h-3" /> Issue Date
@@ -117,16 +117,7 @@ export default function CredentialModal({ certification, onClose }: CredentialMo
                   <div className={`font-semibold mt-0.5 ${body}`}>{certification.issueDate}</div>
                 </div>
 
-                <div>
-                  <div className={`uppercase text-[10px] tracking-wider flex items-center gap-1 ${muted}`}>
-                    <Calendar className="w-3 h-3" /> Expiry Status
-                  </div>
-                  <div className={`font-semibold mt-0.5 ${isLight ? 'text-emerald-700' : 'text-emerald-400'}`}>
-                    {certification.expiryDate ? `Valid thru ${certification.expiryDate}` : 'Permanent / Non-Expiring'}
-                  </div>
-                </div>
-
-                <div className={`sm:col-span-2 pt-2 border-t ${isLight ? 'border-slate-200' : 'border-slate-800/80'}`}>
+                <div className={`pt-2 border-t ${isLight ? 'border-slate-200' : 'border-slate-800/80'}`}>
                   <div className={`uppercase text-[10px] tracking-wider flex items-center gap-1 ${muted}`}>
                     <Hash className="w-3 h-3" /> Credential Identifier
                   </div>

@@ -200,6 +200,29 @@ export default function Awards() {
           </div>
         </Reveal>
 
+        {/* Featured recognition story */}
+        <Reveal className="mb-8">
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, amount: 0.2 }}
+            transition={{ duration: 0.45, ease: EASE_OUT_EXPO }}
+            className="rounded-2xl border border-cyan-500/35 bg-gradient-to-br from-cyan-950/40 via-[#0d121f]/90 to-[#0a0e1a] p-5 sm:p-6"
+          >
+            <div className="text-[10px] font-mono uppercase tracking-wider text-cyan-400 mb-2">
+              Featured story · Oct 2026
+            </div>
+            <h3 className="text-lg sm:text-xl font-display font-bold text-white tracking-tight">
+              Cisco Systems Inc. STO Data Platform Launch
+            </h3>
+            <p className="mt-2 text-sm text-slate-300 leading-relaxed max-w-3xl">
+              Awarded Cisco Play to Win Connected Recognition for shipping the security data platform at the
+              core of Project Atlas — unifying shared services and governed data so STO teams can build,
+              automate, and innovate with confidence.
+            </p>
+          </motion.div>
+        </Reveal>
+
         {/* Org Filter Pills + Expand/Collapse All */}
         <div className="flex flex-wrap items-center justify-between gap-3 mb-10 print:hidden">
           <div className="scroll-chips p-1.5 rounded-xl bg-[#0d121f]/70 border border-slate-800 w-full sm:w-fit sm:flex-wrap">
