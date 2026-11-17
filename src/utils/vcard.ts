@@ -9,12 +9,12 @@ export function buildVCardString(): string {
     'N:Sufyan;Mohammed;;;',
     `FN:${PERSONAL_INFO.name}`,
     'ORG:Cisco Systems Inc.',
-    'TITLE:Software Engineer - Cisco STO CTO Operations | Cloud Solutions Architect',
+    'TITLE:Software Engineer - Cisco Systems Inc. STO CTO Operations',
     `EMAIL;TYPE=INTERNET,PREF:${PERSONAL_INFO.email}`,
     `URL:${PORTFOLIO_CANONICAL_URL}`,
     `URL;TYPE=LinkedIn:${PERSONAL_INFO.linkedin}`,
     'ADR;TYPE=WORK:;;San Jose;CA;;United States',
-    'NOTE:13+ years Cloud Solutions Architect & Staff Software Engineer across Cisco, HCL America, and TCS (US, UK, India).',
+    'NOTE:13+ years Cloud Solutions Architect & Staff Software Engineer across Cisco Systems Inc., HCL America Inc./HCLTech, and TCS (US, UK, India).',
     'END:VCARD',
   ];
   return lines.join('\r\n');

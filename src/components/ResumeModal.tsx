@@ -1227,16 +1227,13 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
                 <div data-pdf-block className="pdf-keep-together space-y-5">
                   <div className="flex flex-col sm:flex-row pdf-row-sm sm:items-center justify-between gap-5">
                     <div className="flex flex-col space-y-3 min-w-0">
-                      <div className={`text-[11px] font-mono tracking-wider uppercase pt-0.5 ${t.muted}`}>
-                        GLOBAL CLOUD INFRASTRUCTURE • SECOPS • MULTI-CLOUD ARCHITECTURE
-                      </div>
-
                       <h1 className={`pdf-title-lg text-3xl sm:text-5xl font-display font-extrabold tracking-tight leading-[1.08] ${t.heading}`}>
                         Hello! I&apos;m <span className={t.accentHero}>Mohammed Sufyan</span>
                       </h1>
 
                       <h2 className={`text-sm sm:text-base font-medium leading-snug ${t.subheading}`}>
-                        Software Engineer — Cisco Security &amp; Trust Organization (STO) CTO Operations | Cloud Solutions Architect
+                        <span className="sm:hidden print:hidden">Software Engineer — Cisco STO CTO Ops</span>
+                        <span className="hidden sm:inline print:inline">Software Engineer — Cisco Systems Inc. Security &amp; Trust Organization (STO) CTO Operations</span>
                       </h2>
                     </div>
 
@@ -1253,7 +1250,10 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
 
                   <div className="flex flex-col space-y-3.5">
                     <p className={`text-xs sm:text-sm leading-relaxed max-w-4xl font-light ${t.muted}`}>
-                      Architecting high-velocity security data platforms, multi-cloud vulnerability engines, and enterprise compliance systems across 13+ years of engineering experience with Cisco, HCL America Inc., and Tata Consultancy Services in the United States, United Kingdom, and India.
+                      Architecting high-velocity security data platforms, multi-cloud vulnerability engines, and enterprise compliance systems across 13+ years of engineering experience with{' '}
+                      <span className="sm:hidden print:hidden">Cisco</span>
+                      <span className="hidden sm:inline print:inline">Cisco Systems Inc.</span>
+                      , HCL America Inc./HCLTech, and Tata Consultancy Services in the United States, United Kingdom, and India.
                     </p>
 
                     <div className={`pt-1 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs font-mono ${t.body}`}>
@@ -1301,7 +1301,14 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
                         {stat.label}
                       </div>
                       <div className={`mt-1 text-[11px] ${t.muted}`}>
-                        {stat.sublabel}
+                        {stat.sublabel.includes('Cisco Systems Inc.') ? (
+                          <>
+                            <span className="sm:hidden print:hidden">{stat.sublabel.replace('Cisco Systems Inc.', 'Cisco')}</span>
+                            <span className="hidden sm:inline print:inline">{stat.sublabel}</span>
+                          </>
+                        ) : (
+                          stat.sublabel
+                        )}
                       </div>
                     </div>
                   ))}
@@ -1377,7 +1384,10 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
                   Professional Experience &amp; Leadership
                 </h2>
                 <p className={`mt-1.5 text-xs sm:text-sm max-w-4xl ${t.muted}`}>
-                  Comprehensive timeline spanning enterprise systems engineering, cloud architecture, SRE, and consulting engagements across Cisco, HCL Technologies, and Tata Consultancy Services — spanning the US, UK, and India.
+                  Comprehensive timeline spanning enterprise systems engineering, cloud architecture, SRE, and consulting engagements across{' '}
+                  <span className="sm:hidden print:hidden">Cisco</span>
+                  <span className="hidden sm:inline print:inline">Cisco Systems Inc.</span>
+                  , HCL America Inc./HCLTech, and Tata Consultancy Services — spanning the US, UK, and India.
                 </p>
               </div>
 
@@ -1397,7 +1407,14 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
                         <div>
                           <div className="flex items-center gap-2 flex-wrap">
                             <h3 className={`text-base sm:text-lg font-display font-bold ${t.heading}`}>
-                              {comp.company}
+                              {comp.company.includes('Cisco') ? (
+                                <>
+                                  <span className="sm:hidden print:hidden">Cisco</span>
+                                  <span className="hidden sm:inline print:inline">Cisco Systems Inc.</span>
+                                </>
+                              ) : (
+                                comp.company
+                              )}
                             </h3>
                             <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold tracking-wider border ${t.accentBadgeStrong}`}>
                               {comp.companyTag}
@@ -1725,7 +1742,10 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
                   {config.awardsDepth === 'featured' ? ` Selected of ${AWARDS.length}` : ' Citations'})
                 </h2>
                 <p className={`mt-1.5 text-xs sm:text-sm max-w-4xl ${t.muted}`}>
-                  Peer endorsements, corporate excellence citations, and leadership awards across Cisco, HCL Technologies, and Tata Consultancy Services.
+                  Peer endorsements, corporate excellence citations, and leadership awards across{' '}
+                  <span className="sm:hidden print:hidden">Cisco</span>
+                  <span className="hidden sm:inline print:inline">Cisco Systems Inc.</span>
+                  , HCL America Inc./HCLTech, and Tata Consultancy Services.
                 </p>
               </div>
 
@@ -1828,7 +1848,10 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
                         )
                       </h3>
                       <div className={`text-[10px] font-mono ${t.muted}`}>
-                        Direct managers, reports, and cross-functional engineering peers across Cisco, Apple, Actian &amp; TCS
+                        Direct managers, reports, and cross-functional engineering peers across{' '}
+                        <span className="sm:hidden print:hidden">Cisco</span>
+                        <span className="hidden sm:inline print:inline">Cisco Systems Inc.</span>
+                        , Apple, Actian &amp; TCS
                       </div>
                     </div>
                   </div>

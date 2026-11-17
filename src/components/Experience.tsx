@@ -5,6 +5,7 @@ import { WORK_EXPERIENCE } from '../data/portfolioData';
 import { doesRoleMatchSkill, doesTechTagMatchSkill } from '../utils/skillMatcher';
 import { CollapseTimeline, CollapseTimelineNode } from './CollapseTimeline';
 import HeaderSpotlight from './HeaderSpotlight';
+import CiscoName from './CiscoName';
 import { Reveal, EASE_OUT_EXPO } from './MotionPrimitives';
 import SectionScanLine from './SectionScanLine';
 
@@ -27,7 +28,7 @@ const GLOBAL_FOOTPRINT = [
     summary: '5 Enterprise Delivery Roles · Client Operations & Consulting',
   },
   {
-    company: 'HCL America Inc.',
+    company: 'HCL America Inc./HCLTech',
     shortName: 'HCL America (Actian & Cisco)',
     filterKey: 'hcl' as const,
     period: '2019 — 2026',
@@ -35,10 +36,10 @@ const GLOBAL_FOOTPRINT = [
     spanWeight: 47,
     focusDomain: 'Multi-Cloud Security & DevSecOps Architecture',
     regions: 'Bengaluru, India · San Francisco Bay Area, US',
-    summary: '4 Technical Leadership Roles · Cisco Cloud Security Account',
+    summary: '4 Technical Leadership Roles · Cisco Systems Inc. Cloud Security Account',
   },
   {
-    company: 'Cisco',
+    company: 'Cisco Systems Inc.',
     shortName: 'Cisco STO',
     filterKey: 'cisco' as const,
     period: '2026 — Present',
@@ -54,8 +55,8 @@ export default function Experience({ selectedSkill, onSelectSkill, focusedCompan
   const [activeFilter, setActiveFilter] = useState<'all' | 'cisco' | 'hcl' | 'tcs'>('all');
   const [linkCopied, setLinkCopied] = useState(false);
   const [expandedCompanies, setExpandedCompanies] = useState<Record<string, boolean>>({
-    'Cisco': false,
-    'HCL America Inc.': false,
+    'Cisco Systems Inc.': false,
+    'HCL America Inc./HCLTech': false,
     'Tata Consultancy Services': false
   });
 
@@ -153,7 +154,7 @@ export default function Experience({ selectedSkill, onSelectSkill, focusedCompan
               Professional Experience &amp; Leadership
             </h2>
             <p className="mt-2 text-sm sm:text-base text-slate-400 max-w-3xl">
-              Comprehensive timeline spanning enterprise systems engineering, cloud architecture, SRE, and consulting engagements across Cisco, HCL Technologies, and Tata Consultancy Services — spanning the US, UK, and India.
+              Comprehensive timeline spanning enterprise systems engineering, cloud architecture, SRE, and consulting engagements across <CiscoName />, HCL America Inc./HCLTech, and Tata Consultancy Services — spanning the US, UK, and India.
             </p>
           </div>
           </HeaderSpotlight>
@@ -219,7 +220,10 @@ export default function Experience({ selectedSkill, onSelectSkill, focusedCompan
                     ? '13+ Years Continuous Enterprise Delivery'
                     : GLOBAL_FOOTPRINT.find((g) => g.filterKey === activeFilter)?.focusDomain}
                 </span>
-                <span>2026 · Cisco STO</span>
+                <span>
+                  2026 · <span className="sm:hidden">Cisco</span>
+                  <span className="hidden sm:inline">Cisco Systems Inc.</span> STO
+                </span>
               </div>
             </div>
 
@@ -242,7 +246,7 @@ export default function Experience({ selectedSkill, onSelectSkill, focusedCompan
                       <span className="text-slate-400">{stage.durationLabel}</span>
                     </div>
                     <div className="mt-1 font-display font-bold text-sm sm:text-base text-white">
-                      {stage.company === 'Cisco' ? 'Cisco Systems Inc.' : stage.company}
+                      {stage.company.includes('Cisco') ? <CiscoName /> : stage.company}
                     </div>
                     <div className="mt-0.5 text-[11px] font-mono text-cyan-300/90">
                       {stage.focusDomain}
@@ -265,8 +269,8 @@ export default function Experience({ selectedSkill, onSelectSkill, focusedCompan
               {(
                 [
                   { id: 'all', label: 'All Roles', labelSm: 'All Roles (Current & Prior)' },
-                  { id: 'cisco', label: 'Cisco', labelSm: 'Cisco (Current)' },
-                  { id: 'hcl', label: 'HCL', labelSm: 'HCL America Inc.' },
+                  { id: 'cisco', label: 'Cisco', labelSm: 'Cisco Systems Inc. (Current)' },
+                  { id: 'hcl', label: 'HCL', labelSm: 'HCL America Inc./HCLTech' },
                   { id: 'tcs', label: 'TCS', labelSm: 'Tata Consultancy Services' },
                 ] as const
               ).map((tab) => {
@@ -378,7 +382,7 @@ export default function Experience({ selectedSkill, onSelectSkill, focusedCompan
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <h3 className="text-lg sm:text-xl font-display font-bold text-white">
-                          {comp.company}
+                          {comp.company.includes('Cisco') ? <CiscoName /> : comp.company}
                         </h3>
                         <span className="px-2 py-0.5 rounded text-[10px] font-mono font-semibold tracking-wider bg-cyan-950/60 border border-cyan-500/40 text-cyan-300">
                           {comp.companyTag}

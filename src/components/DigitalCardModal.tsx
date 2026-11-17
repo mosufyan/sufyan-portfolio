@@ -197,7 +197,9 @@ export default function DigitalCardModal({ isOpen, onClose }: DigitalCardModalPr
                         isLight ? 'text-sky-700' : 'text-cyan-400'
                       }`}
                     >
-                      Cisco STO · Principal Cloud Solutions Architect
+                      <span className="sm:hidden">Cisco</span>
+                      <span className="hidden sm:inline">Cisco Systems Inc.</span>
+                      {' '}STO · Software Engineer
                     </div>
                   </div>
                 </div>

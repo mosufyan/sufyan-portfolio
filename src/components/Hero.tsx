@@ -3,6 +3,7 @@ import { Download, Mail, Share2, AtSign, Check, MonitorSmartphone, QrCode } from
 import { AnimatePresence, motion, useMotionValue, useReducedMotion, useSpring } from 'motion/react';
 import { PERSONAL_INFO, STATS } from '../data/portfolioData';
 import { AnimatedMetric, EASE_OUT_EXPO, SpotlightCard } from './MotionPrimitives';
+import CiscoName from './CiscoName';
 import PortraitWelcome, { PortraitWelcomePhase } from './PortraitWelcome';
 
 interface HeroProps {
@@ -10,9 +11,9 @@ interface HeroProps {
   onOpenDigitalCard?: () => void;
 }
 
-const ROLE_MOBILE = 'Software Engineer — Cisco STO CTO Ops | Cloud Solutions Architect';
+const ROLE_MOBILE = 'Software Engineer — Cisco STO CTO Ops';
 const ROLE_DESKTOP =
-  'Software Engineer — Cisco Security & Trust Organization (STO) CTO Operations | Cloud Solutions Architect';
+  'Software Engineer — Cisco Systems Inc. Security & Trust Organization (STO) CTO Operations';
 
 function StaggerLetters({
   text,
@@ -234,17 +235,6 @@ export default function Hero({ onOpenResume, onOpenDigitalCard }: HeroProps) {
         {/* Main Hero Presentation */}
         <div className="grid grid-cols-1 md:grid-cols-12 items-center gap-8 lg:gap-12">
           <div className="md:col-span-7 xl:col-span-8 flex flex-col space-y-4">
-          {/* Kicker subtitle */}
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.45, delay: 0.04, ease: EASE_OUT_EXPO }}
-            className="text-[10px] sm:text-xs font-mono tracking-wider text-slate-400 uppercase pt-1 leading-relaxed"
-          >
-            <span className="sm:hidden">CLOUD • SECOPS • MULTI-CLOUD ARCHITECTURE</span>
-            <span className="hidden sm:inline">GLOBAL CLOUD INFRASTRUCTURE • SECOPS • MULTI-CLOUD ARCHITECTURE</span>
-          </motion.div>
-
           {/* Main Headline — letter stagger unlocks with portrait reveal */}
           <h1 className="text-[1.85rem] sm:text-5xl lg:text-6xl 2xl:text-7xl font-display font-extrabold tracking-tight text-white leading-[1.08] text-balance break-words">
             <span className="sr-only">Hello! I&apos;m Mohammed Sufyan</span>
@@ -291,7 +281,7 @@ export default function Hero({ onOpenResume, onOpenDigitalCard }: HeroProps) {
             transition={{ duration: 0.5, delay: 0.24, ease: EASE_OUT_EXPO }}
             className="text-slate-400 text-xs sm:text-base leading-relaxed max-w-3xl font-light pt-1"
           >
-            Architecting high-velocity security data platforms, multi-cloud vulnerability engines, and enterprise compliance systems across {PERSONAL_INFO.experienceYears} years of engineering experience with Cisco, HCL America Inc., and Tata Consultancy Services in the United States, United Kingdom, and India.
+            Architecting high-velocity security data platforms, multi-cloud vulnerability engines, and enterprise compliance systems across {PERSONAL_INFO.experienceYears} years of engineering experience with <CiscoName />, HCL America Inc./HCLTech, and Tata Consultancy Services in the United States, United Kingdom, and India.
           </motion.p>
 
           {/* Action Bar */}
@@ -584,7 +574,14 @@ export default function Hero({ onOpenResume, onOpenDigitalCard }: HeroProps) {
                 {stat.label}
               </div>
               <div className="mt-1 text-[11px] text-slate-400">
-                {stat.sublabel}
+                {stat.sublabel.includes('Cisco Systems Inc.') ? (
+                  <>
+                    <span className="sm:hidden">{stat.sublabel.replace('Cisco Systems Inc.', 'Cisco')}</span>
+                    <span className="hidden sm:inline">{stat.sublabel}</span>
+                  </>
+                ) : (
+                  stat.sublabel
+                )}
               </div>
             </SpotlightCard>
           ))}

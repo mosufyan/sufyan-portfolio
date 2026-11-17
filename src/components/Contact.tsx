@@ -37,7 +37,7 @@ const INTENT_PRESETS = [
     label: 'Security & AI Platforms',
     subject: 'Architecture Inquiry: Zero Trust & AI Data Platforms',
     starter:
-      'Hi Mohammed,\n\nI reviewed your Cisco STO and multi-cloud security work and would like to discuss an enterprise architecture challenge involving security data pipelines or GenAI.',
+      'Hi Mohammed,\n\nI reviewed your Cisco Systems Inc. STO and multi-cloud security work and would like to discuss an enterprise architecture challenge involving security data pipelines or GenAI.',
   },
   {
     id: 'advisory',
