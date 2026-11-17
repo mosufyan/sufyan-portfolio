@@ -25,7 +25,7 @@ export default function OfflineIndicator() {
     <div
       role="status"
       aria-live="polite"
-      className="fixed bottom-5 left-5 z-50 flex items-center gap-2 rounded-xl border border-amber-500/40 bg-amber-950/95 px-3.5 py-2 text-xs font-mono text-amber-200 shadow-lg backdrop-blur-md print:hidden"
+      className="fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] left-[max(1.25rem,env(safe-area-inset-left))] z-50 flex max-w-[calc(100vw-6.5rem)] items-center gap-2 rounded-xl border border-amber-500/40 bg-amber-950/95 px-3.5 py-2 text-xs font-mono text-amber-200 shadow-lg backdrop-blur-md print:hidden"
     >
       <WifiOff className="w-3.5 h-3.5 text-amber-400 shrink-0" />
       <span>Offline Mode — Viewing cached portfolio</span>

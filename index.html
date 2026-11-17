@@ -1,8 +1,20 @@
 <!doctype html>
-<html lang="en" class="scroll-smooth dark">
+<html lang="en" class="scroll-smooth dark" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('portfolio-site-theme');
+          if (t === 'light' || t === 'dark') {
+            document.documentElement.setAttribute('data-theme', t);
+            document.documentElement.classList.toggle('dark', t === 'dark');
+            document.documentElement.classList.toggle('light', t === 'light');
+          }
+        } catch (e) {}
+      })();
+    </script>
     <title>Mohammed Sufyan — Cloud Solutions Architect & Staff Engineer</title>
     <meta name="description" content="Executive portfolio, verified certifications, and career timeline of Mohammed Sufyan, Principal Cloud Solutions Architect and Distributed Systems Engineer." />
     <link rel="icon" href="/favicon.ico" />
@@ -47,7 +59,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   </head>
-  <body class="bg-[#07090e] text-slate-200 antialiased selection:bg-cyan-500/30 selection:text-cyan-200 min-h-screen">
+  <body class="antialiased min-h-screen">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

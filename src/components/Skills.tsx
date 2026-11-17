@@ -51,7 +51,7 @@ export default function Skills({ selectedSkill, onSelectSkill }: SkillsProps) {
 
   return (
     <section id="skills" className="py-16 lg:py-24 border-b border-slate-800/80 bg-[#06080d]">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div className="page-shell">
         {/* Section Header */}
         <Reveal className="mb-10">
           <div className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-cyan-400 tracking-wider uppercase mb-2">

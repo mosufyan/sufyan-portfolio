@@ -374,7 +374,7 @@ export default function CommandPalette({
           exit={{ opacity: 0 }}
           transition={{ duration: 0.16 }}
           onClick={onClose}
-          className="fixed inset-0 z-50 flex items-start justify-center bg-slate-950/80 backdrop-blur-sm px-4 pt-16 sm:pt-24 pb-8 overflow-y-auto print:hidden"
+          className="fixed inset-0 z-50 flex items-start justify-center bg-slate-950/80 backdrop-blur-sm px-3 sm:px-4 pt-[max(4rem,env(safe-area-inset-top))] sm:pt-24 pb-[max(2rem,env(safe-area-inset-bottom))] overflow-y-auto print:hidden"
           role="dialog"
           aria-modal="true"
           aria-label="Quick command palette"
@@ -386,9 +386,9 @@ export default function CommandPalette({
             transition={{ duration: 0.18, ease: EASE_OUT_EXPO }}
             onClick={(e) => e.stopPropagation()}
             onKeyDown={handleKeyDown}
-            className="w-full max-w-2xl rounded-2xl border border-slate-700/80 bg-[#0a0f1c] shadow-2xl shadow-cyan-950/40 overflow-hidden"
+            className="command-palette w-full max-w-2xl rounded-2xl border border-slate-700/80 bg-[#0a0f1c] text-slate-200 shadow-2xl shadow-cyan-950/40 overflow-hidden"
           >
-            {/* Search Input Header */}
+            {/* Search Input Header — always dark */}
             <div className="flex items-center gap-3 px-4 py-3.5 border-b border-slate-800/90 bg-[#070b14]">
               <Search className="w-4 h-4 text-cyan-400 shrink-0" />
               <input

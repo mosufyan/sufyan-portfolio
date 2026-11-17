@@ -33,7 +33,7 @@ export default function FloatingBackToTop() {
           onClick={scrollToTop}
           aria-label="Back to top"
           title="Back to top"
-          className="fixed bottom-5 right-5 z-40 flex h-11 w-11 items-center justify-center rounded-xl border border-cyan-500/40 bg-[#0d121f]/95 text-cyan-300 shadow-lg shadow-cyan-950/40 backdrop-blur-md hover:bg-cyan-950/80 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 print:hidden"
+          className="fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] right-[max(1.25rem,env(safe-area-inset-right))] z-40 flex h-11 w-11 items-center justify-center rounded-xl border border-cyan-500/40 bg-[#0d121f]/95 text-cyan-300 shadow-lg shadow-cyan-950/40 backdrop-blur-md hover:bg-cyan-950/80 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 print:hidden"
         >
           <ArrowUp className="w-4 h-4" />
         </motion.button>

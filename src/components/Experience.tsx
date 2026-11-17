@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Briefcase, Building2, Calendar, Check, ChevronDown, ChevronsUpDown, Globe, MapPin, Award, Share2, X } from 'lucide-react';
-import { AnimatePresence, motion, useScroll, useSpring } from 'motion/react';
+import { AnimatePresence, motion } from 'motion/react';
 import { WORK_EXPERIENCE } from '../data/portfolioData';
 import { doesRoleMatchSkill, doesTechTagMatchSkill } from '../utils/skillMatcher';
+import { CollapseTimeline, CollapseTimelineNode } from './CollapseTimeline';
 import { Reveal, EASE_OUT_EXPO } from './MotionPrimitives';
 
 interface ExperienceProps {
@@ -50,16 +51,6 @@ const GLOBAL_FOOTPRINT = [
 export default function Experience({ selectedSkill, onSelectSkill, focusedCompany }: ExperienceProps) {
   const [activeFilter, setActiveFilter] = useState<'all' | 'cisco' | 'hcl' | 'tcs'>('all');
   const [linkCopied, setLinkCopied] = useState(false);
-  const timelineRef = useRef<HTMLDivElement>(null);
-  const { scrollYProgress } = useScroll({
-    target: timelineRef,
-    offset: ['start 75%', 'end 65%'],
-  });
-  const railScaleY = useSpring(scrollYProgress, {
-    stiffness: 180,
-    damping: 30,
-    restDelta: 0.001,
-  });
   const [expandedCompanies, setExpandedCompanies] = useState<Record<string, boolean>>({
     'Cisco': false,
     'HCL America Inc.': false,
@@ -146,7 +137,7 @@ export default function Experience({ selectedSkill, onSelectSkill, focusedCompan
 
   return (
     <section id="experience" className="py-16 lg:py-24 border-b border-slate-800/80 bg-[#07090e]">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div className="page-shell">
         {/* Section Header */}
         <Reveal className="flex flex-col gap-6 mb-10">
           <div>
@@ -265,13 +256,13 @@ export default function Experience({ selectedSkill, onSelectSkill, focusedCompan
 
           {/* Interactive Filter Pills + Expand/Collapse All */}
           <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
-            <div className="flex flex-wrap items-center gap-1.5 p-1 rounded-xl bg-[#0d121f] border border-slate-800 w-full sm:w-fit">
+            <div className="scroll-chips p-1 rounded-xl bg-[#0d121f] border border-slate-800 w-full sm:w-fit sm:flex-wrap">
               {(
                 [
-                  { id: 'all', label: 'All Roles (Current & Prior)' },
-                  { id: 'cisco', label: 'Cisco (Current)' },
-                  { id: 'hcl', label: 'HCL America Inc.' },
-                  { id: 'tcs', label: 'Tata Consultancy Services' },
+                  { id: 'all', label: 'All Roles', labelSm: 'All Roles (Current & Prior)' },
+                  { id: 'cisco', label: 'Cisco', labelSm: 'Cisco (Current)' },
+                  { id: 'hcl', label: 'HCL', labelSm: 'HCL America Inc.' },
+                  { id: 'tcs', label: 'TCS', labelSm: 'Tata Consultancy Services' },
                 ] as const
               ).map((tab) => {
                 const isActive = activeFilter === tab.id;
@@ -292,7 +283,8 @@ export default function Experience({ selectedSkill, onSelectSkill, focusedCompan
                         className="absolute inset-0 rounded-lg bg-cyan-500 shadow-sm"
                       />
                     )}
-                    <span className="relative z-10">{tab.label}</span>
+                    <span className="relative z-10 sm:hidden">{tab.label}</span>
+                    <span className="relative z-10 hidden sm:inline">{tab.labelSm}</span>
                   </button>
                 );
               })}
@@ -346,32 +338,12 @@ export default function Experience({ selectedSkill, onSelectSkill, focusedCompan
         </Reveal>
 
         {/* Timeline Stack */}
-        <div ref={timelineRef} className="relative md:pl-9 print:pl-0">
-          {/* Scroll-linked Vertical Timeline Rail (Tablet/Desktop) */}
-          <div
-            aria-hidden="true"
-            className="hidden md:block print:hidden absolute left-3 top-8 bottom-8 w-[2px] bg-slate-800/80 rounded-full overflow-hidden"
-          >
-            <motion.div
-              style={{ scaleY: railScaleY }}
-              className="w-full h-full origin-top bg-gradient-to-b from-cyan-400 via-sky-500 to-blue-500"
-            />
-          </div>
-
-          <div className="space-y-8">
+        <CollapseTimeline gapClassName="space-y-8">
             {filteredExperience.map((comp) => {
               const isExpanded = expandedCompanies[comp.company] ?? false;
 
               return (
-                <div key={comp.company} className="relative">
-                  {/* Timeline Node Marker */}
-                  <div
-                    aria-hidden="true"
-                    className="hidden md:flex print:hidden absolute -left-9 top-7 w-6 h-6 items-center justify-center rounded-full bg-[#07090e] border border-cyan-500/50 shadow-[0_0_12px_rgba(34,211,238,0.2)] z-10"
-                  >
-                    <span className="w-2 h-2 rounded-full bg-cyan-400" />
-                  </div>
-
+                <CollapseTimelineNode key={comp.company}>
                   <motion.div
                     layout
                     initial={{ opacity: 0, y: 18 }}
@@ -577,7 +549,7 @@ export default function Experience({ selectedSkill, onSelectSkill, focusedCompan
                   </div>
                 )}
                   </motion.div>
-                </div>
+                </CollapseTimelineNode>
               );
             })}
 
@@ -608,8 +580,7 @@ export default function Experience({ selectedSkill, onSelectSkill, focusedCompan
                 </div>
               </div>
             )}
-          </div>
-        </div>
+        </CollapseTimeline>
       </div>
     </section>
   );

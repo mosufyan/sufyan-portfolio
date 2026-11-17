@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Medal, Star, Trophy, Building2, Search, ChevronDown, ChevronsUpDown, ExternalLink, Linkedin, Quote } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Award, AWARDS_BY_ORGANIZATION, LINKEDIN_RECOMMENDATIONS } from '../data/portfolioData';
+import { CollapseTimeline, CollapseTimelineNode } from './CollapseTimeline';
 import { Reveal, EASE_OUT_EXPO, SpotlightCard } from './MotionPrimitives';
 
 export default function Awards() {
@@ -154,7 +155,7 @@ export default function Awards() {
 
   return (
     <section id="honors" className="py-16 lg:py-24 border-b border-slate-800/80 bg-[#06080d]">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div className="page-shell">
         {/* Section Header */}
         <Reveal className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10">
           <div>
@@ -195,13 +196,13 @@ export default function Awards() {
 
         {/* Org Filter Pills + Expand/Collapse All */}
         <div className="flex flex-wrap items-center justify-between gap-3 mb-10 print:hidden">
-          <div className="flex flex-wrap items-center gap-1.5 p-1.5 rounded-xl bg-[#0d121f]/70 border border-slate-800 w-full sm:w-fit">
+          <div className="scroll-chips p-1.5 rounded-xl bg-[#0d121f]/70 border border-slate-800 w-full sm:w-fit sm:flex-wrap">
             {(
               [
-                { id: 'all', label: `All Citations (${totalAwardsCount})` },
-                { id: 'Cisco', label: 'Cisco Systems' },
-                { id: 'HCL', label: 'HCL Technologies' },
-                { id: 'TCS', label: 'TCS' },
+                { id: 'all', short: `All (${totalAwardsCount})`, label: `All Citations (${totalAwardsCount})` },
+                { id: 'Cisco', short: 'Cisco', label: 'Cisco Systems' },
+                { id: 'HCL', short: 'HCL', label: 'HCL Technologies' },
+                { id: 'TCS', short: 'TCS', label: 'TCS' },
               ] as const
             ).map((tab) => {
               const isActive = filterOrg === tab.id;
@@ -222,7 +223,8 @@ export default function Awards() {
                       className="absolute inset-0 rounded-lg bg-cyan-500 shadow-sm"
                     />
                   )}
-                  <span className="relative z-10">{tab.label}</span>
+                  <span className="relative z-10 sm:hidden">{tab.short}</span>
+                  <span className="relative z-10 hidden sm:inline">{tab.label}</span>
                 </button>
               );
             })}
@@ -240,7 +242,8 @@ export default function Awards() {
           )}
         </div>
 
-        {/* Corporate Collapsible Grouped Lists */}
+        {/* Corporate Collapsible Grouped Lists + LinkedIn recommendations timeline */}
+        <CollapseTimeline gapClassName="space-y-0">
         <AnimatePresence mode="wait">
           <motion.div
             key={filterOrg}
@@ -254,8 +257,8 @@ export default function Awards() {
               const isExpanded = expandedOrgs[group.organization] ?? false;
 
               return (
+                <CollapseTimelineNode key={group.organization}>
                 <motion.div
-                  key={group.organization}
                   layout
                   initial={{ opacity: 0, y: 16 }}
                   whileInView={{ opacity: 1, y: 0 }}
@@ -336,6 +339,7 @@ export default function Awards() {
                     </div>
                   )}
                 </motion.div>
+                </CollapseTimelineNode>
               );
             })}
           </motion.div>
@@ -348,9 +352,10 @@ export default function Awards() {
         )}
 
         {/* LinkedIn Peer Recommendations & Endorsements (All 23 Verified) */}
+        <CollapseTimelineNode className="mt-10">
         <div
           id="linkedin-recommendations"
-          className="mt-10 rounded-2xl border border-slate-800 bg-[#0d121f]/70 overflow-hidden shadow-xl"
+          className="rounded-2xl border border-slate-800 bg-[#0d121f]/70 overflow-hidden shadow-xl"
         >
           {/* Collapsible Recommendations Header */}
           <div
@@ -566,6 +571,8 @@ export default function Awards() {
             </div>
           )}
         </div>
+        </CollapseTimelineNode>
+        </CollapseTimeline>
       </div>
     </section>
   );

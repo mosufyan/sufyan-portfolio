@@ -3,6 +3,8 @@ import { Award, Check, CheckCircle, ChevronDown, ChevronsUpDown, ExternalLink, S
 import { AnimatePresence, motion } from 'motion/react';
 import { CERTIFICATION_CATEGORIES, CERTIFICATIONS, Certification } from '../data/portfolioData';
 import { doesCertMatchSkill, doesTechTagMatchSkill } from '../utils/skillMatcher';
+import { useTheme } from '../theme/ThemeProvider';
+import { CollapseTimeline, CollapseTimelineNode } from './CollapseTimeline';
 import IssuerMark from './IssuerMark';
 import { Reveal, EASE_OUT_EXPO, SpotlightCard } from './MotionPrimitives';
 
@@ -17,6 +19,7 @@ export default function Certifications({
   onSelectSkill,
   onSelectCertification,
 }: CertificationsProps) {
+  const { theme } = useTheme();
   const [activeTab, setActiveTab] = useState<'all' | 'ai' | 'cloud' | 'data'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [linkCopied, setLinkCopied] = useState(false);
@@ -133,7 +136,7 @@ export default function Certifications({
 
             {/* Issuer with crisp brand mark */}
             <div className="mt-3 flex items-center gap-2">
-              <IssuerMark issuer={cert.issuer} size="sm" />
+              <IssuerMark issuer={cert.issuer} size="sm" theme={theme} />
               <span className="text-[11px] font-mono font-medium text-cyan-400 tracking-wide uppercase truncate">
                 {cert.issuer}
               </span>
@@ -200,7 +203,7 @@ export default function Certifications({
 
   return (
     <section id="certifications" className="py-16 lg:py-24 border-b border-slate-800/80 bg-[#07090e]">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div className="page-shell">
         {/* Section Header */}
         <Reveal className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10">
           <div>
@@ -252,7 +255,7 @@ export default function Certifications({
 
         {/* Filter Tabs + Expand/Collapse All */}
         <div className="flex flex-wrap items-center justify-between gap-3 mb-10 print:hidden">
-          <div className="flex flex-wrap items-center gap-2 p-1.5 rounded-xl bg-[#0d121f]/70 border border-slate-800 w-full sm:w-fit">
+          <div className="scroll-chips p-1.5 rounded-xl bg-[#0d121f]/70 border border-slate-800 w-full sm:w-fit sm:flex-wrap">
             <button
               onClick={() => setActiveTab('all')}
               className={`relative px-3.5 py-1.5 text-xs font-medium rounded-lg transition-colors whitespace-nowrap shrink-0 ${
@@ -269,7 +272,9 @@ export default function Certifications({
                 />
               )}
               <span className="relative z-10">
-                All Disciplines ({CERTIFICATION_CATEGORIES.reduce((acc, c) => acc + c.certs.length, 0)})
+                <span className="sm:hidden">All</span>
+                <span className="hidden sm:inline">All Disciplines</span>
+                {' '}({CERTIFICATION_CATEGORIES.reduce((acc, c) => acc + c.certs.length, 0)})
               </span>
             </button>
             {CERTIFICATION_CATEGORIES.map((cat) => {
@@ -353,14 +358,14 @@ export default function Certifications({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -6 }}
             transition={{ duration: 0.22, ease: EASE_OUT_EXPO }}
-            className="space-y-6"
           >
+            <CollapseTimeline>
             {filteredCategories.map((category) => {
               const isExpanded = expandedCategories[category.id] ?? false;
 
               return (
+                <CollapseTimelineNode key={category.id}>
                 <motion.div
-                  key={category.id}
                   layout
                   initial={{ opacity: 0, y: 16 }}
                   whileInView={{ opacity: 1, y: 0 }}
@@ -441,8 +446,10 @@ export default function Certifications({
                     </div>
                   )}
                 </motion.div>
+                </CollapseTimelineNode>
               );
             })}
+            </CollapseTimeline>
           </motion.div>
         </AnimatePresence>
 
