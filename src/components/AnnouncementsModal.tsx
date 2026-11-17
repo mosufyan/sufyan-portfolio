@@ -3,6 +3,7 @@ import { Bell, Calendar, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { ANNOUNCEMENTS } from '../data/portfolioData';
 import { useTheme } from '../theme/ThemeProvider';
+import ModalHeaderScan from './ModalHeaderScan';
 import { EASE_OUT_EXPO } from './MotionPrimitives';
 
 interface AnnouncementsModalProps {
@@ -69,6 +70,7 @@ export default function AnnouncementsModal({ isOpen, onClose }: AnnouncementsMod
           >
             {/* Header only — always dark */}
             <div className="relative flex items-start justify-between gap-3 px-5 sm:px-6 py-4 border-b border-slate-800/90 bg-[#0b101b] shrink-0">
+              <ModalHeaderScan active={isOpen} />
               <div className="absolute top-0 left-0 w-48 h-48 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
               <div className="relative flex items-center gap-3 min-w-0">
                 <div className="p-2 rounded-lg bg-cyan-950/60 border border-cyan-500/40 text-cyan-400 shrink-0">

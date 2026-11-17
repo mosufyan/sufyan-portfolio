@@ -3,6 +3,7 @@ import { Medal, Star, Trophy, Building2, Search, ChevronDown, ChevronsUpDown, Ex
 import { AnimatePresence, motion } from 'motion/react';
 import { Award, AWARDS_BY_ORGANIZATION, LINKEDIN_RECOMMENDATIONS } from '../data/portfolioData';
 import { CollapseTimeline, CollapseTimelineNode } from './CollapseTimeline';
+import HeaderSpotlight from './HeaderSpotlight';
 import { Reveal, EASE_OUT_EXPO, SpotlightCard } from './MotionPrimitives';
 import SectionScanLine from './SectionScanLine';
 
@@ -160,6 +161,7 @@ export default function Awards() {
       <div className="page-shell">
         {/* Section Header */}
         <Reveal className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10">
+          <HeaderSpotlight className="min-w-0">
           <div>
             <div className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-cyan-400 tracking-wider uppercase mb-2">
               <Trophy className="w-3.5 h-3.5" />
@@ -172,6 +174,7 @@ export default function Awards() {
               Peer endorsements, corporate excellence citations, and leadership awards across Cisco, HCL Technologies, and Tata Consultancy Services.
             </p>
           </div>
+          </HeaderSpotlight>
 
           {/* Search Box (targeted slot) */}
           <div className="relative w-full md:w-72 shrink-0 print:hidden">

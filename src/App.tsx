@@ -127,14 +127,14 @@ export default function App() {
 
           <FloatingBackToTop />
           <OfflineIndicator />
-
-          <CredentialModal
-            certification={selectedCert}
-            onClose={() => setSelectedCert(null)}
-          />
         </div>
 
         {/* Outside site-theme so light remapping cannot wash out dark chrome */}
+        <CredentialModal
+          certification={selectedCert}
+          onClose={() => setSelectedCert(null)}
+        />
+
         <AnnouncementsModal
           isOpen={announcementsOpen}
           onClose={() => setAnnouncementsOpen(false)}

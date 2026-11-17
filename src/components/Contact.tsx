@@ -16,6 +16,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { PERSONAL_INFO } from '../data/portfolioData';
 import { useTheme } from '../theme/ThemeProvider';
 import { downloadVCard } from '../utils/vcard';
+import HeaderSpotlight from './HeaderSpotlight';
 import { Reveal, EASE_OUT_EXPO } from './MotionPrimitives';
 import SectionScanLine from './SectionScanLine';
 
@@ -173,6 +174,7 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
           {/* Left Column: Direct channels and bio */}
           <Reveal className="lg:col-span-5 flex flex-col justify-between space-y-8">
             <div>
+              <HeaderSpotlight>
               <div className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-cyan-400 tracking-wider uppercase mb-2">
                 <MessageSquare className="w-3.5 h-3.5" />
                 <span>INITIATE COLLABORATION</span>
@@ -183,6 +185,7 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
               <p className="mt-3 text-sm sm:text-base text-slate-300 leading-relaxed font-light">
                 Interested in discussing Enterprise Cloud Architecture, Zero Trust implementations, Multi-Cloud scale, or Senior Engineering leadership opportunities?
               </p>
+              </HeaderSpotlight>
 
               {/* Live Local Time & Role Readiness Indicator */}
               <div className="mt-5 inline-flex flex-wrap items-center gap-2.5 px-3.5 py-2 rounded-xl border border-slate-800 bg-[#0b101d] text-xs font-mono">

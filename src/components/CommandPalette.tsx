@@ -30,6 +30,7 @@ import {
   WORK_EXPERIENCE,
 } from '../data/portfolioData';
 import { useTheme } from '../theme/ThemeProvider';
+import ModalHeaderScan from './ModalHeaderScan';
 import { EASE_OUT_EXPO } from './MotionPrimitives';
 
 interface CommandPaletteProps {
@@ -413,7 +414,8 @@ export default function CommandPalette({
             className={`command-palette w-full max-w-2xl rounded-2xl border overflow-hidden ${panel}`}
           >
             {/* Search bar only — always dark for brand consistency */}
-            <div className="flex items-center gap-3 px-4 py-3.5 border-b border-slate-800/90 bg-[#070b14]">
+            <div className="relative flex items-center gap-3 px-4 py-3.5 border-b border-slate-800/90 bg-[#070b14]">
+              <ModalHeaderScan active={isOpen} />
               <Search className="w-4 h-4 text-cyan-400 shrink-0" />
               <input
                 ref={inputRef}

@@ -1,6 +1,7 @@
 import { GraduationCap, Award, Calendar, MapPin } from 'lucide-react';
 import { motion } from 'motion/react';
 import { EDUCATION } from '../data/portfolioData';
+import HeaderSpotlight from './HeaderSpotlight';
 import { Reveal, StaggerContainer, StaggerItem, EASE_OUT_EXPO } from './MotionPrimitives';
 import SectionScanLine from './SectionScanLine';
 
@@ -11,16 +12,18 @@ export default function Education() {
       <div className="page-shell">
         {/* Section Header */}
         <Reveal className="mb-10">
-          <div className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-cyan-400 tracking-wider uppercase mb-2">
-            <GraduationCap className="w-3.5 h-3.5" />
-            <span>ACADEMIC FOUNDATION</span>
-          </div>
-          <h2 className="text-2xl sm:text-3xl lg:text-4xl font-display font-bold text-white tracking-tight">
-            Education &amp; Scholastic Honors
-          </h2>
-          <p className="mt-2 text-sm sm:text-base text-slate-400 max-w-3xl">
-            Formal engineering pedagogy grounded in computer science, distributed algorithms, discrete mathematics, and applied sciences.
-          </p>
+          <HeaderSpotlight>
+            <div className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-cyan-400 tracking-wider uppercase mb-2">
+              <GraduationCap className="w-3.5 h-3.5" />
+              <span>ACADEMIC FOUNDATION</span>
+            </div>
+            <h2 className="text-2xl sm:text-3xl lg:text-4xl font-display font-bold text-white tracking-tight">
+              Education &amp; Scholastic Honors
+            </h2>
+            <p className="mt-2 text-sm sm:text-base text-slate-400 max-w-3xl">
+              Formal engineering pedagogy grounded in computer science, distributed algorithms, discrete mathematics, and applied sciences.
+            </p>
+          </HeaderSpotlight>
         </Reveal>
 
         {/* 2-Card Grid */}
