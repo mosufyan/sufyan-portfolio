@@ -24,6 +24,7 @@ import {
   shouldAllowPreviewIframe,
   verifyTurnstileToken,
 } from './server/security.ts';
+import { getEmailPalette, parseEmailTheme, type EmailTheme } from './server/emailTheme.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -41,9 +42,11 @@ interface ContactPayload {
   phone?: string;
   subject?: string;
   message: string;
+  theme?: EmailTheme;
 }
 
 function buildPortfolioEmailHtml(payload: ContactPayload, timestamp: string): string {
+  const p = getEmailPalette(parseEmailTheme(payload.theme));
   const safeName = escapeHtml(payload.name);
   const safeEmail = escapeHtml(payload.email);
   const safePhone = payload.phone ? escapeHtml(payload.phone) : 'Not provided';
@@ -52,33 +55,35 @@ function buildPortfolioEmailHtml(payload: ContactPayload, timestamp: string): st
   const safeTime = escapeHtml(timestamp);
 
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="${p.theme}">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="${p.theme}" />
+  <meta name="supported-color-schemes" content="${p.theme}" />
   <title>Portfolio Inquiry — ${safeName}</title>
 </head>
-<body style="margin:0;padding:0;background-color:#06080d;font-family:'Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#e2e8f0;">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:#06080d;padding:32px 16px;">
+<body style="margin:0;padding:0;background-color:${p.pageBg};font-family:'Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:${p.text};">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:${p.pageBg};padding:32px 16px;">
     <tr>
       <td align="center">
-        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background-color:#0d121f;border:1px solid #1e293b;border-radius:16px;overflow:hidden;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background-color:${p.cardBg};border:1px solid ${p.border};border-radius:16px;overflow:hidden;">
           <!-- Header -->
           <tr>
-            <td style="padding:24px 28px;background-color:#080b13;border-bottom:1px solid #1e293b;">
+            <td style="padding:24px 28px;background-color:${p.headerBg};border-bottom:1px solid ${p.border};">
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
                 <tr>
                   <td style="vertical-align:middle;">
                     <table role="presentation" cellspacing="0" cellpadding="0">
                       <tr>
-                        <td style="width:38px;height:38px;border-radius:10px;background-color:#083344;border:1px solid #06b6d4;text-align:center;vertical-align:middle;font-weight:700;font-size:14px;color:#38bdf8;font-family:monospace;">
+                        <td style="width:38px;height:38px;border-radius:10px;background-color:${p.accentSoftBg};border:1px solid ${p.accentDeep};text-align:center;vertical-align:middle;font-weight:700;font-size:14px;color:${p.accent};font-family:monospace;">
                           MS
                         </td>
                         <td style="padding-left:12px;">
-                          <div style="font-size:15px;font-weight:700;color:#ffffff;letter-spacing:0.02em;">
+                          <div style="font-size:15px;font-weight:700;color:${p.textStrong};letter-spacing:0.02em;">
                             MOHAMMED SUFYAN
                           </div>
-                          <div style="font-size:11px;font-family:monospace;color:#38bdf8;text-transform:uppercase;letter-spacing:0.08em;margin-top:2px;">
+                          <div style="font-size:11px;font-family:monospace;color:${p.accent};text-transform:uppercase;letter-spacing:0.08em;margin-top:2px;">
                             Portfolio Inbound Transmission
                           </div>
                         </td>
@@ -86,7 +91,7 @@ function buildPortfolioEmailHtml(payload: ContactPayload, timestamp: string): st
                     </table>
                   </td>
                   <td align="right" style="vertical-align:middle;">
-                    <span style="display:inline-block;padding:5px 10px;border-radius:6px;background-color:#083344;border:1px solid #0891b2;color:#38bdf8;font-size:10px;font-family:monospace;font-weight:700;letter-spacing:0.08em;">
+                    <span style="display:inline-block;padding:5px 10px;border-radius:6px;background-color:${p.accentSoftBg};border:1px solid ${p.accentSoftBorder};color:${p.accent};font-size:10px;font-family:monospace;font-weight:700;letter-spacing:0.08em;">
                       P1 ROUTING
                     </span>
                   </td>
@@ -98,14 +103,14 @@ function buildPortfolioEmailHtml(payload: ContactPayload, timestamp: string): st
           <!-- Intro Banner -->
           <tr>
             <td style="padding:24px 28px 16px 28px;">
-              <div style="font-size:11px;font-family:monospace;color:#38bdf8;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:6px;">
+              <div style="font-size:11px;font-family:monospace;color:${p.accent};text-transform:uppercase;letter-spacing:0.1em;margin-bottom:6px;">
                 NEW MESSAGE RECEIVED
               </div>
-              <h1 style="margin:0;font-size:22px;font-weight:700;color:#ffffff;line-height:1.3;">
+              <h1 style="margin:0;font-size:22px;font-weight:700;color:${p.textStrong};line-height:1.3;">
                 ${safeSubject}
               </h1>
-              <p style="margin:8px 0 0 0;font-size:12px;font-family:monospace;color:#94a3b8;">
-                Received ${safeTime}
+              <p style="margin:8px 0 0 0;font-size:12px;font-family:monospace;color:${p.textMuted};">
+                Received ${safeTime} · Theme ${p.theme}
               </p>
             </td>
           </tr>
@@ -113,39 +118,39 @@ function buildPortfolioEmailHtml(payload: ContactPayload, timestamp: string): st
           <!-- Sender Details Card -->
           <tr>
             <td style="padding:8px 28px 16px 28px;">
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:#090d16;border:1px solid #1e293b;border-radius:12px;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:${p.panelBg};border:1px solid ${p.border};border-radius:12px;">
                 <tr>
-                  <td style="padding:14px 18px;border-bottom:1px solid #1e293b;width:50%;">
-                    <div style="font-size:10px;font-family:monospace;color:#64748b;text-transform:uppercase;letter-spacing:0.08em;">
+                  <td style="padding:14px 18px;border-bottom:1px solid ${p.border};width:50%;">
+                    <div style="font-size:10px;font-family:monospace;color:${p.textSoft};text-transform:uppercase;letter-spacing:0.08em;">
                       Sender Name
                     </div>
-                    <div style="font-size:14px;font-weight:600;color:#f8fafc;margin-top:4px;">
+                    <div style="font-size:14px;font-weight:600;color:${p.textStrong};margin-top:4px;">
                       ${safeName}
                     </div>
                   </td>
-                  <td style="padding:14px 18px;border-bottom:1px solid #1e293b;border-left:1px solid #1e293b;width:50%;">
-                    <div style="font-size:10px;font-family:monospace;color:#64748b;text-transform:uppercase;letter-spacing:0.08em;">
+                  <td style="padding:14px 18px;border-bottom:1px solid ${p.border};border-left:1px solid ${p.border};width:50%;">
+                    <div style="font-size:10px;font-family:monospace;color:${p.textSoft};text-transform:uppercase;letter-spacing:0.08em;">
                       Sender Email
                     </div>
-                    <div style="font-size:14px;font-weight:600;color:#38bdf8;margin-top:4px;">
-                      <a href="mailto:${safeEmail}" style="color:#38bdf8;text-decoration:none;">${safeEmail}</a>
+                    <div style="font-size:14px;font-weight:600;color:${p.accent};margin-top:4px;">
+                      <a href="mailto:${safeEmail}" style="color:${p.accent};text-decoration:none;">${safeEmail}</a>
                     </div>
                   </td>
                 </tr>
                 <tr>
                   <td style="padding:14px 18px;width:50%;">
-                    <div style="font-size:10px;font-family:monospace;color:#64748b;text-transform:uppercase;letter-spacing:0.08em;">
+                    <div style="font-size:10px;font-family:monospace;color:${p.textSoft};text-transform:uppercase;letter-spacing:0.08em;">
                       Phone Number
                     </div>
-                    <div style="font-size:13px;font-family:monospace;color:#cbd5e1;margin-top:4px;">
+                    <div style="font-size:13px;font-family:monospace;color:${p.text};margin-top:4px;">
                       ${safePhone}
                     </div>
                   </td>
-                  <td style="padding:14px 18px;border-left:1px solid #1e293b;width:50%;">
-                    <div style="font-size:10px;font-family:monospace;color:#64748b;text-transform:uppercase;letter-spacing:0.08em;">
+                  <td style="padding:14px 18px;border-left:1px solid ${p.border};width:50%;">
+                    <div style="font-size:10px;font-family:monospace;color:${p.textSoft};text-transform:uppercase;letter-spacing:0.08em;">
                       Subject / Intent
                     </div>
-                    <div style="font-size:13px;color:#cbd5e1;margin-top:4px;">
+                    <div style="font-size:13px;color:${p.text};margin-top:4px;">
                       ${safeSubject}
                     </div>
                   </td>
@@ -157,11 +162,11 @@ function buildPortfolioEmailHtml(payload: ContactPayload, timestamp: string): st
           <!-- Message Body -->
           <tr>
             <td style="padding:8px 28px 24px 28px;">
-              <div style="background-color:#090d16;border:1px solid #1e293b;border-left:3px solid #38bdf8;border-radius:12px;padding:18px 20px;">
-                <div style="font-size:10px;font-family:monospace;color:#38bdf8;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:10px;">
+              <div style="background-color:${p.panelBg};border:1px solid ${p.border};border-left:3px solid ${p.accent};border-radius:12px;padding:18px 20px;">
+                <div style="font-size:10px;font-family:monospace;color:${p.accent};text-transform:uppercase;letter-spacing:0.1em;margin-bottom:10px;">
                   Message Details
                 </div>
-                <div style="font-size:14px;line-height:1.65;color:#e2e8f0;">
+                <div style="font-size:14px;line-height:1.65;color:${p.text};">
                   ${safeMessage}
                 </div>
               </div>
@@ -171,7 +176,7 @@ function buildPortfolioEmailHtml(payload: ContactPayload, timestamp: string): st
           <!-- Action CTA -->
           <tr>
             <td style="padding:0 28px 28px 28px;">
-              <a href="mailto:${encodeURIComponent(payload.email)}?subject=${encodeURIComponent(`Re: ${payload.subject || 'Portfolio Inquiry'}`)}" style="display:inline-block;padding:11px 20px;background-color:#38bdf8;color:#020617;font-size:13px;font-weight:700;text-decoration:none;border-radius:8px;">
+              <a href="mailto:${encodeURIComponent(payload.email)}?subject=${encodeURIComponent(`Re: ${payload.subject || 'Portfolio Inquiry'}`)}" style="display:inline-block;padding:11px 20px;background-color:${p.ctaBg};color:${p.ctaText};font-size:13px;font-weight:700;text-decoration:none;border-radius:8px;">
                 Reply to ${safeName}
               </a>
             </td>
@@ -179,7 +184,7 @@ function buildPortfolioEmailHtml(payload: ContactPayload, timestamp: string): st
 
           <!-- Footer -->
           <tr>
-            <td style="padding:16px 28px;background-color:#05070b;border-top:1px solid #1e293b;font-size:11px;font-family:monospace;color:#64748b;">
+            <td style="padding:16px 28px;background-color:${p.footerBg};border-top:1px solid ${p.border};font-size:11px;font-family:monospace;color:${p.textSoft};">
               Dispatched from Mohammed Sufyan Portfolio · Zero Trust Distributed Systems · Multi-Cloud Architecture
             </td>
           </tr>
@@ -196,6 +201,7 @@ function buildPlainTextEmail(payload: ContactPayload, timestamp: string): string
     'MOHAMMED SUFYAN — PORTFOLIO INBOUND TRANSMISSION',
     '================================================',
     `Received: ${timestamp}`,
+    `Theme:    ${parseEmailTheme(payload.theme)}`,
     `Name:     ${payload.name}`,
     `Email:    ${payload.email}`,
     `Phone:    ${payload.phone || 'Not provided'}`,
@@ -223,6 +229,7 @@ interface CvAccessPayload {
   reason: string;
   action: 'pdf' | 'print' | 'ats' | 'install';
   formatLabel: string;
+  theme?: EmailTheme;
 }
 
 function formatCvActionLabel(action: CvAccessPayload['action']): string {
@@ -233,6 +240,7 @@ function formatCvActionLabel(action: CvAccessPayload['action']): string {
 }
 
 function buildCvAccessEmailHtml(payload: CvAccessPayload, timestamp: string, userAgent: string): string {
+  const p = getEmailPalette(parseEmailTheme(payload.theme));
   const safeName = escapeHtml(payload.name?.trim() || 'Not provided');
   const safeEmail = payload.email?.trim() ? escapeHtml(payload.email.trim()) : '';
   const safePhone = payload.phone?.trim() ? escapeHtml(payload.phone.trim()) : 'Not provided';
@@ -243,33 +251,35 @@ function buildCvAccessEmailHtml(payload: CvAccessPayload, timestamp: string, use
   const safeUa = escapeHtml(userAgent.slice(0, 180) || 'Unknown client');
 
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="${p.theme}">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="${p.theme}" />
+  <meta name="supported-color-schemes" content="${p.theme}" />
   <title>CV Export Alert — ${safeName}</title>
 </head>
-<body style="margin:0;padding:0;background-color:#06080d;font-family:'Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#e2e8f0;">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:#06080d;padding:32px 16px;">
+<body style="margin:0;padding:0;background-color:${p.pageBg};font-family:'Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:${p.text};">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:${p.pageBg};padding:32px 16px;">
     <tr>
       <td align="center">
-        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background-color:#0d121f;border:1px solid #1e293b;border-radius:16px;overflow:hidden;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background-color:${p.cardBg};border:1px solid ${p.border};border-radius:16px;overflow:hidden;">
           <!-- Header -->
           <tr>
-            <td style="padding:24px 28px;background-color:#080b13;border-bottom:1px solid #1e293b;">
+            <td style="padding:24px 28px;background-color:${p.headerBg};border-bottom:1px solid ${p.border};">
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
                 <tr>
                   <td style="vertical-align:middle;">
                     <table role="presentation" cellspacing="0" cellpadding="0">
                       <tr>
-                        <td style="width:38px;height:38px;border-radius:10px;background-color:#083344;border:1px solid #06b6d4;text-align:center;vertical-align:middle;font-weight:700;font-size:14px;color:#38bdf8;font-family:monospace;">
+                        <td style="width:38px;height:38px;border-radius:10px;background-color:${p.accentSoftBg};border:1px solid ${p.accentDeep};text-align:center;vertical-align:middle;font-weight:700;font-size:14px;color:${p.accent};font-family:monospace;">
                           MS
                         </td>
                         <td style="padding-left:12px;">
-                          <div style="font-size:15px;font-weight:700;color:#ffffff;letter-spacing:0.02em;">
+                          <div style="font-size:15px;font-weight:700;color:${p.textStrong};letter-spacing:0.02em;">
                             MOHAMMED SUFYAN
                           </div>
-                          <div style="font-size:11px;font-family:monospace;color:#38bdf8;text-transform:uppercase;letter-spacing:0.08em;margin-top:2px;">
+                          <div style="font-size:11px;font-family:monospace;color:${p.accent};text-transform:uppercase;letter-spacing:0.08em;margin-top:2px;">
                             CV Export &amp; Access Alert
                           </div>
                         </td>
@@ -277,7 +287,7 @@ function buildCvAccessEmailHtml(payload: CvAccessPayload, timestamp: string, use
                     </table>
                   </td>
                   <td align="right" style="vertical-align:middle;">
-                    <span style="display:inline-block;padding:5px 10px;border-radius:6px;background-color:#064e3b;border:1px solid #10b981;color:#6ee7b7;font-size:10px;font-family:monospace;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">
+                    <span style="display:inline-block;padding:5px 10px;border-radius:6px;background-color:${p.badgeSuccessBg};border:1px solid ${p.badgeSuccessBorder};color:${p.badgeSuccessText};font-size:10px;font-family:monospace;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">
                       ${safeAction}
                     </span>
                   </td>
@@ -289,14 +299,14 @@ function buildCvAccessEmailHtml(payload: CvAccessPayload, timestamp: string, use
           <!-- Headline -->
           <tr>
             <td style="padding:24px 28px 16px 28px;">
-              <div style="font-size:11px;font-family:monospace;color:#38bdf8;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:6px;">
+              <div style="font-size:11px;font-family:monospace;color:${p.accent};text-transform:uppercase;letter-spacing:0.1em;margin-bottom:6px;">
                 RESUME / PORTFOLIO ACCESSED
               </div>
-              <h1 style="margin:0;font-size:21px;font-weight:700;color:#ffffff;line-height:1.3;">
+              <h1 style="margin:0;font-size:21px;font-weight:700;color:${p.textStrong};line-height:1.3;">
                 ${safeFormat} (${safeAction})
               </h1>
-              <p style="margin:8px 0 0 0;font-size:12px;font-family:monospace;color:#94a3b8;">
-                Exported ${safeTime}
+              <p style="margin:8px 0 0 0;font-size:12px;font-family:monospace;color:${p.textMuted};">
+                Exported ${safeTime} · Theme ${p.theme}
               </p>
             </td>
           </tr>
@@ -304,39 +314,39 @@ function buildCvAccessEmailHtml(payload: CvAccessPayload, timestamp: string, use
           <!-- Visitor Details Grid -->
           <tr>
             <td style="padding:8px 28px 16px 28px;">
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:#090d16;border:1px solid #1e293b;border-radius:12px;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:${p.panelBg};border:1px solid ${p.border};border-radius:12px;">
                 <tr>
-                  <td style="padding:14px 18px;border-bottom:1px solid #1e293b;width:50%;">
-                    <div style="font-size:10px;font-family:monospace;color:#64748b;text-transform:uppercase;letter-spacing:0.08em;">
+                  <td style="padding:14px 18px;border-bottom:1px solid ${p.border};width:50%;">
+                    <div style="font-size:10px;font-family:monospace;color:${p.textSoft};text-transform:uppercase;letter-spacing:0.08em;">
                       Visitor Name
                     </div>
-                    <div style="font-size:14px;font-weight:600;color:#f8fafc;margin-top:4px;">
+                    <div style="font-size:14px;font-weight:600;color:${p.textStrong};margin-top:4px;">
                       ${safeName}
                     </div>
                   </td>
-                  <td style="padding:14px 18px;border-bottom:1px solid #1e293b;border-left:1px solid #1e293b;width:50%;">
-                    <div style="font-size:10px;font-family:monospace;color:#64748b;text-transform:uppercase;letter-spacing:0.08em;">
+                  <td style="padding:14px 18px;border-bottom:1px solid ${p.border};border-left:1px solid ${p.border};width:50%;">
+                    <div style="font-size:10px;font-family:monospace;color:${p.textSoft};text-transform:uppercase;letter-spacing:0.08em;">
                       Email ID
                     </div>
-                    <div style="font-size:14px;font-weight:600;color:#38bdf8;margin-top:4px;">
-                      ${safeEmail ? `<a href="mailto:${safeEmail}" style="color:#38bdf8;text-decoration:none;">${safeEmail}</a>` : '<span style="color:#94a3b8;font-weight:400;">Not provided</span>'}
+                    <div style="font-size:14px;font-weight:600;color:${p.accent};margin-top:4px;">
+                      ${safeEmail ? `<a href="mailto:${safeEmail}" style="color:${p.accent};text-decoration:none;">${safeEmail}</a>` : `<span style="color:${p.textMuted};font-weight:400;">Not provided</span>`}
                     </div>
                   </td>
                 </tr>
                 <tr>
                   <td style="padding:14px 18px;width:50%;">
-                    <div style="font-size:10px;font-family:monospace;color:#64748b;text-transform:uppercase;letter-spacing:0.08em;">
+                    <div style="font-size:10px;font-family:monospace;color:${p.textSoft};text-transform:uppercase;letter-spacing:0.08em;">
                       Phone Number
                     </div>
-                    <div style="font-size:13px;font-family:monospace;color:#cbd5e1;margin-top:4px;">
+                    <div style="font-size:13px;font-family:monospace;color:${p.text};margin-top:4px;">
                       ${safePhone}
                     </div>
                   </td>
-                  <td style="padding:14px 18px;border-left:1px solid #1e293b;width:50%;">
-                    <div style="font-size:10px;font-family:monospace;color:#64748b;text-transform:uppercase;letter-spacing:0.08em;">
+                  <td style="padding:14px 18px;border-left:1px solid ${p.border};width:50%;">
+                    <div style="font-size:10px;font-family:monospace;color:${p.textSoft};text-transform:uppercase;letter-spacing:0.08em;">
                       Export Format
                     </div>
-                    <div style="font-size:13px;color:#cbd5e1;margin-top:4px;">
+                    <div style="font-size:13px;color:${p.text};margin-top:4px;">
                       ${safeFormat}
                     </div>
                   </td>
@@ -348,11 +358,11 @@ function buildCvAccessEmailHtml(payload: CvAccessPayload, timestamp: string, use
           <!-- Reason / Purpose -->
           <tr>
             <td style="padding:8px 28px 20px 28px;">
-              <div style="background-color:#090d16;border:1px solid #1e293b;border-left:3px solid #10b981;border-radius:12px;padding:18px 20px;">
-                <div style="font-size:10px;font-family:monospace;color:#34d399;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:10px;">
+              <div style="background-color:${p.panelBg};border:1px solid ${p.border};border-left:3px solid ${p.badgeSuccessBorder};border-radius:12px;padding:18px 20px;">
+                <div style="font-size:10px;font-family:monospace;color:${p.accentAlt};text-transform:uppercase;letter-spacing:0.1em;margin-bottom:10px;">
                   Stated Purpose for Downloading
                 </div>
-                <div style="font-size:14px;line-height:1.65;color:#e2e8f0;">
+                <div style="font-size:14px;line-height:1.65;color:${p.text};">
                   ${safeReason}
                 </div>
               </div>
@@ -363,7 +373,7 @@ function buildCvAccessEmailHtml(payload: CvAccessPayload, timestamp: string, use
           ${safeEmail ? `
           <tr>
             <td style="padding:0 28px 24px 28px;">
-              <a href="mailto:${encodeURIComponent(payload.email?.trim() || '')}?subject=${encodeURIComponent('Following up on my CV / Portfolio')}" style="display:inline-block;padding:11px 20px;background-color:#38bdf8;color:#020617;font-size:13px;font-weight:700;text-decoration:none;border-radius:8px;">
+              <a href="mailto:${encodeURIComponent(payload.email?.trim() || '')}?subject=${encodeURIComponent('Following up on my CV / Portfolio')}" style="display:inline-block;padding:11px 20px;background-color:${p.ctaBg};color:${p.ctaText};font-size:13px;font-weight:700;text-decoration:none;border-radius:8px;">
                 Connect with ${safeName === 'Not provided' ? safeEmail : safeName}
               </a>
             </td>
@@ -371,7 +381,7 @@ function buildCvAccessEmailHtml(payload: CvAccessPayload, timestamp: string, use
 
           <!-- Client Metadata & Footer -->
           <tr>
-            <td style="padding:14px 28px;background-color:#05070b;border-top:1px solid #1e293b;font-size:11px;font-family:monospace;color:#64748b;line-height:1.5;">
+            <td style="padding:14px 28px;background-color:${p.footerBg};border-top:1px solid ${p.border};font-size:11px;font-family:monospace;color:${p.textSoft};line-height:1.5;">
               <div>Client: ${safeUa}</div>
               <div style="margin-top:4px;">Mohammed Sufyan Portfolio · Automated CV Access Telemetry</div>
             </td>
@@ -389,6 +399,7 @@ function buildCvAccessPlainText(payload: CvAccessPayload, timestamp: string, use
     'MOHAMMED SUFYAN — CV EXPORT & ACCESS ALERT',
     '==========================================',
     `Exported: ${timestamp}`,
+    `Theme:    ${parseEmailTheme(payload.theme)}`,
     `Action:   ${formatCvActionLabel(payload.action)}`,
     `Format:   ${payload.formatLabel}`,
     `Name:     ${payload.name?.trim() || 'Not provided'}`,
@@ -743,6 +754,7 @@ async function startServer() {
       const body = (rawBody && typeof rawBody === 'object' && !Array.isArray(rawBody) ? rawBody : {}) as Partial<ContactPayload> & {
         website?: unknown;
         turnstileToken?: unknown;
+        theme?: unknown;
       };
 
       // Silent honeypot sink for automated spam bots
@@ -797,6 +809,7 @@ async function startServer() {
         phone: cleanPhone,
         subject: cleanSubject,
         message: cleanMessage,
+        theme: parseEmailTheme(body.theme),
       });
 
       res.status(200).json({
@@ -833,6 +846,7 @@ async function startServer() {
       const body = (rawBody && typeof rawBody === 'object' && !Array.isArray(rawBody) ? rawBody : {}) as Partial<CvAccessPayload> & {
         website?: unknown;
         turnstileToken?: unknown;
+        theme?: unknown;
       };
 
       // Silent honeypot sink for automated spam bots
@@ -915,6 +929,7 @@ async function startServer() {
           reason: cleanReason,
           action: cleanAction,
           formatLabel: cleanFormat,
+          theme: parseEmailTheme(body.theme),
         },
         userAgent
       );
