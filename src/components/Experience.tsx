@@ -52,7 +52,12 @@ const GLOBAL_FOOTPRINT = [
   },
 ];
 
-export default function Experience({ selectedSkills, onSelectSkill, onApplySkills, focusedCompany }: ExperienceProps) {
+export default function Experience({
+  selectedSkills,
+  onSelectSkill,
+  onApplySkills,
+  focusedCompany,
+}: ExperienceProps) {
   const [activeFilter, setActiveFilter] = useState<'all' | 'cisco' | 'hcl' | 'tcs'>('all');
   const [linkCopied, setLinkCopied] = useState(false);
   const [expandedCompanies, setExpandedCompanies] = useState<Record<string, boolean>>({

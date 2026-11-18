@@ -47,8 +47,10 @@ html[data-theme='light'] .site-theme .bg-\[\#060911\] {
 }
 
 html[data-theme='light'] .site-theme .bg-\[\#07090e\]\/90,
-html[data-theme='light'] .site-theme .bg-\[\#07090e\]\/95 {
-  background-color: rgb(248 250 252 / 0.92) !important;
+html[data-theme='light'] .site-theme .bg-\[\#07090e\]\/92,
+html[data-theme='light'] .site-theme .bg-\[\#07090e\]\/95,
+html[data-theme='light'] .site-theme .bg-\[\#07090e\]\/80 {
+  background-color: rgb(248 250 252 / 0.94) !important;
 }
 
 html[data-theme='light'] .site-theme .bg-\[\#0d121f\],
@@ -70,9 +72,12 @@ html[data-theme='light'] .site-theme .bg-\[\#0d121f\]\/75,
 html[data-theme='light'] .site-theme .bg-\[\#0d121f\]\/70,
 html[data-theme='light'] .site-theme .bg-\[\#0d121f\]\/60,
 html[data-theme='light'] .site-theme .bg-\[\#0a0f1c\]\/90,
+html[data-theme='light'] .site-theme .bg-\[\#0a0f1c\]\/80,
+html[data-theme='light'] .site-theme .bg-\[\#0b1324\]\/95,
 html[data-theme='light'] .site-theme .bg-\[\#0d1322\]\/70,
 html[data-theme='light'] .site-theme .bg-\[\#090d16\]\/95,
-html[data-theme='light'] .site-theme .bg-\[\#090d16\]\/90 {
+html[data-theme='light'] .site-theme .bg-\[\#090d16\]\/90,
+html[data-theme='light'] .site-theme .bg-\[\#090d16\]\/75 {
   background-color: rgb(255 255 255 / 0.96) !important;
 }
 
@@ -97,23 +102,36 @@ html[data-theme='light'] .site-theme .placeholder-slate-500::placeholder {
 }
 
 html[data-theme='light'] .site-theme .bg-slate-900,
+html[data-theme='light'] .site-theme .bg-slate-900\/80,
 html[data-theme='light'] .site-theme .bg-slate-900\/70,
-html[data-theme='light'] .site-theme .bg-slate-900\/60 {
+html[data-theme='light'] .site-theme .bg-slate-900\/60,
+html[data-theme='light'] .site-theme .bg-slate-900\/45,
+html[data-theme='light'] .site-theme .bg-slate-950\/80,
+html[data-theme='light'] .site-theme .bg-slate-950\/70 {
   background-color: #ffffff !important;
 }
 
 html[data-theme='light'] .site-theme .bg-slate-800,
 html[data-theme='light'] .site-theme .bg-slate-800\/80,
 html[data-theme='light'] .site-theme .hover\:bg-slate-800:hover,
-html[data-theme='light'] .site-theme .hover\:bg-slate-800\/80:hover {
+html[data-theme='light'] .site-theme .hover\:bg-slate-800\/80:hover,
+html[data-theme='light'] .site-theme .hover\:bg-slate-800\/60:hover {
   background-color: #f1f5f9 !important;
 }
 
+html[data-theme='light'] .site-theme .bg-cyan-950\/90,
+html[data-theme='light'] .site-theme .bg-cyan-950\/80,
 html[data-theme='light'] .site-theme .bg-cyan-950\/60,
 html[data-theme='light'] .site-theme .bg-cyan-950\/50,
 html[data-theme='light'] .site-theme .bg-cyan-950\/40,
+html[data-theme='light'] .site-theme .bg-cyan-950\/35,
 html[data-theme='light'] .site-theme .bg-cyan-950\/30,
+html[data-theme='light'] .site-theme .bg-cyan-900\/70,
+html[data-theme='light'] .site-theme .bg-cyan-900\/60,
+html[data-theme='light'] .site-theme .bg-cyan-900\/50,
+html[data-theme='light'] .site-theme .bg-blue-950\/50,
 html[data-theme='light'] .site-theme .hover\:bg-cyan-950\/80:hover,
+html[data-theme='light'] .site-theme .hover\:bg-cyan-900\/60:hover,
 html[data-theme='light'] .site-theme .hover\:bg-cyan-900\/50:hover {
   background-color: rgb(240 249 255 / 0.95) !important;
 }
@@ -125,10 +143,12 @@ html[data-theme='light'] .site-theme .hover\:bg-cyan-500\/20:hover {
   background-color: rgb(224 242 254 / 0.9) !important;
 }
 
+html[data-theme='light'] .site-theme .bg-emerald-950,
 html[data-theme='light'] .site-theme .bg-emerald-950\/50 {
   background-color: #ecfdf5 !important;
 }
 
+html[data-theme='light'] .site-theme .bg-amber-950\/95,
 html[data-theme='light'] .site-theme .bg-amber-400\/10 {
   background-color: #fffbeb !important;
 }
@@ -155,6 +175,7 @@ html[data-theme='light'] .site-theme .hover\:border-slate-600:hover {
 }
 
 html[data-theme='light'] .site-theme .border-cyan-400,
+html[data-theme='light'] .site-theme .border-cyan-500\/60,
 html[data-theme='light'] .site-theme .border-cyan-500\/40,
 html[data-theme='light'] .site-theme .border-cyan-500\/35,
 html[data-theme='light'] .site-theme .border-cyan-500\/30,
@@ -292,10 +313,12 @@ html[data-theme='light'] .site-theme .text-amber-300 {
   color: #b45309 !important;
 }
 
-/* Brand marks that must keep white glyphs on colored fills (e.g. LinkedIn) */
+/* Brand marks and solid sky buttons keep white glyphs on colored fills */
 html[data-theme='light'] .site-theme .brand-on-color,
 html[data-theme='light'] .site-theme .brand-on-color.text-white,
 html[data-theme='light'] .site-theme .brand-on-color .text-white,
+html[data-theme='light'] .site-theme .bg-sky-600.text-white,
+html[data-theme='light'] .site-theme .bg-sky-600.text-white:hover,
 html[data-theme='light'] .site-theme .brand-on-color svg {
   color: #ffffff !important;
   stroke: currentColor;

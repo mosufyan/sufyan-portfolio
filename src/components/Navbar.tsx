@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Download, Menu, X, Mail, Search, Sun, Moon } from 'lucide-react';
+import { Download, Menu, X, Mail, Search, Sun, Moon, Terminal } from 'lucide-react';
 import {
   AnimatePresence,
   MotionValue,
@@ -45,6 +45,7 @@ interface NavbarProps {
   onOpenResume: () => void;
   onOpenAnnouncements: () => void;
   onOpenCommandPalette: () => void;
+  onOpenTerminal: () => void;
 }
 
 const NAV_LINKS = [
@@ -58,7 +59,12 @@ const NAV_LINKS = [
   { id: 'contact', label: 'Contact', href: '#contact' },
 ] as const;
 
-export default function Navbar({ onOpenResume, onOpenAnnouncements, onOpenCommandPalette }: NavbarProps) {
+export default function Navbar({
+  onOpenResume,
+  onOpenAnnouncements,
+  onOpenCommandPalette,
+  onOpenTerminal,
+}: NavbarProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeSection, setActiveSection] = useState<string>('overview');
   const [themeWash, setThemeWash] = useState<'light' | 'dark' | null>(null);
@@ -125,8 +131,17 @@ export default function Navbar({ onOpenResume, onOpenAnnouncements, onOpenComman
       <div className="page-shell flex items-center gap-3 sm:gap-4 xl:gap-6 h-14 sm:h-16 min-w-0">
         <a
           href="#overview"
+          onClick={(e) => {
+            e.preventDefault();
+            setMobileMenuOpen(false);
+            if (window.location.hash) {
+              window.history.replaceState({}, '', `${window.location.pathname}${window.location.search}`);
+            }
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
           className="group flex items-center shrink-0 text-slate-100 focus:outline-none"
-          aria-label="Home"
+          aria-label="Scroll to top"
+          title="Back to top"
         >
           <motion.div
             whileHover={{ scale: 1.06 }}
@@ -216,6 +231,17 @@ export default function Navbar({ onOpenResume, onOpenAnnouncements, onOpenComman
           >
             <Search className="w-3.5 h-3.5 text-cyan-400" />
             <span className="hidden 2xl:inline text-[11px] text-slate-400">⌘K</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={onOpenTerminal}
+            className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-700/90 bg-slate-900/70 text-xs font-mono text-slate-300 hover:text-cyan-300 hover:border-cyan-500/40 transition-colors whitespace-nowrap"
+            title="Open Interactive Terminal (sufyanctl)"
+            aria-label="Open interactive portfolio terminal"
+          >
+            <Terminal className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="hidden 2xl:inline text-[11px] text-slate-400">CLI</span>
           </button>
 
           <button
@@ -342,6 +368,17 @@ export default function Navbar({ onOpenResume, onOpenAnnouncements, onOpenComman
                 })}
               </div>
               <div className="sm:hidden pt-2 border-t border-slate-800 flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    onOpenTerminal();
+                  }}
+                  className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-md border border-slate-700 bg-slate-900/60 text-xs font-mono text-cyan-300"
+                >
+                  <Terminal className="w-3.5 h-3.5 text-cyan-400" />
+                  Terminal (sufyanctl)
+                </button>
                 <button
                   onClick={() => {
                     setMobileMenuOpen(false);

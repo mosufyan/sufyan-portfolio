@@ -14,6 +14,8 @@ import ResumeModal from './components/ResumeModal';
 import AnnouncementsModal from './components/AnnouncementsModal';
 import CredentialModal from './components/CredentialModal';
 import CommandPalette from './components/CommandPalette';
+import DesktopScrollRail from './components/DesktopScrollRail';
+import EngineeringTerminal from './components/EngineeringTerminal';
 import FloatingBackToTop from './components/FloatingBackToTop';
 import MobileSectionToc from './components/MobileSectionToc';
 import OfflineIndicator from './components/OfflineIndicator';
@@ -47,6 +49,7 @@ export default function App() {
   const [announcementsOpen, setAnnouncementsOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [digitalCardOpen, setDigitalCardOpen] = useState(false);
+  const [terminalOpen, setTerminalOpen] = useState(false);
   const [selectedCert, setSelectedCert] = useState<Certification | null>(null);
   const [selectedSkills, setSelectedSkillsState] = useState<string[]>(() => readSkillsFromUrl());
   const [focusedCompany, setFocusedCompany] = useState<{ name: string; seq: number } | null>(null);
@@ -112,12 +115,14 @@ export default function App() {
               onOpenResume={() => setResumeOpen(true)}
               onOpenAnnouncements={() => setAnnouncementsOpen(true)}
               onOpenCommandPalette={() => setCommandPaletteOpen(true)}
+              onOpenTerminal={() => setTerminalOpen(true)}
             />
 
             <main>
               <Hero
                 onOpenResume={() => setResumeOpen(true)}
                 onOpenDigitalCard={() => setDigitalCardOpen(true)}
+                onApplySkills={applySelectedSkills}
               />
               <Philosophy />
               <Experience
@@ -141,9 +146,13 @@ export default function App() {
               <Contact onOpenDigitalCard={() => setDigitalCardOpen(true)} />
             </main>
 
-            <Footer onOpenDigitalCard={() => setDigitalCardOpen(true)} />
+            <Footer
+              onOpenDigitalCard={() => setDigitalCardOpen(true)}
+              onOpenTerminal={() => setTerminalOpen(true)}
+            />
           </div>
 
+          <DesktopScrollRail />
           <MobileSectionToc />
           <FloatingBackToTop />
           <OfflineIndicator />
@@ -168,6 +177,14 @@ export default function App() {
           onFocusCompany={handleFocusCompany}
           onOpenResume={() => setResumeOpen(true)}
           onOpenAnnouncements={() => setAnnouncementsOpen(true)}
+          onOpenDigitalCard={() => setDigitalCardOpen(true)}
+          onOpenTerminal={() => setTerminalOpen(true)}
+        />
+
+        <EngineeringTerminal
+          isOpen={terminalOpen}
+          onClose={() => setTerminalOpen(false)}
+          onOpenResume={() => setResumeOpen(true)}
           onOpenDigitalCard={() => setDigitalCardOpen(true)}
         />
 

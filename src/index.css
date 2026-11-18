@@ -26,8 +26,15 @@
     background-color: #06080d;
     color: #e2e8f0;
     overflow-x: clip;
+    scroll-padding-top: 6rem;
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
+  }
+
+  @media (min-width: 768px) {
+    html {
+      scroll-padding-top: 4.5rem;
+    }
   }
 
   body {

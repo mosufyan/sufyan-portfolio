@@ -250,14 +250,8 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
                 className="p-4 rounded-xl border border-slate-800 bg-[#0d121f]/80 flex items-center justify-between gap-3 hover:border-cyan-500/40 transition-colors group"
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  <div
-                    className={`p-2.5 rounded-lg shrink-0 ${
-                      isLight
-                        ? 'brand-on-color bg-[#0A66C2] border border-[#0A66C2] text-white'
-                        : 'bg-blue-950/50 border border-blue-500/30 text-blue-400'
-                    }`}
-                  >
-                    <Linkedin className="w-4 h-4" />
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-950/50 border border-cyan-500/30 text-cyan-400 shrink-0">
+                    <Linkedin className="w-5 h-5" />
                   </div>
                   <div className="min-w-0">
                     <div className="text-[10px] font-mono uppercase text-slate-400">Professional Network</div>

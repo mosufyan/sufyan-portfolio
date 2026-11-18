@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Award, Check, CheckCircle, ChevronDown, ChevronsUpDown, ExternalLink, Search, Share2, ShieldCheck, X } from 'lucide-react';
+import { Award, Check, CheckCircle, ChevronDown, ChevronsUpDown, ExternalLink, LayoutGrid, Radar, Search, Share2, ShieldCheck, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { CERTIFICATION_CATEGORIES, CERTIFICATIONS, Certification } from '../data/portfolioData';
 import { doesCertMatchSkill, doesTechTagMatchSkill, formatSkillFilterSummary } from '../utils/skillMatcher';
 import { useTheme } from '../theme/ThemeProvider';
+import CloudConstellation from './CloudConstellation';
 import { CollapseTimeline, CollapseTimelineNode } from './CollapseTimeline';
 import HeaderSpotlight from './HeaderSpotlight';
 import IssuerMark from './IssuerMark';
@@ -18,13 +19,8 @@ interface CertificationsProps {
 
 const FEATURED_CERT_IDS = [
   'cert-aws-devops-pro',
-  'cert-aws-saa',
-  'cert-google-ace',
-  'cert-ms-az400',
   'cert-ms-devops-expert',
   'cert-db-ai-agent',
-  'cert-google-genai',
-  'cert-aws-genai',
 ] as const;
 
 export default function Certifications({
@@ -34,6 +30,7 @@ export default function Certifications({
 }: CertificationsProps) {
   const { theme, isLight } = useTheme();
   const [activeTab, setActiveTab] = useState<'all' | 'ai' | 'cloud' | 'data'>('all');
+  const [viewMode, setViewMode] = useState<'grid' | 'radar'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
   const [linkCopied, setLinkCopied] = useState(false);
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>(() =>
@@ -298,7 +295,7 @@ export default function Certifications({
                 {featuredCerts.length} highlighted
               </div>
             </div>
-            <div className="flex gap-3 overflow-x-auto pb-2 scroll-chips">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {featuredCerts.map((cert, idx) => (
                 <motion.button
                   key={cert.id}
@@ -309,7 +306,7 @@ export default function Certifications({
                   transition={{ duration: 0.35, delay: idx * 0.04, ease: EASE_OUT_EXPO }}
                   whileHover={{ y: -3 }}
                   onClick={() => onSelectCertification(cert)}
-                  className={`min-w-[220px] max-w-[260px] shrink-0 rounded-xl border p-3.5 text-left transition-colors ${
+                  className={`w-full rounded-xl border p-3.5 text-left transition-colors ${
                     isLight
                       ? 'border-slate-200 bg-white hover:border-sky-400 shadow-sm'
                       : 'border-slate-800 bg-[#0d121f]/80 hover:border-cyan-500/40'
@@ -384,16 +381,58 @@ export default function Certifications({
             })}
           </div>
 
-          {filteredCategories.length > 0 && (
-            <button
-              type="button"
-              onClick={toggleExpandAll}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-800 bg-[#0d121f] hover:border-cyan-500/40 hover:text-cyan-300 text-xs font-mono text-slate-300 transition-colors whitespace-nowrap shrink-0"
+          <div className="flex flex-wrap items-center gap-2 print:hidden">
+            {/* Grid / Cloud Radar Toggle */}
+            <div
+              className={`inline-flex items-center gap-1 p-1 rounded-xl border ${
+                isLight ? 'border-slate-200 bg-slate-100' : 'border-slate-800 bg-[#0d121f]'
+              }`}
             >
-              <ChevronsUpDown className="w-3.5 h-3.5 text-cyan-400" />
-              <span>{allExpanded ? 'Collapse All' : 'Expand All'}</span>
-            </button>
-          )}
+              <button
+                type="button"
+                onClick={() => setViewMode('grid')}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono transition-colors whitespace-nowrap shrink-0 ${
+                  viewMode === 'grid'
+                    ? isLight
+                      ? 'bg-sky-600 text-white font-semibold shadow-sm'
+                      : 'bg-cyan-500 text-slate-950 font-semibold'
+                    : isLight
+                      ? 'text-slate-600 hover:text-slate-900 hover:bg-white'
+                      : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+                <span>Grid View</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('radar')}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono transition-colors whitespace-nowrap shrink-0 ${
+                  viewMode === 'radar'
+                    ? isLight
+                      ? 'bg-sky-600 text-white font-semibold shadow-sm'
+                      : 'bg-cyan-500 text-slate-950 font-semibold'
+                    : isLight
+                      ? 'text-slate-600 hover:text-slate-900 hover:bg-white'
+                      : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Radar className="w-3.5 h-3.5" />
+                <span>Cloud Radar</span>
+              </button>
+            </div>
+
+            {viewMode === 'grid' && filteredCategories.length > 0 && (
+              <button
+                type="button"
+                onClick={toggleExpandAll}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-800 bg-[#0d121f] hover:border-cyan-500/40 hover:text-cyan-300 text-xs font-mono text-slate-300 transition-colors whitespace-nowrap shrink-0"
+              >
+                <ChevronsUpDown className="w-3.5 h-3.5 text-cyan-400" />
+                <span>{allExpanded ? 'Collapse All' : 'Expand All'}</span>
+              </button>
+            )}
+          </div>
         </div>
 
         <AnimatePresence>
@@ -432,7 +471,19 @@ export default function Certifications({
           )}
         </AnimatePresence>
 
-        {/* Collapsible Categories Stack */}
+        {/* Cloud Constellation Radar View or Collapsible Categories Stack */}
+        {viewMode === 'radar' ? (
+          <div className="mb-10 print:hidden">
+            <CloudConstellation
+              onSelectCertification={onSelectCertification}
+              onFilterGridByProvider={(providerToken) => {
+                setActiveTab('all');
+                setSearchQuery(providerToken);
+                setViewMode('grid');
+              }}
+            />
+          </div>
+        ) : (
         <AnimatePresence mode="wait">
           <motion.div
             key={activeTab}
@@ -534,8 +585,9 @@ export default function Certifications({
             </CollapseTimeline>
           </motion.div>
         </AnimatePresence>
+        )}
 
-        {filteredCategories.length === 0 && (
+        {viewMode === 'grid' && filteredCategories.length === 0 && (
           <div className="text-center py-12 space-y-3 text-slate-400 text-sm">
             <div>
               No certifications found

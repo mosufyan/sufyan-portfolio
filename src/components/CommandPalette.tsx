@@ -15,6 +15,7 @@ import {
   Search,
   ShieldCheck,
   Sparkles,
+  Terminal,
   Trophy,
   X
 } from 'lucide-react';
@@ -42,6 +43,7 @@ interface CommandPaletteProps {
   onOpenResume: () => void;
   onOpenAnnouncements: () => void;
   onOpenDigitalCard?: () => void;
+  onOpenTerminal?: () => void;
 }
 
 interface PaletteItem {
@@ -62,6 +64,7 @@ export default function CommandPalette({
   onOpenResume,
   onOpenAnnouncements,
   onOpenDigitalCard,
+  onOpenTerminal,
 }: CommandPaletteProps) {
   const { isLight } = useTheme();
   const [query, setQuery] = useState('');
@@ -136,11 +139,11 @@ export default function CommandPalette({
         subtitle: 'Open peer & manager endorsements on LinkedIn',
         keywords: 'linkedin testimonials endorsements recommendations',
         action: () => {
-          window.open(
-            'https://www.linkedin.com/in/mohammed-sufyan/details/recommendations/',
-            '_blank',
-            'noopener,noreferrer'
-          );
+          const anchor = document.createElement('a');
+          anchor.href = 'https://www.linkedin.com/in/mohammed-sufyan/details/recommendations/';
+          anchor.target = '_blank';
+          anchor.rel = 'noopener noreferrer';
+          anchor.click();
           onClose();
         },
       },
@@ -151,6 +154,17 @@ export default function CommandPalette({
         subtitle: 'Hero metrics & quick actions',
         keywords: 'home top hero overview stats',
         action: () => jumpToSection('overview'),
+      },
+      {
+        id: 'act-terminal',
+        group: 'Actions',
+        title: 'Launch Interactive Terminal (sufyanctl)',
+        subtitle: 'Run CLI queries for certs, career trace, awards & vCard export',
+        keywords: 'terminal cli shell console sufyanctl commands',
+        action: () => {
+          onClose();
+          onOpenTerminal?.();
+        },
       },
       {
         id: 'sec-philosophy',
@@ -293,7 +307,7 @@ export default function CommandPalette({
     }
 
     return items;
-  }, [onClose, onFocusCompany, onOpenAnnouncements, onOpenResume, onSelectCertification, onSelectSkill]);
+  }, [onClose, onFocusCompany, onOpenAnnouncements, onOpenDigitalCard, onOpenResume, onOpenTerminal, onSelectCertification, onSelectSkill]);
 
   const filteredItems = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -359,6 +373,7 @@ export default function CommandPalette({
     if (id === 'act-announcements') return <Megaphone className="w-4 h-4 text-cyan-400" />;
     if (id === 'act-email') return <Mail className="w-4 h-4 text-cyan-400" />;
     if (id === 'act-linkedin-recs') return <Linkedin className="w-4 h-4 text-cyan-400" />;
+    if (id === 'act-terminal') return <Terminal className="w-4 h-4 text-cyan-400" />;
     switch (group) {
       case 'Actions':
         return <Sparkles className="w-4 h-4 text-cyan-400" />;

@@ -1,5 +1,5 @@
 import { Linkedin } from './icons/Linkedin';
-import { Mail, ArrowUp, QrCode } from 'lucide-react';
+import { Mail, ArrowUp, QrCode, Terminal } from 'lucide-react';
 import { motion } from 'motion/react';
 import { PERSONAL_INFO } from '../data/portfolioData';
 import { Reveal } from './MotionPrimitives';
@@ -7,9 +7,10 @@ import PWAInstallButton from './PWAInstallButton';
 
 interface FooterProps {
   onOpenDigitalCard?: () => void;
+  onOpenTerminal?: () => void;
 }
 
-export default function Footer({ onOpenDigitalCard }: FooterProps) {
+export default function Footer({ onOpenDigitalCard, onOpenTerminal }: FooterProps) {
   const scrollToTop = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -108,6 +109,16 @@ export default function Footer({ onOpenDigitalCard }: FooterProps) {
                   >
                     <QrCode className="w-3.5 h-3.5 text-cyan-400" />
                     <span>Digital Card / QR</span>
+                  </button>
+                )}
+                {onOpenTerminal && (
+                  <button
+                    type="button"
+                    onClick={onOpenTerminal}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-800 bg-slate-900/70 hover:border-cyan-500/40 hover:text-cyan-300 text-xs font-mono text-slate-300 transition-colors cursor-pointer"
+                  >
+                    <Terminal className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>Terminal</span>
                   </button>
                 )}
               </li>

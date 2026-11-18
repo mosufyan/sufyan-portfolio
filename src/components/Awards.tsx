@@ -1,16 +1,20 @@
 import { Linkedin } from './icons/Linkedin';
 import { useEffect, useState } from 'react';
-import { Medal, Star, Trophy, Building2, Search, ChevronDown, ChevronsUpDown, ExternalLink, Quote } from 'lucide-react';
+import { Medal, Star, Trophy, Building2, Search, ChevronDown, ChevronsUpDown, ExternalLink, Quote, LayoutGrid, Radar } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Award, AWARDS_BY_ORGANIZATION, LINKEDIN_RECOMMENDATIONS } from '../data/portfolioData';
+import { useTheme } from '../theme/ThemeProvider';
 import { CollapseTimeline, CollapseTimelineNode } from './CollapseTimeline';
 import HeaderSpotlight from './HeaderSpotlight';
 import CiscoName from './CiscoName';
 import { Reveal, EASE_OUT_EXPO, SpotlightCard } from './MotionPrimitives';
+import RecognitionRadar from './RecognitionRadar';
 import SectionScanLine from './SectionScanLine';
 
 export default function Awards() {
+  const { isLight } = useTheme();
   const [filterOrg, setFilterOrg] = useState<'all' | 'Cisco' | 'HCL' | 'TCS'>('all');
+  const [viewMode, setViewMode] = useState<'grid' | 'radar'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
   const [recFilter, setRecFilter] = useState<'featured' | 'all' | 'manager' | 'direct_report' | 'peer'>('featured');
   const [recsExpanded, setRecsExpanded] = useState(false);
@@ -260,20 +264,89 @@ export default function Awards() {
             })}
           </div>
 
-          {filteredGroups.length > 0 && (
-            <button
-              type="button"
-              onClick={toggleExpandAll}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-800 bg-[#0d121f] hover:border-cyan-500/40 hover:text-cyan-300 text-xs font-mono text-slate-300 transition-colors whitespace-nowrap shrink-0"
+          <div className="flex flex-wrap items-center gap-2 print:hidden">
+            {/* Citations View / Impact Radar Toggle */}
+            <div
+              className={`inline-flex items-center gap-1 p-1 rounded-xl border ${
+                isLight ? 'border-slate-200 bg-slate-100' : 'border-slate-800 bg-[#0d121f]'
+              }`}
             >
-              <ChevronsUpDown className="w-3.5 h-3.5 text-cyan-400" />
-              <span>{allExpanded ? 'Collapse All' : 'Expand All'}</span>
-            </button>
-          )}
+              <button
+                type="button"
+                onClick={() => setViewMode('grid')}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono transition-colors whitespace-nowrap shrink-0 ${
+                  viewMode === 'grid'
+                    ? isLight
+                      ? 'bg-sky-600 text-white font-semibold shadow-sm'
+                      : 'bg-cyan-500 text-slate-950 font-semibold'
+                    : isLight
+                      ? 'text-slate-600 hover:text-slate-900 hover:bg-white'
+                      : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+                <span>Citations View</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('radar')}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono transition-colors whitespace-nowrap shrink-0 ${
+                  viewMode === 'radar'
+                    ? isLight
+                      ? 'bg-sky-600 text-white font-semibold shadow-sm'
+                      : 'bg-cyan-500 text-slate-950 font-semibold'
+                    : isLight
+                      ? 'text-slate-600 hover:text-slate-900 hover:bg-white'
+                      : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Radar className="w-3.5 h-3.5" />
+                <span>Impact Radar</span>
+              </button>
+            </div>
+
+            {viewMode === 'grid' && filteredGroups.length > 0 && (
+              <button
+                type="button"
+                onClick={toggleExpandAll}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-800 bg-[#0d121f] hover:border-cyan-500/40 hover:text-cyan-300 text-xs font-mono text-slate-300 transition-colors whitespace-nowrap shrink-0"
+              >
+                <ChevronsUpDown className="w-3.5 h-3.5 text-cyan-400" />
+                <span>{allExpanded ? 'Collapse All' : 'Expand All'}</span>
+              </button>
+            )}
+          </div>
         </div>
+
+        {/* Impact Radar View */}
+        {viewMode === 'radar' && (
+          <div className="mb-10 print:hidden">
+            <RecognitionRadar
+              onOpenCitationsView={(orgFilter, searchKeyword) => {
+                setFilterOrg(orgFilter);
+                setSearchQuery(searchKeyword ?? '');
+                setExpandedOrgs(
+                  Object.fromEntries(AWARDS_BY_ORGANIZATION.map((group) => [group.organization, true]))
+                );
+                setViewMode('grid');
+              }}
+              onJumpToEndorsements={(nextRecFilter) => {
+                setRecFilter(nextRecFilter);
+                setRecsExpanded(true);
+                requestAnimationFrame(() => {
+                  document.getElementById('linkedin-recommendations')?.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'start',
+                  });
+                });
+              }}
+            />
+          </div>
+        )}
 
         {/* Corporate Collapsible Grouped Lists + LinkedIn recommendations timeline */}
         <CollapseTimeline gapClassName="space-y-0">
+        {viewMode === 'grid' && (
         <AnimatePresence mode="wait">
           <motion.div
             key={filterOrg}
@@ -374,8 +447,9 @@ export default function Awards() {
             })}
           </motion.div>
         </AnimatePresence>
+        )}
 
-        {filteredGroups.length === 0 && (
+        {viewMode === 'grid' && filteredGroups.length === 0 && (
           <div className="text-center py-12 text-slate-500 text-sm">
             No recognitions or honors found matching &ldquo;{searchQuery}&rdquo;.
           </div>

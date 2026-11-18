@@ -2,6 +2,7 @@ import { MouseEvent as ReactMouseEvent, ReactNode, useCallback, useEffect, useSt
 import { Download, Mail, Share2, AtSign, Check, MonitorSmartphone, QrCode } from 'lucide-react';
 import { AnimatePresence, motion, useMotionValue, useReducedMotion, useSpring } from 'motion/react';
 import { PERSONAL_INFO, STATS } from '../data/portfolioData';
+import { useTheme } from '../theme/ThemeProvider';
 import { AnimatedMetric, EASE_OUT_EXPO, SpotlightCard } from './MotionPrimitives';
 import CiscoName from './CiscoName';
 import PortraitWelcome, { PortraitWelcomePhase } from './PortraitWelcome';
@@ -9,7 +10,19 @@ import PortraitWelcome, { PortraitWelcomePhase } from './PortraitWelcome';
 interface HeroProps {
   onOpenResume?: () => void;
   onOpenDigitalCard?: () => void;
+  onApplySkills?: (skills: string[]) => void;
 }
+
+const CAPABILITY_MARQUEE_ITEMS = [
+  { label: 'Zero Trust Architecture', skill: 'Zero Trust Architecture' },
+  { label: 'Databricks Lakehouse', skill: 'Databricks' },
+  { label: 'AWS · Azure · GCP', skill: 'AWS (S3, Redshift, DynamoDB)' },
+  { label: 'Kubernetes (EKS/AKS/GKE)', skill: 'Kubernetes (EKS/AKS/GKE)' },
+  { label: 'Python & PySpark', skill: 'Python (Programming Language)' },
+  { label: 'CI/CD & DevSecOps', skill: 'CI/CD Pipelines' },
+  { label: '28+ Enterprise Clients', skill: null },
+  { label: 'US · UK · India Delivery', skill: null },
+] as const;
 
 const ROLE_MOBILE = 'Software Engineer — Cisco STO CTO Ops';
 const ROLE_DESKTOP =
@@ -125,9 +138,15 @@ function ShineCta({
   );
 }
 
-export default function Hero({ onOpenResume, onOpenDigitalCard }: HeroProps) {
+export default function Hero({
+  onOpenResume,
+  onOpenDigitalCard,
+  onApplySkills,
+}: HeroProps) {
+  const { isLight } = useTheme();
   const [copied, setCopied] = useState(false);
   const [shared, setShared] = useState(false);
+  const [marqueePaused, setMarqueePaused] = useState(false);
   const [portraitPhase, setPortraitPhase] = useState<PortraitWelcomePhase>('checking');
   const [roleActive, setRoleActive] = useState(false);
   const shouldReduceMotion = useReducedMotion();
@@ -585,6 +604,81 @@ export default function Hero({ onOpenResume, onOpenDigitalCard }: HeroProps) {
               </div>
             </SpotlightCard>
           ))}
+        </div>
+
+        {/* Capability Marquee Strip */}
+        <div
+          onMouseEnter={() => setMarqueePaused(true)}
+          onMouseLeave={() => setMarqueePaused(false)}
+          className={`mt-6 overflow-hidden rounded-xl border py-2.5 px-3 print:hidden ${
+            isLight
+              ? 'border-slate-200 bg-white shadow-sm'
+              : 'border-slate-800/80 bg-[#090d16]/75'
+          }`}
+          aria-label="Core engineering capabilities"
+        >
+          {shouldReduceMotion ? (
+            <div
+              className={`flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs font-mono ${
+                isLight ? 'text-slate-600' : 'text-slate-400'
+              }`}
+            >
+              {CAPABILITY_MARQUEE_ITEMS.map((item) =>
+                item.skill && onApplySkills ? (
+                  <button
+                    key={item.label}
+                    type="button"
+                    onClick={() => {
+                      onApplySkills([item.skill!]);
+                      document.getElementById('experience')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }}
+                    className={`transition-colors ${
+                      isLight ? 'hover:text-sky-700' : 'hover:text-cyan-400'
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ) : (
+                  <span key={item.label}>{item.label}</span>
+                )
+              )}
+            </div>
+          ) : (
+            <div className="relative flex overflow-hidden">
+              <motion.div
+                animate={marqueePaused ? undefined : { x: ['0%', '-50%'] }}
+                transition={{ duration: 34, repeat: Infinity, ease: 'linear' }}
+                className={`flex shrink-0 items-center gap-6 pr-6 text-xs font-mono ${
+                  isLight ? 'text-slate-600' : 'text-slate-400'
+                }`}
+              >
+                {[...CAPABILITY_MARQUEE_ITEMS, ...CAPABILITY_MARQUEE_ITEMS].map((item, idx) => (
+                  <div key={`${item.label}-${idx}`} className="flex items-center gap-6 shrink-0">
+                    {item.skill && onApplySkills ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onApplySkills([item.skill!]);
+                          document.getElementById('experience')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }}
+                        className={`transition-colors whitespace-nowrap ${
+                          isLight ? 'hover:text-sky-700' : 'hover:text-cyan-400'
+                        }`}
+                        title={`Filter portfolio by ${item.skill}`}
+                      >
+                        {item.label}
+                      </button>
+                    ) : (
+                      <span className="whitespace-nowrap">{item.label}</span>
+                    )}
+                    <span aria-hidden="true" className={isLight ? 'text-slate-300' : 'text-slate-600'}>
+                      /
+                    </span>
+                  </div>
+                ))}
+              </motion.div>
+            </div>
+          )}
         </div>
       </div>
     </section>
