@@ -1,7 +1,7 @@
+import { Linkedin } from './icons/Linkedin';
 import { useEffect, useState } from 'react';
 import {
   Mail,
-  Linkedin,
   Send,
   Check,
   Copy,
@@ -10,7 +10,7 @@ import {
   Clock,
   QrCode,
   UserPlus,
-  Sparkles,
+  Sparkles
 } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { PERSONAL_INFO } from '../data/portfolioData';

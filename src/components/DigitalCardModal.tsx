@@ -1,3 +1,4 @@
+import { Linkedin } from './icons/Linkedin';
 import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
 import { AnimatePresence, motion } from 'motion/react';
@@ -7,12 +8,11 @@ import {
   Download,
   ExternalLink,
   Globe,
-  Linkedin,
   Mail,
   MapPin,
   QrCode,
   UserPlus,
-  X,
+  X
 } from 'lucide-react';
 import { PERSONAL_INFO } from '../data/portfolioData';
 import { useTheme } from '../theme/ThemeProvider';

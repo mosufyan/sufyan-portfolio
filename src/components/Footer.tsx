@@ -1,4 +1,5 @@
-import { Linkedin, Mail, ArrowUp, QrCode } from 'lucide-react';
+import { Linkedin } from './icons/Linkedin';
+import { Mail, ArrowUp, QrCode } from 'lucide-react';
 import { motion } from 'motion/react';
 import { PERSONAL_INFO } from '../data/portfolioData';
 import { Reveal } from './MotionPrimitives';
