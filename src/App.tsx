@@ -22,6 +22,11 @@ import OfflineIndicator from './components/OfflineIndicator';
 import DigitalCardModal from './components/DigitalCardModal';
 import { Certification } from './data/portfolioData';
 import { normalizeSelectedSkills, toggleSelectedSkill } from './utils/skillMatcher';
+import {
+  clearCvShareQueryFromBrowser,
+  parseCvShareSearch,
+  type ParsedCvShareConfig,
+} from './utils/cvShareConfig';
 
 function readSkillsFromUrl(): string[] {
   if (typeof window === 'undefined') return [];
@@ -45,7 +50,10 @@ function writeSkillsToUrl(skills: string[]) {
 }
 
 export default function App() {
-  const [resumeOpen, setResumeOpen] = useState(false);
+  const [initialCvShare] = useState<ParsedCvShareConfig>(() =>
+    typeof window !== 'undefined' ? parseCvShareSearch(window.location.search) : { shouldOpen: false }
+  );
+  const [resumeOpen, setResumeOpen] = useState(() => initialCvShare.shouldOpen);
   const [announcementsOpen, setAnnouncementsOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [digitalCardOpen, setDigitalCardOpen] = useState(false);
@@ -195,7 +203,11 @@ export default function App() {
 
         <ResumeModal
           isOpen={resumeOpen}
-          onClose={() => setResumeOpen(false)}
+          initialShareConfig={initialCvShare}
+          onClose={() => {
+            setResumeOpen(false);
+            clearCvShareQueryFromBrowser();
+          }}
         />
       </div>
     </MotionConfig>

@@ -46,7 +46,9 @@ import {
   Clock,
   Ruler,
   ShieldCheck,
-  Radar
+  Radar,
+  Palette,
+  Minimize2
 } from 'lucide-react';
 import { useTheme } from '../theme/ThemeProvider';
 import {
@@ -63,6 +65,15 @@ import {
   type Certification
 } from '../data/portfolioData';
 import { buildAtsPlainTextResume } from '../utils/atsFormatter';
+import {
+  DEFAULT_CV_SECTION_ORDER,
+  type CvAccentId,
+  type CvPresetKey,
+  type CvPresetMode,
+  type CvPrintDensity,
+  type CvSectionKey,
+  type ParsedCvShareConfig,
+} from '../utils/cvShareConfig';
 import AccessGateModal, {
   isAccessUnlocked,
   type AccessGateAction,
@@ -77,9 +88,10 @@ import {
 interface ResumeModalProps {
   isOpen: boolean;
   onClose: () => void;
+  initialShareConfig?: ParsedCvShareConfig;
 }
 
-type PresetMode = 'summary' | 'concise' | 'full' | 'security' | 'platform' | 'fullstack' | 'custom';
+type PresetMode = CvPresetMode;
 type ExperienceDepth = 'compact' | 'concise' | 'full';
 type SkillsDepth = 'compact' | 'full';
 type CertsDepth = 'top6' | 'top8' | 'full';
@@ -101,17 +113,7 @@ interface ExportConfig {
   awardsDepth: AwardsDepth;
 }
 
-type CvSectionKey = keyof ExportConfig['sections'];
-
-const DEFAULT_SECTION_ORDER: CvSectionKey[] = [
-  'overview',
-  'philosophy',
-  'experience',
-  'skills',
-  'certifications',
-  'awards',
-  'education',
-];
+const DEFAULT_SECTION_ORDER: CvSectionKey[] = DEFAULT_CV_SECTION_ORDER;
 
 const SECTION_LABELS: Record<CvSectionKey, string> = {
   overview: 'Overview & Stats',
@@ -123,7 +125,34 @@ const SECTION_LABELS: Record<CvSectionKey, string> = {
   education: 'Education',
 };
 
-const PRESETS: Record<'summary' | 'concise' | 'full' | 'security' | 'platform' | 'fullstack', ExportConfig> = {
+const CV_ACCENT_OPTIONS: Array<{
+  id: CvAccentId;
+  label: string;
+  swatchClass: string;
+}> = [
+  { id: 'cyan', label: 'Cyan / Sky', swatchClass: 'bg-cyan-400' },
+  { id: 'emerald', label: 'Emerald', swatchClass: 'bg-emerald-400' },
+  { id: 'indigo', label: 'Indigo', swatchClass: 'bg-indigo-400' },
+  { id: 'violet', label: 'Violet', swatchClass: 'bg-violet-400' },
+  { id: 'amber', label: 'Amber Gold', swatchClass: 'bg-amber-400' },
+  { id: 'teal', label: 'Ocean Teal', swatchClass: 'bg-teal-400' },
+  { id: 'rose', label: 'Crimson Rose', swatchClass: 'bg-rose-400' },
+  { id: 'slate', label: 'Classic Slate', swatchClass: 'bg-slate-400' },
+];
+
+const CV_DENSITY_OPTIONS: Array<{
+  id: CvPrintDensity;
+  label: string;
+  hint: string;
+}> = [
+  { id: 'ultra', label: 'Ultra-Dense', hint: 'Maximum compression for tight 1-2 page prints' },
+  { id: 'compact', label: 'Compact', hint: 'Tighter margins & cards (~fewer pages)' },
+  { id: 'executive', label: 'Executive', hint: 'Balanced layout (default)' },
+  { id: 'relaxed', label: 'Relaxed', hint: 'Generous reading spacing' },
+  { id: 'editorial', label: 'Editorial', hint: 'Wide showcase breathing room' },
+];
+
+const PRESETS: Record<CvPresetKey, ExportConfig> = {
   summary: {
     sections: {
       overview: true,
@@ -214,6 +243,36 @@ const PRESETS: Record<'summary' | 'concise' | 'full' | 'security' | 'platform' |
     certsDepth: 'top6',
     awardsDepth: 'featured'
   },
+  cloud: {
+    sections: {
+      overview: true,
+      philosophy: false,
+      experience: true,
+      skills: true,
+      certifications: true,
+      awards: true,
+      education: true
+    },
+    experienceDepth: 'concise',
+    skillsDepth: 'full',
+    certsDepth: 'full',
+    awardsDepth: 'featured'
+  },
+  leadership: {
+    sections: {
+      overview: true,
+      philosophy: true,
+      experience: true,
+      skills: true,
+      certifications: true,
+      awards: true,
+      education: true
+    },
+    experienceDepth: 'full',
+    skillsDepth: 'compact',
+    certsDepth: 'top6',
+    awardsDepth: 'full'
+  },
 };
 
 const FEATURED_CERT_IDS_SUMMARY = new Set([
@@ -255,18 +314,80 @@ function chunkArray<T>(items: T[], size: number): T[][] {
   return chunks;
 }
 
-export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
+function resolveInitialConfig(share?: ParsedCvShareConfig): {
+  preset: PresetMode;
+  config: ExportConfig;
+} {
+  if (!share?.shouldOpen || !share.preset) {
+    return { preset: 'summary', config: PRESETS.summary };
+  }
+
+  if (share.preset !== 'custom') {
+    const key = share.preset as CvPresetKey;
+    return { preset: key, config: PRESETS[key] };
+  }
+
+  if (share.enabledSections && share.enabledSections.length > 0) {
+    const enabled = new Set(share.enabledSections);
+    return {
+      preset: 'custom',
+      config: {
+        ...PRESETS.concise,
+        sections: {
+          overview: enabled.has('overview'),
+          philosophy: enabled.has('philosophy'),
+          experience: enabled.has('experience'),
+          skills: enabled.has('skills'),
+          certifications: enabled.has('certifications'),
+          awards: enabled.has('awards'),
+          education: enabled.has('education'),
+        },
+      },
+    };
+  }
+
+  return { preset: 'summary', config: PRESETS.summary };
+}
+
+export default function ResumeModal({
+  isOpen,
+  onClose,
+  initialShareConfig,
+}: ResumeModalProps) {
   const { theme: siteTheme } = useTheme();
+  const modalScrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const measureRef = useRef<HTMLDivElement>(null);
-  const [preset, setPreset] = useState<PresetMode>('summary');
-  const [config, setConfig] = useState<ExportConfig>(PRESETS.summary);
-  const [cvTheme, setCvTheme] = useState<'dark' | 'light'>(siteTheme);
+  const preserveSharedThemeRef = useRef<boolean>(Boolean(initialShareConfig?.shouldOpen && initialShareConfig?.theme));
+
+  const [preset, setPreset] = useState<PresetMode>(() => resolveInitialConfig(initialShareConfig).preset);
+  const [config, setConfig] = useState<ExportConfig>(() => resolveInitialConfig(initialShareConfig).config);
+  const [cvTheme, setCvTheme] = useState<'dark' | 'light'>(
+    () => (initialShareConfig?.shouldOpen && initialShareConfig.theme ? initialShareConfig.theme : siteTheme)
+  );
   const isLight = cvTheme === 'light';
 
+  const [printDensity, setPrintDensity] = useState<CvPrintDensity>(
+    () => (initialShareConfig?.shouldOpen && initialShareConfig.density ? initialShareConfig.density : 'executive')
+  );
+  const [cvAccent, setCvAccent] = useState<CvAccentId>(
+    () => (initialShareConfig?.shouldOpen && initialShareConfig.accent ? initialShareConfig.accent : 'cyan')
+  );
   const [showCustomize, setShowCustomize] = useState(false);
-  const [sectionOrder, setSectionOrder] = useState<CvSectionKey[]>(DEFAULT_SECTION_ORDER);
-  const [showInfographics, setShowInfographics] = useState(true);
+  const [controlsOpen, setControlsOpen] = useState(true);
+  const [isBodyScrolled, setIsBodyScrolled] = useState(false);
+  const [sectionOrder, setSectionOrder] = useState<CvSectionKey[]>(
+    () =>
+      initialShareConfig?.shouldOpen && initialShareConfig.sectionOrder
+        ? initialShareConfig.sectionOrder
+        : DEFAULT_SECTION_ORDER
+  );
+  const [showInfographics, setShowInfographics] = useState(
+    () =>
+      initialShareConfig?.shouldOpen && initialShareConfig.showInfographics !== undefined
+        ? initialShareConfig.showInfographics
+        : true
+  );
   const [showPageGuides, setShowPageGuides] = useState(false);
   const [inspectedCert, setInspectedCert] = useState<Certification | null>(null);
   const [smartPlan, setSmartPlan] = useState<{
@@ -284,10 +405,16 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
 
   useEffect(() => {
     if (isOpen) {
-      setCvTheme(siteTheme);
+      if (preserveSharedThemeRef.current) {
+        preserveSharedThemeRef.current = false;
+      } else {
+        setCvTheme(siteTheme);
+      }
     } else {
       setPendingAction(null);
       setInspectedCert(null);
+      setControlsOpen(true);
+      setIsBodyScrolled(false);
     }
   }, [isOpen, siteTheme]);
 
@@ -609,7 +736,7 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
       observer?.disconnect();
       window.removeEventListener('resize', measure);
     };
-  }, [isOpen, config, sectionOrder, showInfographics, inspectedCert, cvTheme]);
+  }, [isOpen, config, sectionOrder, showInfographics, inspectedCert, cvTheme, printDensity, cvAccent]);
 
   const pageTelemetry = useMemo(() => {
     if (selectedSectionCount === 0) {
@@ -697,11 +824,45 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
     smartPlan,
   ]);
 
+  const isSplitDesktopScroll = () => {
+    const contentEl = contentRef.current;
+    if (!contentEl) return false;
+    const style = getComputedStyle(contentEl);
+    return (
+      (style.overflowY === 'auto' || style.overflowY === 'scroll') &&
+      contentEl.scrollHeight > contentEl.clientHeight + 2
+    );
+  };
+
+  const scrollToPreviewTop = () => {
+    if (isSplitDesktopScroll() && contentRef.current) {
+      contentRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    const modalEl = modalScrollRef.current;
+    const contentEl = contentRef.current;
+    if (modalEl && contentEl) {
+      const contentTopInModal =
+        contentEl.getBoundingClientRect().top - modalEl.getBoundingClientRect().top + modalEl.scrollTop;
+      modalEl.scrollTo({ top: Math.max(0, contentTopInModal), behavior: 'smooth' });
+    }
+  };
+
   const scrollToPreviewY = (targetTopPx: number) => {
     const scroller = contentRef.current;
     if (!scroller) return;
-    const centeredOffset = Math.max(0, targetTopPx - scroller.clientHeight * 0.45);
-    scroller.scrollTo({ top: centeredOffset, behavior: 'smooth' });
+    if (isSplitDesktopScroll()) {
+      const centeredOffset = Math.max(0, targetTopPx - scroller.clientHeight * 0.45);
+      scroller.scrollTo({ top: centeredOffset, behavior: 'smooth' });
+      return;
+    }
+    const modalEl = modalScrollRef.current;
+    const inner = measureRef.current;
+    if (!modalEl || !inner) return;
+    const innerTopInModal =
+      inner.getBoundingClientRect().top - modalEl.getBoundingClientRect().top + modalEl.scrollTop;
+    const centeredOffset = Math.max(0, innerTopInModal + targetTopPx - modalEl.clientHeight * 0.35);
+    modalEl.scrollTo({ top: centeredOffset, behavior: 'smooth' });
   };
 
   const handleTogglePageGuides = () => {
@@ -717,10 +878,23 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
     setSmartPlan(freshPlan);
 
     const firstBreakTop = freshPlan.guides[0]?.topPx;
-    if (firstBreakTop && scroller.scrollTop < firstBreakTop - scroller.clientHeight * 0.75) {
-      requestAnimationFrame(() => {
-        scrollToPreviewY(firstBreakTop);
-      });
+    if (!firstBreakTop) return;
+
+    if (isSplitDesktopScroll()) {
+      if (scroller.scrollTop < firstBreakTop - scroller.clientHeight * 0.75) {
+        requestAnimationFrame(() => scrollToPreviewY(firstBreakTop));
+      }
+      return;
+    }
+
+    const modalEl = modalScrollRef.current;
+    if (modalEl) {
+      const innerTopInModal =
+        inner.getBoundingClientRect().top - modalEl.getBoundingClientRect().top + modalEl.scrollTop;
+      const breakOffsetInModal = innerTopInModal + firstBreakTop;
+      if (modalEl.scrollTop < breakOffsetInModal - modalEl.clientHeight * 0.75) {
+        requestAnimationFrame(() => scrollToPreviewY(firstBreakTop));
+      }
     }
   };
 
@@ -738,6 +912,10 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
         return 'Mohammed_Sufyan_Platform_Track.pdf';
       case 'fullstack':
         return 'Mohammed_Sufyan_Fullstack_Track.pdf';
+      case 'cloud':
+        return 'Mohammed_Sufyan_Cloud_AI_Track.pdf';
+      case 'leadership':
+        return 'Mohammed_Sufyan_Architect_Lead_Track.pdf';
       default:
         return 'Mohammed_Sufyan_Custom_CV.pdf';
     }
@@ -764,6 +942,7 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
       cloneHost = document.createElement('div');
       cloneHost.id = 'pdf-clone-host';
       cloneHost.className = 'pdf-capture';
+      cloneHost.setAttribute('data-cv-density', printDensity);
       cloneHost.style.position = 'absolute';
       cloneHost.style.left = '0';
       cloneHost.style.top = '0';
@@ -1111,6 +1290,10 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
         return 'Platform Track';
       case 'fullstack':
         return 'Full-stack Track';
+      case 'cloud':
+        return 'Cloud & AI Track';
+      case 'leadership':
+        return 'Architect / Lead';
       default:
         return 'Custom Selection';
     }
@@ -1164,6 +1347,219 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
 
   const skillRows = chunkArray(TECHNICAL_DISCIPLINES, 2);
 
+  const accentTokens = (() => {
+    switch (cvAccent) {
+      case 'emerald':
+        return {
+          accent: isLight ? 'text-emerald-700' : 'text-emerald-400',
+          accentSoft: isLight ? 'text-emerald-700' : 'text-emerald-400/90',
+          accentLink: isLight ? 'text-emerald-700' : 'text-emerald-300',
+          accentHero: isLight ? 'text-emerald-700' : 'text-emerald-400',
+          accentBadge: isLight
+            ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+            : 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300',
+          accentBadgeStrong: isLight
+            ? 'bg-emerald-100 border-emerald-300 text-emerald-900'
+            : 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300',
+          chipPillar: isLight
+            ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+            : 'bg-[#090d16] border-emerald-700/60 text-emerald-300/90',
+          iconBox: isLight
+            ? 'bg-white border-emerald-200 text-emerald-700'
+            : 'bg-slate-900 border-emerald-700/60 text-emerald-400',
+          bulletDot: isLight ? 'bg-emerald-600' : 'bg-emerald-400',
+          blockquote: isLight ? 'text-slate-800 border-emerald-600' : 'text-slate-100 border-emerald-400/80',
+          progressBar: isLight ? 'bg-gradient-to-r from-emerald-600 to-teal-600' : 'bg-gradient-to-r from-emerald-500 to-teal-400',
+          portraitFrame: isLight
+            ? 'border-emerald-200 bg-slate-100'
+            : 'border-emerald-500/35 bg-[radial-gradient(circle_at_50%_32%,#0d2a24_0%,#081517_58%,#06080d_100%)]',
+          hoverLink: isLight ? 'hover:text-emerald-700' : 'hover:text-emerald-300',
+        };
+      case 'indigo':
+        return {
+          accent: isLight ? 'text-indigo-700' : 'text-indigo-400',
+          accentSoft: isLight ? 'text-indigo-700' : 'text-indigo-400/90',
+          accentLink: isLight ? 'text-indigo-700' : 'text-indigo-300',
+          accentHero: isLight ? 'text-indigo-700' : 'text-indigo-400',
+          accentBadge: isLight
+            ? 'bg-indigo-50 border-indigo-200 text-indigo-800'
+            : 'bg-indigo-950/40 border-indigo-500/30 text-indigo-300',
+          accentBadgeStrong: isLight
+            ? 'bg-indigo-100 border-indigo-300 text-indigo-900'
+            : 'bg-indigo-950/60 border-indigo-500/40 text-indigo-300',
+          chipPillar: isLight
+            ? 'bg-indigo-50 border-indigo-200 text-indigo-800'
+            : 'bg-[#090d16] border-indigo-700/60 text-indigo-300/90',
+          iconBox: isLight
+            ? 'bg-white border-indigo-200 text-indigo-700'
+            : 'bg-slate-900 border-indigo-700/60 text-indigo-400',
+          bulletDot: isLight ? 'bg-indigo-600' : 'bg-indigo-400',
+          blockquote: isLight ? 'text-slate-800 border-indigo-600' : 'text-slate-100 border-indigo-400/80',
+          progressBar: isLight ? 'bg-gradient-to-r from-indigo-600 to-violet-600' : 'bg-gradient-to-r from-indigo-500 to-violet-400',
+          portraitFrame: isLight
+            ? 'border-indigo-200 bg-slate-100'
+            : 'border-indigo-500/35 bg-[radial-gradient(circle_at_50%_32%,#191d3b_0%,#0c0f22_58%,#06080d_100%)]',
+          hoverLink: isLight ? 'hover:text-indigo-700' : 'hover:text-indigo-300',
+        };
+      case 'violet':
+        return {
+          accent: isLight ? 'text-violet-700' : 'text-violet-400',
+          accentSoft: isLight ? 'text-violet-700' : 'text-violet-400/90',
+          accentLink: isLight ? 'text-violet-700' : 'text-violet-300',
+          accentHero: isLight ? 'text-violet-700' : 'text-violet-400',
+          accentBadge: isLight
+            ? 'bg-violet-50 border-violet-200 text-violet-800'
+            : 'bg-violet-950/40 border-violet-500/30 text-violet-300',
+          accentBadgeStrong: isLight
+            ? 'bg-violet-100 border-violet-300 text-violet-900'
+            : 'bg-violet-950/60 border-violet-500/40 text-violet-300',
+          chipPillar: isLight
+            ? 'bg-violet-50 border-violet-200 text-violet-800'
+            : 'bg-[#090d16] border-violet-700/60 text-violet-300/90',
+          iconBox: isLight
+            ? 'bg-white border-violet-200 text-violet-700'
+            : 'bg-slate-900 border-violet-700/60 text-violet-400',
+          bulletDot: isLight ? 'bg-violet-600' : 'bg-violet-400',
+          blockquote: isLight ? 'text-slate-800 border-violet-600' : 'text-slate-100 border-violet-400/80',
+          progressBar: isLight ? 'bg-gradient-to-r from-violet-600 to-fuchsia-600' : 'bg-gradient-to-r from-violet-500 to-fuchsia-400',
+          portraitFrame: isLight
+            ? 'border-violet-200 bg-slate-100'
+            : 'border-violet-500/35 bg-[radial-gradient(circle_at_50%_32%,#24153d_0%,#120b24_58%,#06080d_100%)]',
+          hoverLink: isLight ? 'hover:text-violet-700' : 'hover:text-violet-300',
+        };
+      case 'amber':
+        return {
+          accent: isLight ? 'text-amber-700' : 'text-amber-400',
+          accentSoft: isLight ? 'text-amber-700' : 'text-amber-400/90',
+          accentLink: isLight ? 'text-amber-700' : 'text-amber-300',
+          accentHero: isLight ? 'text-amber-700' : 'text-amber-400',
+          accentBadge: isLight
+            ? 'bg-amber-50 border-amber-200 text-amber-800'
+            : 'bg-amber-950/40 border-amber-500/30 text-amber-300',
+          accentBadgeStrong: isLight
+            ? 'bg-amber-100 border-amber-300 text-amber-900'
+            : 'bg-amber-950/60 border-amber-500/40 text-amber-300',
+          chipPillar: isLight
+            ? 'bg-amber-50 border-amber-200 text-amber-800'
+            : 'bg-[#090d16] border-amber-700/60 text-amber-300/90',
+          iconBox: isLight
+            ? 'bg-white border-amber-200 text-amber-700'
+            : 'bg-slate-900 border-amber-700/60 text-amber-400',
+          bulletDot: isLight ? 'bg-amber-600' : 'bg-amber-400',
+          blockquote: isLight ? 'text-slate-800 border-amber-600' : 'text-slate-100 border-amber-400/80',
+          progressBar: isLight ? 'bg-gradient-to-r from-amber-600 to-orange-600' : 'bg-gradient-to-r from-amber-500 to-orange-400',
+          portraitFrame: isLight
+            ? 'border-amber-200 bg-slate-100'
+            : 'border-amber-500/35 bg-[radial-gradient(circle_at_50%_32%,#2f210b_0%,#191108_58%,#06080d_100%)]',
+          hoverLink: isLight ? 'hover:text-amber-700' : 'hover:text-amber-300',
+        };
+      case 'teal':
+        return {
+          accent: isLight ? 'text-teal-700' : 'text-teal-400',
+          accentSoft: isLight ? 'text-teal-700' : 'text-teal-400/90',
+          accentLink: isLight ? 'text-teal-700' : 'text-teal-300',
+          accentHero: isLight ? 'text-teal-700' : 'text-teal-400',
+          accentBadge: isLight
+            ? 'bg-teal-50 border-teal-200 text-teal-800'
+            : 'bg-teal-950/40 border-teal-500/30 text-teal-300',
+          accentBadgeStrong: isLight
+            ? 'bg-teal-100 border-teal-300 text-teal-900'
+            : 'bg-teal-950/60 border-teal-500/40 text-teal-300',
+          chipPillar: isLight
+            ? 'bg-teal-50 border-teal-200 text-teal-800'
+            : 'bg-[#090d16] border-teal-700/60 text-teal-300/90',
+          iconBox: isLight
+            ? 'bg-white border-teal-200 text-teal-700'
+            : 'bg-slate-900 border-teal-700/60 text-teal-400',
+          bulletDot: isLight ? 'bg-teal-600' : 'bg-teal-400',
+          blockquote: isLight ? 'text-slate-800 border-teal-600' : 'text-slate-100 border-teal-400/80',
+          progressBar: isLight ? 'bg-gradient-to-r from-teal-600 to-cyan-600' : 'bg-gradient-to-r from-teal-500 to-cyan-400',
+          portraitFrame: isLight
+            ? 'border-teal-200 bg-slate-100'
+            : 'border-teal-500/35 bg-[radial-gradient(circle_at_50%_32%,#0d2b2b_0%,#081718_58%,#06080d_100%)]',
+          hoverLink: isLight ? 'hover:text-teal-700' : 'hover:text-teal-300',
+        };
+      case 'rose':
+        return {
+          accent: isLight ? 'text-rose-700' : 'text-rose-400',
+          accentSoft: isLight ? 'text-rose-700' : 'text-rose-400/90',
+          accentLink: isLight ? 'text-rose-700' : 'text-rose-300',
+          accentHero: isLight ? 'text-rose-700' : 'text-rose-400',
+          accentBadge: isLight
+            ? 'bg-rose-50 border-rose-200 text-rose-800'
+            : 'bg-rose-950/40 border-rose-500/30 text-rose-300',
+          accentBadgeStrong: isLight
+            ? 'bg-rose-100 border-rose-300 text-rose-900'
+            : 'bg-rose-950/60 border-rose-500/40 text-rose-300',
+          chipPillar: isLight
+            ? 'bg-rose-50 border-rose-200 text-rose-800'
+            : 'bg-[#090d16] border-rose-700/60 text-rose-300/90',
+          iconBox: isLight
+            ? 'bg-white border-rose-200 text-rose-700'
+            : 'bg-slate-900 border-rose-700/60 text-rose-400',
+          bulletDot: isLight ? 'bg-rose-600' : 'bg-rose-400',
+          blockquote: isLight ? 'text-slate-800 border-rose-600' : 'text-slate-100 border-rose-400/80',
+          progressBar: isLight ? 'bg-gradient-to-r from-rose-600 to-pink-600' : 'bg-gradient-to-r from-rose-500 to-pink-400',
+          portraitFrame: isLight
+            ? 'border-rose-200 bg-slate-100'
+            : 'border-rose-500/35 bg-[radial-gradient(circle_at_50%_32%,#33111c_0%,#1c0a11_58%,#06080d_100%)]',
+          hoverLink: isLight ? 'hover:text-rose-700' : 'hover:text-rose-300',
+        };
+      case 'slate':
+        return {
+          accent: isLight ? 'text-slate-800' : 'text-slate-200',
+          accentSoft: isLight ? 'text-slate-700' : 'text-slate-300',
+          accentLink: isLight ? 'text-slate-900' : 'text-slate-100',
+          accentHero: isLight ? 'text-slate-900' : 'text-slate-100',
+          accentBadge: isLight
+            ? 'bg-slate-100 border-slate-300 text-slate-800'
+            : 'bg-slate-900 border-slate-700 text-slate-200',
+          accentBadgeStrong: isLight
+            ? 'bg-slate-200 border-slate-400 text-slate-900'
+            : 'bg-slate-800 border-slate-600 text-white',
+          chipPillar: isLight
+            ? 'bg-slate-100 border-slate-300 text-slate-800'
+            : 'bg-[#090d16] border-slate-700 text-slate-200',
+          iconBox: isLight
+            ? 'bg-white border-slate-300 text-slate-800'
+            : 'bg-slate-900 border-slate-700 text-slate-200',
+          bulletDot: isLight ? 'bg-slate-700' : 'bg-slate-300',
+          blockquote: isLight ? 'text-slate-800 border-slate-700' : 'text-slate-100 border-slate-400',
+          progressBar: isLight ? 'bg-gradient-to-r from-slate-700 to-slate-500' : 'bg-gradient-to-r from-slate-300 to-slate-500',
+          portraitFrame: isLight
+            ? 'border-slate-300 bg-slate-100'
+            : 'border-slate-600/50 bg-[radial-gradient(circle_at_50%_32%,#1e293b_0%,#0f172a_58%,#06080d_100%)]',
+          hoverLink: isLight ? 'hover:text-slate-900' : 'hover:text-white',
+        };
+      default:
+        return {
+          accent: isLight ? 'text-sky-700' : 'text-cyan-400',
+          accentSoft: isLight ? 'text-sky-700' : 'text-cyan-400/90',
+          accentLink: isLight ? 'text-sky-700' : 'text-cyan-300',
+          accentHero: isLight ? 'text-sky-700' : 'text-[#38bdf8]',
+          accentBadge: isLight
+            ? 'bg-sky-50 border-sky-200 text-sky-800'
+            : 'bg-cyan-950/40 border-cyan-500/30 text-cyan-300',
+          accentBadgeStrong: isLight
+            ? 'bg-sky-100 border-sky-300 text-sky-900'
+            : 'bg-cyan-950/60 border-cyan-500/40 text-cyan-300',
+          chipPillar: isLight
+            ? 'bg-sky-50 border-sky-200 text-sky-800'
+            : 'bg-[#090d16] border-slate-700/80 text-cyan-300/90',
+          iconBox: isLight
+            ? 'bg-white border-slate-200 text-sky-700'
+            : 'bg-slate-900 border-slate-700/80 text-cyan-400',
+          bulletDot: isLight ? 'bg-sky-600' : 'bg-cyan-400',
+          blockquote: isLight ? 'text-slate-800 border-sky-600' : 'text-slate-100 border-cyan-400/80',
+          progressBar: isLight ? 'bg-gradient-to-r from-sky-600 to-cyan-600' : 'bg-gradient-to-r from-cyan-500 to-sky-400',
+          portraitFrame: isLight
+            ? 'border-sky-200 bg-slate-100'
+            : 'border-cyan-500/35 bg-[radial-gradient(circle_at_50%_32%,#14233b_0%,#0a101e_58%,#06080d_100%)]',
+          hoverLink: isLight ? 'hover:text-sky-700' : 'hover:text-cyan-300',
+        };
+    }
+  })();
+
   // Explicit theme palette for Dark (screen-matched) vs Light Paper (ink-friendly) export & print
   const t = {
     doc: isLight
@@ -1196,12 +1592,8 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
     chipMuted: isLight
       ? 'bg-slate-100 border-slate-200 text-slate-600'
       : 'bg-[#090d16] border-slate-800 text-slate-400',
-    chipPillar: isLight
-      ? 'bg-sky-50 border-sky-200 text-sky-800'
-      : 'bg-[#090d16] border-slate-700/80 text-cyan-300/90',
-    iconBox: isLight
-      ? 'bg-white border-slate-200 text-sky-700'
-      : 'bg-slate-900 border-slate-700/80 text-cyan-400',
+    chipPillar: accentTokens.chipPillar,
+    iconBox: accentTokens.iconBox,
     iconBoxDark: isLight
       ? 'bg-slate-100 border-slate-200'
       : 'bg-[#090d16] border-slate-800',
@@ -1210,22 +1602,18 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
     body: isLight ? 'text-slate-700' : 'text-slate-300',
     muted: isLight ? 'text-slate-600' : 'text-slate-400',
     subtle: isLight ? 'text-slate-500' : 'text-slate-500',
-    accent: isLight ? 'text-sky-700' : 'text-cyan-400',
-    accentSoft: isLight ? 'text-sky-700' : 'text-cyan-400/90',
-    accentLink: isLight ? 'text-sky-700' : 'text-cyan-300',
-    accentHero: isLight ? 'text-sky-700' : 'text-[#38bdf8]',
-    accentBadge: isLight
-      ? 'bg-sky-50 border-sky-200 text-sky-800'
-      : 'bg-cyan-950/40 border-cyan-500/30 text-cyan-300',
-    accentBadgeStrong: isLight
-      ? 'bg-sky-100 border-sky-300 text-sky-900'
-      : 'bg-cyan-950/60 border-cyan-500/40 text-cyan-300',
+    accent: accentTokens.accent,
+    accentSoft: accentTokens.accentSoft,
+    accentLink: accentTokens.accentLink,
+    accentHero: accentTokens.accentHero,
+    accentBadge: accentTokens.accentBadge,
+    accentBadgeStrong: accentTokens.accentBadgeStrong,
     periodPill: isLight
       ? 'bg-slate-100 border-slate-200 text-slate-700'
       : 'bg-slate-900 border-slate-800 text-slate-300',
-    bulletDot: isLight ? 'bg-sky-600' : 'bg-cyan-400',
+    bulletDot: accentTokens.bulletDot,
     divider: isLight ? 'border-slate-200' : 'border-slate-800/80',
-    blockquote: isLight ? 'text-slate-800 border-sky-600' : 'text-slate-100 border-cyan-400/80',
+    blockquote: accentTokens.blockquote,
     emeraldText: isLight ? 'text-emerald-700' : 'text-emerald-400',
     emeraldBadge: isLight
       ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
@@ -1235,10 +1623,8 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
       : 'bg-amber-400/10 border-amber-400/20 text-amber-400',
     medalColor: isLight ? 'text-amber-600' : 'text-amber-400',
     progressTrack: isLight ? 'bg-slate-200 border-slate-300' : 'bg-slate-900 border-slate-800',
-    progressBar: isLight ? 'bg-gradient-to-r from-sky-600 to-cyan-600' : 'bg-gradient-to-r from-cyan-500 to-sky-400',
-    portraitFrame: isLight
-      ? 'border-sky-200 bg-slate-100'
-      : 'border-cyan-500/35 bg-[radial-gradient(circle_at_50%_32%,#14233b_0%,#0a101e_58%,#06080d_100%)]'
+    progressBar: accentTokens.progressBar,
+    portraitFrame: accentTokens.portraitFrame
   };
 
   return (
@@ -1262,39 +1648,71 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.97, y: 10 }}
             transition={{ duration: 0.28, ease: EASE_OUT_EXPO }}
-            className={`relative w-full max-w-6xl max-h-[95vh] sm:max-h-[92vh] flex flex-col print:block rounded-2xl border border-slate-700 bg-[#07090e] shadow-2xl overflow-hidden my-auto print:max-w-none print:max-h-none print:rounded-none print:border-0 print:shadow-none print:overflow-visible print-reset-motion ${
+            className={`relative w-full max-w-6xl max-h-[95vh] lg:max-h-[92vh] flex flex-col print:block rounded-2xl border border-slate-700 bg-[#07090e] shadow-2xl overflow-hidden my-auto print:max-w-none print:max-h-none print:rounded-none print:border-0 print:shadow-none print:overflow-visible print-reset-motion ${
               isLight ? 'print:bg-white' : 'print:bg-[#06080d]'
             }`}
             onClick={(e) => e.stopPropagation()}
           >
-        {/* Top Modal Action Bar & Format Selector (hidden when printing) */}
-        <div className="relative border-b border-slate-800 bg-[#080b13] shrink-0 print:hidden">
+        {/* Fixed Slim Title Bar (always pinned at top of modal with Controls + Close; hidden when printing) */}
+        <div className="relative z-40 shrink-0 border-b border-slate-800 bg-[#080b13]/95 backdrop-blur-md px-3.5 sm:px-6 py-2.5 sm:py-3 print:hidden">
           <ModalHeaderScan active={isOpen} />
-          <div className="flex flex-col gap-3 px-4 sm:px-6 py-3 sm:py-3.5">
-            {/* Title row — always full width so it never collides with actions */}
-            <div className="flex items-start justify-between gap-3 min-w-0">
-              <div className="flex items-start gap-2.5 min-w-0 flex-1">
-                <motion.div
-                  whileHover={{ rotate: 360, scale: 1.06 }}
-                  transition={{ rotate: { duration: 0.65, ease: EASE_OUT_EXPO }, scale: { type: 'spring', stiffness: 400, damping: 20 } }}
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-500/20 to-blue-600/30 border border-cyan-500/30 text-cyan-400 font-bold font-display text-xs"
-                >
-                  MS
-                </motion.div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-display font-bold text-white text-sm sm:text-base">
-                      Export CV / Portfolio PDF
-                    </span>
-                    <span className="text-[10px] font-mono text-cyan-400 bg-cyan-950/40 border border-cyan-500/30 px-2 py-0.5 rounded uppercase whitespace-nowrap">
-                      {getFormatLabel()}
-                    </span>
-                  </div>
-                  <p className="text-[11px] font-mono text-slate-400 mt-0.5 leading-snug">
-                    Choose a layout preset or customize sections below before downloading
-                  </p>
+          <div className="flex items-center justify-between gap-2 sm:gap-3 min-w-0">
+            <div className="flex items-center gap-2.5 min-w-0 flex-1">
+              <motion.div
+                whileHover={{ rotate: 360, scale: 1.06 }}
+                transition={{ rotate: { duration: 0.65, ease: EASE_OUT_EXPO }, scale: { type: 'spring', stiffness: 400, damping: 20 } }}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-500/20 to-blue-600/30 border border-cyan-500/30 text-cyan-400 font-bold font-display text-xs"
+              >
+                MS
+              </motion.div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-display font-bold text-white text-[13px] sm:text-base leading-tight">
+                    Export CV / Portfolio PDF
+                  </span>
+                  <span className="text-[10px] font-mono text-cyan-400 bg-cyan-950/40 border border-cyan-500/30 px-2 py-0.5 rounded uppercase whitespace-nowrap">
+                    {getFormatLabel()}
+                  </span>
                 </div>
+                <p className="hidden sm:block text-[11px] font-mono text-slate-400 mt-0.5 leading-snug">
+                  Choose a layout preset or customize sections below before downloading
+                </p>
               </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  const scroller = modalScrollRef.current;
+                  if (scroller && scroller.scrollTop > 28) {
+                    setControlsOpen(true);
+                    scroller.scrollTo({ top: 0, behavior: 'smooth' });
+                    return;
+                  }
+                  setControlsOpen((prev) => !prev);
+                }}
+                aria-expanded={controlsOpen && !isBodyScrolled}
+                title={
+                  isBodyScrolled
+                    ? 'Scroll back up to CV controls & presets'
+                    : controlsOpen
+                      ? 'Hide CV controls for full preview'
+                      : 'Show CV controls & presets'
+                }
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] sm:text-xs font-medium transition-colors cursor-pointer ${
+                  isBodyScrolled || !controlsOpen
+                    ? 'border-cyan-500/50 bg-cyan-950/50 text-cyan-200 hover:bg-cyan-900/60'
+                    : 'border-slate-700 bg-slate-900/70 hover:bg-slate-800 text-slate-300 hover:text-white'
+                }`}
+              >
+                {isBodyScrolled ? (
+                  <ArrowUp className="w-3.5 h-3.5 text-cyan-300" />
+                ) : (
+                  <SlidersHorizontal className="w-3.5 h-3.5 text-cyan-400" />
+                )}
+                <span>Controls</span>
+              </button>
 
               <button
                 onClick={onClose}
@@ -1304,13 +1722,25 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
                 <X className="w-5 h-5" />
               </button>
             </div>
+          </div>
+        </div>
 
-            {/* Actions on their own row — wrap cleanly at any width */}
-            <div className="flex flex-wrap items-center gap-2">
+        {/* Scrollable Modal Body (< lg scrolls controls + CV smoothly together; lg+ keeps controls fixed above scrollable CV) */}
+        <div
+          ref={modalScrollRef}
+          onScroll={(e) => setIsBodyScrolled(e.currentTarget.scrollTop > 28)}
+          className="flex-1 min-h-0 flex flex-col overflow-y-auto lg:overflow-hidden overscroll-contain print:block print:overflow-visible print:max-h-none"
+        >
+        {/* Scrollable / Collapsible Action Bar & Format Selector (hidden when printing) */}
+        {controlsOpen && (
+        <div className="relative border-b border-slate-800 bg-[#080b13] shrink-0 print:hidden">
+          <div className="flex flex-col gap-2 sm:gap-3 px-3.5 sm:px-6 py-2.5 sm:py-3">
+            {/* Actions on their own row — compact on mobile/tablet so CV preview keeps generous height */}
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
               <button
                 type="button"
                 onClick={() => setCvTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer overflow-hidden ${
+                className={`flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-lg border text-[11px] sm:text-xs font-medium transition-colors cursor-pointer overflow-hidden ${
                   isLight
                     ? 'border-amber-400/60 bg-amber-500/15 text-amber-200 hover:bg-amber-500/25'
                     : 'border-slate-700 bg-slate-900/70 hover:bg-slate-800 text-slate-300 hover:text-white'
@@ -1350,14 +1780,15 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
               <button
                 type="button"
                 onClick={() => setShowCustomize((prev) => !prev)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer ${
+                aria-expanded={showCustomize}
+                className={`flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-lg border text-[11px] sm:text-xs font-medium transition-colors cursor-pointer ${
                   showCustomize
                     ? 'border-cyan-500/60 bg-cyan-950/40 text-cyan-300'
                     : 'border-slate-700 bg-slate-900/70 hover:bg-slate-800 text-slate-300 hover:text-white'
                 }`}
               >
                 <SlidersHorizontal className="w-3.5 h-3.5" />
-                <span>Customize</span>
+                <span>{showCustomize ? 'Done Customizing' : 'Customize'}</span>
               </button>
 
               <button
@@ -1365,7 +1796,7 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
                 onClick={handleTogglePageGuides}
                 disabled={selectedSectionCount === 0}
                 aria-pressed={showPageGuides}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer disabled:opacity-50 ${
+                className={`flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-lg border text-[11px] sm:text-xs font-medium transition-colors cursor-pointer disabled:opacity-50 ${
                   showPageGuides
                     ? 'border-cyan-400/70 bg-cyan-500/20 text-cyan-200 shadow-xs shadow-cyan-500/10'
                     : 'border-slate-700 bg-slate-900/70 hover:bg-slate-800 text-slate-300 hover:text-white'
@@ -1384,7 +1815,7 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
                 <button
                   onClick={handleRequestPdf}
                   disabled={isGeneratingPdf || selectedSectionCount === 0}
-                  className="relative flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-[#38bdf8] hover:bg-sky-300 disabled:opacity-60 text-slate-950 font-semibold text-xs transition-colors shadow-sm shadow-sky-500/20 cursor-pointer overflow-hidden"
+                  className="relative flex items-center gap-1.5 px-3 py-1 sm:px-3.5 sm:py-1.5 rounded-lg bg-[#38bdf8] hover:bg-sky-300 disabled:opacity-60 text-slate-950 font-semibold text-[11px] sm:text-xs transition-colors shadow-sm shadow-sky-500/20 cursor-pointer overflow-hidden"
                 >
                   {isGeneratingPdf ? (
                     <>
@@ -1415,7 +1846,7 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
               <button
                 onClick={handleRequestPrint}
                 disabled={selectedSectionCount === 0}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-900/70 hover:bg-slate-800 disabled:opacity-60 text-slate-300 hover:text-white font-medium text-xs transition-colors cursor-pointer"
+                className="flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-lg border border-slate-700 bg-slate-900/70 hover:bg-slate-800 disabled:opacity-60 text-slate-300 hover:text-white font-medium text-[11px] sm:text-xs transition-colors cursor-pointer"
                 title="Open native browser print dialog"
               >
                 <Printer className="w-3.5 h-3.5" />
@@ -1426,7 +1857,7 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
                 type="button"
                 onClick={handleRequestAtsCopy}
                 disabled={selectedSectionCount === 0}
-                className={`relative overflow-hidden flex items-center gap-1.5 px-3 py-1.5 rounded-lg border font-medium text-xs transition-colors cursor-pointer disabled:opacity-60 ${
+                className={`relative overflow-hidden flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-lg border font-medium text-[11px] sm:text-xs transition-colors cursor-pointer disabled:opacity-60 ${
                   atsCopied
                     ? 'border-emerald-500/60 bg-emerald-950/50 text-emerald-300'
                     : 'border-slate-700 bg-slate-900/70 hover:bg-slate-800 text-slate-300 hover:text-white'
@@ -1462,7 +1893,7 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
           )}
 
           {/* Preset Mode Switcher Strip */}
-          <div className="px-4 sm:px-6 pb-3 flex flex-col gap-2">
+          <div className="px-3.5 sm:px-6 pb-2.5 sm:pb-3 flex flex-col gap-1.5 sm:gap-2">
             <div className="flex flex-wrap items-center gap-1.5 p-1 rounded-xl bg-[#0d121f] border border-slate-800 w-full">
               {(
                 [
@@ -1472,6 +1903,8 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
                   { id: 'security' as const, short: 'Security', long: 'Security Track' },
                   { id: 'platform' as const, short: 'Platform', long: 'Platform Track' },
                   { id: 'fullstack' as const, short: 'Full-stack', long: 'Full-stack Track' },
+                  { id: 'cloud' as const, short: 'Cloud/AI', long: 'Cloud & AI Track' },
+                  { id: 'leadership' as const, short: 'Architect', long: 'Architect / Lead' },
                 ]
               ).map((item) => {
                 const active = preset === item.id;
@@ -1507,6 +1940,8 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
                 {preset === 'security' && 'Security-leaning CV: philosophy + concise roles + full skills + top certs + featured honors'}
                 {preset === 'platform' && 'Platform-leaning CV: full roles + full skills + top certs + featured honors'}
                 {preset === 'fullstack' && 'Delivery-leaning CV: concise roles + full skills + top 6 certs + education'}
+                {preset === 'cloud' && `Cloud & AI Track: concise roles + full skills + all ${CERTIFICATIONS.length} cloud/AI certs + key honors`}
+                {preset === 'leadership' && `Architect / Lead CV: philosophy + all ${totalRoleCount} full roles + compact skills + all ${AWARDS.length} honors`}
                 {preset === 'custom' && `${selectedSectionCount} section${selectedSectionCount === 1 ? '' : 's'} selected for export`}
               </div>
 
@@ -1528,7 +1963,7 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
             </div>
           </div>
 
-          {/* Expandable Section, Reorder & Granularity Checklist */}
+          {/* Expandable Section, Reorder & Granularity Checklist (flows with modal scroll on < lg; bounded internal scroll on lg+ desktop) */}
           <AnimatePresence initial={false}>
             {showCustomize && (
               <motion.div
@@ -1538,7 +1973,8 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
                 transition={{ duration: 0.25, ease: EASE_OUT_EXPO }}
                 className="overflow-hidden border-t border-slate-800/80 bg-[#0a0e18]"
               >
-                <div className="px-5 sm:px-6 py-3.5 space-y-3">
+                <div className="lg:max-h-[40vh] lg:overflow-y-auto lg:overscroll-contain">
+                <div className="px-4 sm:px-6 py-3 sm:py-3.5 space-y-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
                       Include &amp; Reorder Sections (arrows shift order in live preview &amp; PDF):
@@ -1694,39 +2130,105 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
                   </div>
                 )}
                 </div>
+
+                {/* Density & Accent Customization Row */}
+                <div className="pt-2.5 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-4 text-[11px] font-mono text-slate-400">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="inline-flex items-center gap-1 text-slate-300 mr-1">
+                      <Minimize2 className="w-3 h-3 text-cyan-400" />
+                      Print Density:
+                    </span>
+                    {CV_DENSITY_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setPrintDensity(opt.id)}
+                        title={opt.hint}
+                        className={`px-2.5 py-0.5 rounded border transition-colors cursor-pointer ${
+                          printDensity === opt.id
+                            ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300 font-semibold'
+                            : 'border-slate-800 text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="inline-flex items-center gap-1 text-slate-300 mr-1">
+                      <Palette className="w-3 h-3 text-cyan-400" />
+                      CV Accent:
+                    </span>
+                    {CV_ACCENT_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setCvAccent(opt.id)}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded border transition-colors cursor-pointer ${
+                          cvAccent === opt.id
+                            ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-200 font-semibold'
+                            : 'border-slate-800 text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        <span className={`w-2 h-2 rounded-full ${opt.swatchClass}`} />
+                        <span>{opt.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
+
+                <div className="lg:sticky lg:bottom-0 z-10 border-t border-slate-800/90 bg-[#0a0e18]/95 backdrop-blur-xs px-4 sm:px-6 py-2 flex items-center justify-between gap-2 text-[11px] font-mono">
+                  <span className="text-slate-400 truncate">
+                    <span className="lg:hidden">Scroll down anytime to view the full CV preview</span>
+                    <span className="hidden lg:inline">Live preview stays visible below · Scroll panel for more options</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowCustomize(false)}
+                    className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-cyan-500/40 bg-cyan-950/50 hover:bg-cyan-900/60 text-cyan-200 font-semibold cursor-pointer"
+                  >
+                    <Check className="w-3 h-3 text-cyan-400" />
+                    <span>Apply &amp; View CV</span>
+                  </button>
+                </div>
+                </div>
               </motion.div>
             )}
           </AnimatePresence>
         </div>
+        )}
 
         {/* Scrollable & Printable Portfolio Content */}
         <div
           ref={contentRef}
-          className={`pdf-doc overflow-y-auto print:overflow-visible print:max-h-none ${t.doc}`}
+          data-cv-density={printDensity}
+          className={`pdf-doc shrink-0 lg:shrink lg:flex-1 lg:min-h-0 overflow-visible lg:overflow-y-auto print:overflow-visible print:max-h-none ${t.doc}`}
         >
           {showPageGuides && selectedSectionCount > 0 && (
             <div
               data-pdf-ignore
-              className={`sticky top-0 z-30 border-b px-4 sm:px-6 py-2 flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono backdrop-blur-md print:hidden ${
+              className={`sticky top-0 z-30 border-b px-3 sm:px-6 py-1.5 sm:py-2 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-1.5 sm:gap-2 text-[11px] font-mono backdrop-blur-md print:hidden ${
                 isLight
                   ? 'bg-sky-50/95 border-sky-200 text-sky-900'
                   : 'bg-[#08101d]/95 border-cyan-500/35 text-cyan-200'
               }`}
             >
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
                 <Ruler className={`w-3.5 h-3.5 shrink-0 ${t.accent}`} />
-                <span>
-                  <strong>Smart A4 Break Guides</strong> · {pageTelemetry.estPages}{' '}
-                  {pageTelemetry.estPages === 1 ? 'page' : 'pages'} · auto-snapped between cards
+                <span className="truncate">
+                  <strong>Smart A4 Guides</strong> · {pageTelemetry.estPages}{' '}
+                  {pageTelemetry.estPages === 1 ? 'page' : 'pages'}
+                  <span className="hidden sm:inline"> · auto-snapped between cards</span>
                 </span>
               </div>
 
-              <div className="flex flex-wrap items-center gap-1.5">
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 lg:pb-0 lg:flex-wrap lg:overflow-visible">
                 <button
                   type="button"
-                  onClick={() => contentRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
-                  className={`px-2 py-0.5 rounded border text-[10px] cursor-pointer ${t.accentBadge}`}
+                  onClick={scrollToPreviewTop}
+                  className={`shrink-0 px-2 py-0.5 rounded border text-[10px] cursor-pointer ${t.accentBadge}`}
                 >
                   Page 1 Top
                 </button>
@@ -1735,7 +2237,7 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
                     key={`jump-guide-${guide.page}`}
                     type="button"
                     onClick={() => scrollToPreviewY(guide.topPx)}
-                    className={`px-2 py-0.5 rounded border text-[10px] cursor-pointer ${t.accentBadgeStrong}`}
+                    className={`shrink-0 px-2 py-0.5 rounded border text-[10px] cursor-pointer ${t.accentBadgeStrong}`}
                   >
                     Break {guide.page} → {guide.page + 1}
                   </button>
@@ -1875,7 +2377,7 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
                   ))}
                 </div>
 
-                {showInfographics && <CvTrajectoryAndCloudStrip isLight={isLight} />}
+                {showInfographics && <CvTrajectoryAndCloudStrip isLight={isLight} accent={cvAccent} />}
               </div>
             </section>
                 );
@@ -2396,7 +2898,7 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
 
               {showInfographics && (
                 <div className="mb-7">
-                  <CvImpactProofStrip isLight={isLight} />
+                  <CvImpactProofStrip isLight={isLight} accent={cvAccent} />
                 </div>
               )}
 
@@ -2721,11 +3223,12 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
                   </div>
                 </div>
 
-                <CvVerificationQrBadge isLight={isLight} />
+                <CvVerificationQrBadge isLight={isLight} accent={cvAccent} />
               </div>
             </section>
           )}
           </div>
+        </div>
         </div>
 
           </motion.div>

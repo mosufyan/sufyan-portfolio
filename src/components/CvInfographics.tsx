@@ -8,9 +8,152 @@ import {
   LINKEDIN_RECOMMENDATIONS,
 } from '../data/portfolioData';
 import { PORTFOLIO_CANONICAL_URL } from '../utils/vcard';
+import type { CvAccentId } from '../utils/cvShareConfig';
 
 interface ThemeProps {
   isLight: boolean;
+  accent?: CvAccentId;
+}
+
+function getInfographicAccent(isLight: boolean, accent: CvAccentId = 'cyan') {
+  switch (accent) {
+    case 'emerald':
+      return {
+        text: isLight ? 'text-emerald-700' : 'text-emerald-400',
+        barPrimary: isLight ? 'bg-emerald-600' : 'bg-emerald-500',
+        barSecondary: isLight ? 'bg-teal-600' : 'bg-teal-400',
+        polyFill: isLight ? 'rgba(5, 150, 105, 0.16)' : 'rgba(52, 211, 153, 0.18)',
+        polyStroke: isLight ? '#059669' : '#34d399',
+        hubFill: isLight ? '#ecfdf5' : '#071a15',
+        hubStroke: isLight ? '#6ee7b7' : '#065f46',
+        hubText: isLight ? '#047857' : '#6ee7b7',
+        iconBox: isLight
+          ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+          : 'bg-emerald-950/50 border-emerald-500/35 text-emerald-400',
+        badge: isLight
+          ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+          : 'border-emerald-500/30 bg-emerald-950/40 text-emerald-300',
+      };
+    case 'indigo':
+      return {
+        text: isLight ? 'text-indigo-700' : 'text-indigo-400',
+        barPrimary: isLight ? 'bg-indigo-600' : 'bg-indigo-500',
+        barSecondary: isLight ? 'bg-violet-600' : 'bg-violet-400',
+        polyFill: isLight ? 'rgba(79, 70, 229, 0.15)' : 'rgba(129, 140, 248, 0.19)',
+        polyStroke: isLight ? '#4f46e5' : '#818cf8',
+        hubFill: isLight ? '#eef2ff' : '#0f1229',
+        hubStroke: isLight ? '#a5b4fc' : '#312e81',
+        hubText: isLight ? '#4338ca' : '#a5b4fc',
+        iconBox: isLight
+          ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
+          : 'bg-indigo-950/50 border-indigo-500/35 text-indigo-400',
+        badge: isLight
+          ? 'border-indigo-200 bg-indigo-50 text-indigo-800'
+          : 'border-indigo-500/30 bg-indigo-950/40 text-indigo-300',
+      };
+    case 'violet':
+      return {
+        text: isLight ? 'text-violet-700' : 'text-violet-400',
+        barPrimary: isLight ? 'bg-violet-600' : 'bg-violet-500',
+        barSecondary: isLight ? 'bg-fuchsia-600' : 'bg-fuchsia-400',
+        polyFill: isLight ? 'rgba(124, 58, 237, 0.15)' : 'rgba(167, 139, 250, 0.19)',
+        polyStroke: isLight ? '#7c3aed' : '#a78bfa',
+        hubFill: isLight ? '#f5f3ff' : '#140f29',
+        hubStroke: isLight ? '#c4b5fd' : '#4c1d95',
+        hubText: isLight ? '#6d28d9' : '#c4b5fd',
+        iconBox: isLight
+          ? 'bg-violet-50 border-violet-200 text-violet-700'
+          : 'bg-violet-950/50 border-violet-500/35 text-violet-400',
+        badge: isLight
+          ? 'border-violet-200 bg-violet-50 text-violet-800'
+          : 'border-violet-500/30 bg-violet-950/40 text-violet-300',
+      };
+    case 'amber':
+      return {
+        text: isLight ? 'text-amber-700' : 'text-amber-400',
+        barPrimary: isLight ? 'bg-amber-600' : 'bg-amber-500',
+        barSecondary: isLight ? 'bg-orange-600' : 'bg-orange-400',
+        polyFill: isLight ? 'rgba(217, 119, 6, 0.15)' : 'rgba(251, 191, 36, 0.18)',
+        polyStroke: isLight ? '#d97706' : '#fbbf24',
+        hubFill: isLight ? '#fffbeb' : '#1f1608',
+        hubStroke: isLight ? '#fcd34d' : '#78350f',
+        hubText: isLight ? '#b45309' : '#fcd34d',
+        iconBox: isLight
+          ? 'bg-amber-50 border-amber-200 text-amber-700'
+          : 'bg-amber-950/50 border-amber-500/35 text-amber-400',
+        badge: isLight
+          ? 'border-amber-200 bg-amber-50 text-amber-800'
+          : 'border-amber-500/30 bg-amber-950/40 text-amber-300',
+      };
+    case 'teal':
+      return {
+        text: isLight ? 'text-teal-700' : 'text-teal-400',
+        barPrimary: isLight ? 'bg-teal-600' : 'bg-teal-500',
+        barSecondary: isLight ? 'bg-cyan-600' : 'bg-cyan-400',
+        polyFill: isLight ? 'rgba(13, 148, 136, 0.15)' : 'rgba(45, 212, 191, 0.18)',
+        polyStroke: isLight ? '#0d9488' : '#2dd4bf',
+        hubFill: isLight ? '#f0fdfa' : '#081a1a',
+        hubStroke: isLight ? '#99f6e4' : '#115e59',
+        hubText: isLight ? '#0f766e' : '#5eead4',
+        iconBox: isLight
+          ? 'bg-teal-50 border-teal-200 text-teal-700'
+          : 'bg-teal-950/50 border-teal-500/35 text-teal-400',
+        badge: isLight
+          ? 'border-teal-200 bg-teal-50 text-teal-800'
+          : 'border-teal-500/30 bg-teal-950/40 text-teal-300',
+      };
+    case 'rose':
+      return {
+        text: isLight ? 'text-rose-700' : 'text-rose-400',
+        barPrimary: isLight ? 'bg-rose-600' : 'bg-rose-500',
+        barSecondary: isLight ? 'bg-pink-600' : 'bg-pink-400',
+        polyFill: isLight ? 'rgba(225, 29, 72, 0.14)' : 'rgba(251, 113, 133, 0.18)',
+        polyStroke: isLight ? '#e11d48' : '#fb7185',
+        hubFill: isLight ? '#fff1f2' : '#220b12',
+        hubStroke: isLight ? '#fda4af' : '#881337',
+        hubText: isLight ? '#be123c' : '#fda4af',
+        iconBox: isLight
+          ? 'bg-rose-50 border-rose-200 text-rose-700'
+          : 'bg-rose-950/50 border-rose-500/35 text-rose-400',
+        badge: isLight
+          ? 'border-rose-200 bg-rose-50 text-rose-800'
+          : 'border-rose-500/30 bg-rose-950/40 text-rose-300',
+      };
+    case 'slate':
+      return {
+        text: isLight ? 'text-slate-800' : 'text-slate-200',
+        barPrimary: isLight ? 'bg-slate-700' : 'bg-slate-400',
+        barSecondary: isLight ? 'bg-slate-900' : 'bg-slate-200',
+        polyFill: isLight ? 'rgba(51, 65, 85, 0.15)' : 'rgba(148, 163, 184, 0.18)',
+        polyStroke: isLight ? '#334155' : '#cbd5e1',
+        hubFill: isLight ? '#f8fafc' : '#0f172a',
+        hubStroke: isLight ? '#cbd5e1' : '#334155',
+        hubText: isLight ? '#1e293b' : '#e2e8f0',
+        iconBox: isLight
+          ? 'bg-slate-100 border-slate-300 text-slate-800'
+          : 'bg-slate-900 border-slate-700 text-slate-200',
+        badge: isLight
+          ? 'border-slate-300 bg-slate-100 text-slate-800'
+          : 'border-slate-700 bg-slate-900 text-slate-200',
+      };
+    default:
+      return {
+        text: isLight ? 'text-sky-700' : 'text-cyan-400',
+        barPrimary: isLight ? 'bg-sky-600' : 'bg-cyan-500',
+        barSecondary: isLight ? 'bg-emerald-600' : 'bg-emerald-400',
+        polyFill: isLight ? 'rgba(14, 165, 233, 0.16)' : 'rgba(34, 211, 238, 0.18)',
+        polyStroke: isLight ? '#0284c7' : '#22d3ee',
+        hubFill: isLight ? '#f0f9ff' : '#0d121f',
+        hubStroke: isLight ? '#7dd3fc' : '#1e293b',
+        hubText: isLight ? '#0369a1' : '#38bdf8',
+        iconBox: isLight
+          ? 'bg-sky-50 border-sky-200 text-sky-700'
+          : 'bg-cyan-950/50 border-cyan-500/35 text-cyan-400',
+        badge: isLight
+          ? 'border-sky-200 bg-sky-50 text-sky-800'
+          : 'border-cyan-500/30 bg-cyan-950/40 text-cyan-300',
+      };
+  }
 }
 
 /**
@@ -18,7 +161,8 @@ interface ThemeProps {
  * Designed with pure SVG + explicit hex/theme classes so both Dark Theme and
  * Light Paper PDF exports render crisply via html2canvas-pro.
  */
-export function CvTrajectoryAndCloudStrip({ isLight }: ThemeProps) {
+export function CvTrajectoryAndCloudStrip({ isLight, accent = 'cyan' }: ThemeProps) {
+  const palette = getInfographicAccent(isLight, accent);
   const pillars = useMemo(() => {
     const aws = CERTIFICATIONS.filter((c) => c.issuer.includes('Amazon Web Services')).length;
     const azure = CERTIFICATIONS.filter((c) => c.issuer === 'Microsoft').length;
@@ -81,7 +225,7 @@ export function CvTrajectoryAndCloudStrip({ isLight }: ThemeProps) {
       span: '6+ yrs',
       pct: 36,
       role: 'Tech Lead → Lead Architect',
-      barColor: isLight ? 'bg-sky-600' : 'bg-cyan-500',
+      barColor: palette.barPrimary,
     },
     {
       org: 'Cisco Systems Inc. STO',
@@ -90,7 +234,7 @@ export function CvTrajectoryAndCloudStrip({ isLight }: ThemeProps) {
       span: 'Flagship',
       pct: 15,
       role: 'Security Data Platform',
-      barColor: isLight ? 'bg-emerald-600' : 'bg-emerald-400',
+      barColor: palette.barSecondary,
     },
   ];
 
@@ -99,7 +243,7 @@ export function CvTrajectoryAndCloudStrip({ isLight }: ThemeProps) {
     : 'border-slate-800 bg-[#0a0f1c]/90';
   const headingCls = isLight ? 'text-slate-900' : 'text-white';
   const mutedCls = isLight ? 'text-slate-600' : 'text-slate-400';
-  const accentCls = isLight ? 'text-sky-700' : 'text-cyan-400';
+  const accentCls = palette.text;
   const dividerCls = isLight ? 'border-slate-200' : 'border-slate-800/80';
 
   return (
@@ -211,8 +355,8 @@ export function CvTrajectoryAndCloudStrip({ isLight }: ThemeProps) {
             ))}
             <polygon
               points={polygonPoints}
-              fill={isLight ? 'rgba(14, 165, 233, 0.16)' : 'rgba(34, 211, 238, 0.18)'}
-              stroke={isLight ? '#0284c7' : '#22d3ee'}
+              fill={palette.polyFill}
+              stroke={palette.polyStroke}
               strokeWidth="1.8"
             />
             {vertices.map((v) => (
@@ -240,8 +384,8 @@ export function CvTrajectoryAndCloudStrip({ isLight }: ThemeProps) {
               cx={cx}
               cy={cy}
               r="16"
-              fill={isLight ? '#f0f9ff' : '#0d121f'}
-              stroke={isLight ? '#7dd3fc' : '#1e293b'}
+              fill={palette.hubFill}
+              stroke={palette.hubStroke}
               strokeWidth="1.2"
             />
             <text
@@ -249,7 +393,7 @@ export function CvTrajectoryAndCloudStrip({ isLight }: ThemeProps) {
               y={cy + 3.5}
               textAnchor="middle"
               className="font-display text-[10px] font-extrabold tabular-nums"
-              fill={isLight ? '#0369a1' : '#38bdf8'}
+              fill={palette.hubText}
             >
               {CERTIFICATIONS.length}x
             </text>
@@ -267,7 +411,8 @@ export function CvTrajectoryAndCloudStrip({ isLight }: ThemeProps) {
 /**
  * Compact Honors & 360 Endorsement Distribution Strip embedded in Awards section.
  */
-export function CvImpactProofStrip({ isLight }: ThemeProps) {
+export function CvImpactProofStrip({ isLight, accent = 'cyan' }: ThemeProps) {
+  const palette = getInfographicAccent(isLight, accent);
   const totalProofs = AWARDS.length + LINKEDIN_RECOMMENDATIONS.length;
   const orgCounts = AWARDS_BY_ORGANIZATION.map((g) => ({
     label: g.organization.includes('Cisco')
@@ -291,11 +436,7 @@ export function CvImpactProofStrip({ isLight }: ThemeProps) {
     >
       <div className="flex items-center gap-3">
         <div
-          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border ${
-            isLight
-              ? 'bg-sky-50 border-sky-200 text-sky-700'
-              : 'bg-cyan-950/50 border-cyan-500/35 text-cyan-400'
-          }`}
+          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border ${palette.iconBox}`}
         >
           <Trophy className="w-4 h-4" />
         </div>
@@ -319,7 +460,7 @@ export function CvImpactProofStrip({ isLight }: ThemeProps) {
                 : 'border-slate-800 bg-[#090d16] text-slate-300'
             }`}
           >
-            {o.label}: <strong className={isLight ? 'text-sky-700' : 'text-cyan-400'}>{o.count}</strong>
+            {o.label}: <strong className={palette.text}>{o.count}</strong>
           </span>
         ))}
         <span
@@ -339,7 +480,8 @@ export function CvImpactProofStrip({ isLight }: ThemeProps) {
 /**
  * Compact Verification QR Code Badge rendered inside the CV Footer (screen & exported PDF).
  */
-export function CvVerificationQrBadge({ isLight }: ThemeProps) {
+export function CvVerificationQrBadge({ isLight, accent = 'cyan' }: ThemeProps) {
+  const palette = getInfographicAccent(isLight, accent);
   const [qrUrl, setQrUrl] = useState<string>('');
 
   useEffect(() => {
@@ -390,7 +532,7 @@ export function CvVerificationQrBadge({ isLight }: ThemeProps) {
           </div>
         )}
         <div className="min-w-0">
-          <div className={`text-[10px] font-mono uppercase tracking-wider font-semibold ${isLight ? 'text-sky-700' : 'text-cyan-400'}`}>
+          <div className={`text-[10px] font-mono uppercase tracking-wider font-semibold ${palette.text}`}>
             Scan to Verify Credentials &amp; Live Portfolio
           </div>
           <div className={`text-[11px] font-mono truncate ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
@@ -400,11 +542,7 @@ export function CvVerificationQrBadge({ isLight }: ThemeProps) {
       </div>
 
       <span
-        className={`text-[10px] font-mono px-2 py-0.5 rounded border shrink-0 ${
-          isLight
-            ? 'border-sky-200 bg-sky-50 text-sky-800'
-            : 'border-cyan-500/30 bg-cyan-950/40 text-cyan-300'
-        }`}
+        className={`text-[10px] font-mono px-2 py-0.5 rounded border shrink-0 ${palette.badge}`}
       >
         Verified Interactive Edition
       </span>
