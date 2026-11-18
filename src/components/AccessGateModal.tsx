@@ -68,6 +68,10 @@ function submitLabel(action: AccessGateAction): { icon: typeof Download; text: s
   return { icon: Download, text: 'Verify & Download PDF' };
 }
 
+/**
+ * Client-side unlock flags are lead telemetry only — not authentication.
+ * CV content ships in the client bundle; anyone can set these keys in DevTools.
+ */
 function readUnlockFlag(key: string): boolean {
   try {
     return typeof window !== 'undefined' && window.sessionStorage.getItem(key) === '1';

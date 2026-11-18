@@ -5,42 +5,33 @@ import fs from 'fs';
 import nodemailer from 'nodemailer';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import {
+  MAX_FIELD_LENGTHS,
+  applySecurityHeaders,
+  createRateLimitBucket,
+  escapeHtml,
+  isAllowedRequestOrigin,
+  isFormSubmitFallbackAllowed,
+  isHoneypotTriggered,
+  isRateLimited,
+  isValidEmailAddress,
+  isValidPhoneNumber,
+  rateLimitRetryAfterSeconds,
+  resolveAllowedOrigins,
+  sanitizeDisplayName,
+  sanitizeHeaderValue,
+  verifyTurnstileToken,
+} from './server/security.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const PORT = Number(process.env.PORT) || 3000;
 const DESTINATION_EMAIL = process.env.CONTACT_TO_EMAIL || 'sufyan.net@gmail.com';
-const MAX_FIELD_LENGTHS = {
-  name: 120,
-  email: 254,
-  phone: 40,
-  subject: 200,
-  message: 5000,
-} as const;
-
-const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
-const RATE_LIMIT_MAX_REQUESTS = 15;
-const RATE_LIMIT_MAX_ENTRIES = 1000;
-const contactRateLimitMap = new Map<string, { count: number; resetAt: number }>();
-const cvAccessRateLimitMap = new Map<string, { count: number; resetAt: number }>();
-
-// Strict email regex rejecting URI delimiter/control chars (?, #, &, spaces, brackets, etc.)
-const STRICT_EMAIL_REGEX = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+$/;
-
-function isValidEmailAddress(email: string): boolean {
-  if (!email || email.length > MAX_FIELD_LENGTHS.email) return false;
-  if (/[?#<>()[\]\\,;:\s]/.test(email)) return false;
-  return STRICT_EMAIL_REGEX.test(email);
-}
-
-function isValidPhoneNumber(phone: string): boolean {
-  if (!phone) return true;
-  if (phone.length > MAX_FIELD_LENGTHS.phone) return false;
-  if (!/^[+\d\s().-]+$/.test(phone)) return false;
-  const digitCount = phone.replace(/\D/g, '').length;
-  return digitCount >= 7 && digitCount <= 15;
-}
+const TURNSTILE_SECRET = process.env.TURNSTILE_SECRET_KEY?.trim() || '';
+const ALLOWED_ORIGINS = resolveAllowedOrigins(process.env.APP_URL, PORT);
+const contactRateLimitMap = createRateLimitBucket();
+const cvAccessRateLimitMap = createRateLimitBucket();
 
 interface ContactPayload {
   name: string;
@@ -48,23 +39,6 @@ interface ContactPayload {
   phone?: string;
   subject?: string;
   message: string;
-}
-
-function sanitizeHeaderValue(value: string): string {
-  return value.replace(/[\r\n\u0000-\u001f\u007f]+/g, ' ').trim();
-}
-
-function sanitizeDisplayName(value: string): string {
-  return sanitizeHeaderValue(value).replace(/["<>\\]/g, '');
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
 }
 
 function buildPortfolioEmailHtml(payload: ContactPayload, timestamp: string): string {
@@ -553,41 +527,48 @@ async function dispatchEmailMessage(params: DispatchEmailParams): Promise<{ prov
     }
   }
 
-  // 4. Zero-config FormSubmit relay fallback
-  const appUrl = cleanSecretEnv(process.env.APP_URL) || `http://localhost:${PORT}`;
-  try {
-    const formSubmitRes = await fetch(`https://formsubmit.co/ajax/${encodeURIComponent(DESTINATION_EMAIL)}`, {
-      method: 'POST',
-      signal: AbortSignal.timeout(10000),
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-        Referer: appUrl,
-        Origin: appUrl,
-      },
-      body: JSON.stringify({
-        ...fallbackFields,
-        _subject: subjectLine,
-        ...(replyTo ? { _replyto: replyTo } : {}),
-        _template: 'box',
-        _captcha: 'false',
-      }),
-    });
+  // 4. FormSubmit relay — disabled in production unless ALLOW_FORMSUBMIT_FALLBACK=true
+  // (relays lead PII to a third party; prefer Resend/Gmail/SMTP in prod).
+  if (isFormSubmitFallbackAllowed()) {
+    const appUrl = cleanSecretEnv(process.env.APP_URL) || `http://localhost:${PORT}`;
+    try {
+      const formSubmitRes = await fetch(`https://formsubmit.co/ajax/${encodeURIComponent(DESTINATION_EMAIL)}`, {
+        method: 'POST',
+        signal: AbortSignal.timeout(10000),
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          Referer: appUrl,
+          Origin: appUrl,
+        },
+        body: JSON.stringify({
+          ...fallbackFields,
+          _subject: subjectLine,
+          ...(replyTo ? { _replyto: replyTo } : {}),
+          _template: 'box',
+        }),
+      });
 
-    if (formSubmitRes.ok) {
-      const result = (await formSubmitRes.json().catch(() => ({}))) as { success?: string | boolean; message?: string };
-      if (result.success === 'true' || result.success === true) {
-        return { provider: 'formsubmit' };
+      if (formSubmitRes.ok) {
+        const result = (await formSubmitRes.json().catch(() => ({}))) as {
+          success?: string | boolean;
+          message?: string;
+        };
+        if (result.success === 'true' || result.success === true) {
+          return { provider: 'formsubmit' };
+        }
+        if (result.message) {
+          transportErrors.push(`FormSubmit: ${result.message}`);
+        }
+      } else {
+        transportErrors.push(`FormSubmit (${formSubmitRes.status})`);
       }
-      if (result.message) {
-        transportErrors.push(`FormSubmit: ${result.message}`);
-      }
-    } else {
-      transportErrors.push(`FormSubmit (${formSubmitRes.status})`);
+    } catch (fallbackErr) {
+      const msg = fallbackErr instanceof Error ? fallbackErr.message : 'Network error';
+      transportErrors.push(`FormSubmit: ${msg}`);
     }
-  } catch (fallbackErr) {
-    const msg = fallbackErr instanceof Error ? fallbackErr.message : 'Network error';
-    transportErrors.push(`FormSubmit: ${msg}`);
+  } else {
+    transportErrors.push('FormSubmit fallback disabled in production (set ALLOW_FORMSUBMIT_FALLBACK=true to enable)');
   }
 
   if (transportErrors.length > 0) {
@@ -657,30 +638,6 @@ async function sendCvAccessEmail(payload: CvAccessPayload, userAgent: string): P
   });
 }
 
-function isRateLimited(
-  clientIp: string,
-  bucket: Map<string, { count: number; resetAt: number }> = contactRateLimitMap
-): boolean {
-  const now = Date.now();
-  if (bucket.size >= RATE_LIMIT_MAX_ENTRIES) {
-    for (const [ip, record] of bucket.entries()) {
-      if (now > record.resetAt) {
-        bucket.delete(ip);
-      }
-    }
-  }
-  const entry = bucket.get(clientIp);
-  if (!entry || now > entry.resetAt) {
-    bucket.set(clientIp, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
-    return false;
-  }
-  if (entry.count >= RATE_LIMIT_MAX_REQUESTS) {
-    return true;
-  }
-  entry.count += 1;
-  return false;
-}
-
 async function startServer() {
   const app = express();
   app.disable('x-powered-by');
@@ -700,37 +657,36 @@ async function startServer() {
   }
 
   app.use((req: Request, res: Response, next: NextFunction) => {
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
-    const isDev = process.env.NODE_ENV !== 'production';
-    res.setHeader(
-      'Content-Security-Policy',
-      [
-        "default-src 'self'",
-        // Vite HMR needs unsafe-eval in dev; production builds stay stricter
-        isDev
-          ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
-          : "script-src 'self' 'unsafe-inline'",
-        "style-src 'self' 'unsafe-inline'",
-        "img-src 'self' data: blob:",
-        "font-src 'self' data:",
-        isDev ? "connect-src 'self' ws: wss:" : "connect-src 'self'",
-        "worker-src 'self' blob:",
-        "manifest-src 'self'",
-        "base-uri 'self'",
-        "form-action 'self'",
-        "frame-ancestors 'none'",
-        "object-src 'none'",
-      ].join('; ')
-    );
-    if (req.secure || req.headers['x-forwarded-proto'] === 'https') {
-      res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
-    }
+    applySecurityHeaders((name, value) => res.setHeader(name, value), {
+      isDev: process.env.NODE_ENV !== 'production',
+      isHttps: Boolean(req.secure || req.headers['x-forwarded-proto'] === 'https'),
+    });
     next();
   });
 
   app.use(express.json({ limit: '256kb' }));
+
+  function rejectDisallowedOrigin(req: Request, res: Response): boolean {
+    const originHeader =
+      (typeof req.headers.origin === 'string' && req.headers.origin) ||
+      (typeof req.headers.referer === 'string' && req.headers.referer) ||
+      undefined;
+    if (!isAllowedRequestOrigin(originHeader, ALLOWED_ORIGINS)) {
+      res.status(403).json({ error: 'Request origin is not allowed.' });
+      return true;
+    }
+    return false;
+  }
+
+  async function rejectFailedTurnstile(req: Request, res: Response, body: { turnstileToken?: unknown }): Promise<boolean> {
+    const token = typeof body.turnstileToken === 'string' ? body.turnstileToken : undefined;
+    const result = await verifyTurnstileToken(token, TURNSTILE_SECRET || undefined, req.ip);
+    if (!result.ok) {
+      res.status(400).json({ error: result.error || 'Bot verification failed.' });
+      return true;
+    }
+    return false;
+  }
 
   app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
     if (err instanceof SyntaxError && 'body' in err) {
@@ -755,8 +711,11 @@ async function startServer() {
         return;
       }
 
+      if (rejectDisallowedOrigin(req, res)) return;
+
       const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
       if (isRateLimited(clientIp, contactRateLimitMap)) {
+        res.setHeader('Retry-After', String(rateLimitRetryAfterSeconds(clientIp, contactRateLimitMap)));
         res.status(429).json({
           error: 'Too many messages sent from this connection. Please wait a few minutes and try again.',
         });
@@ -766,10 +725,11 @@ async function startServer() {
       const rawBody = req.body;
       const body = (rawBody && typeof rawBody === 'object' && !Array.isArray(rawBody) ? rawBody : {}) as Partial<ContactPayload> & {
         website?: unknown;
+        turnstileToken?: unknown;
       };
 
       // Silent honeypot sink for automated spam bots
-      if (typeof body.website === 'string' && body.website.trim().length > 0) {
+      if (isHoneypotTriggered(body.website)) {
         res.status(200).json({
           ok: true,
           provider: 'filtered',
@@ -777,6 +737,8 @@ async function startServer() {
         });
         return;
       }
+
+      if (await rejectFailedTurnstile(req, res, body)) return;
 
       const { name, email, phone, subject, message } = body;
 
@@ -839,8 +801,11 @@ async function startServer() {
         return;
       }
 
+      if (rejectDisallowedOrigin(req, res)) return;
+
       const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
       if (isRateLimited(clientIp, cvAccessRateLimitMap)) {
+        res.setHeader('Retry-After', String(rateLimitRetryAfterSeconds(clientIp, cvAccessRateLimitMap)));
         res.status(429).json({
           error: 'Too many requests from this connection. Please wait a few minutes and try again.',
         });
@@ -850,10 +815,11 @@ async function startServer() {
       const rawBody = req.body;
       const body = (rawBody && typeof rawBody === 'object' && !Array.isArray(rawBody) ? rawBody : {}) as Partial<CvAccessPayload> & {
         website?: unknown;
+        turnstileToken?: unknown;
       };
 
       // Silent honeypot sink for automated spam bots
-      if (typeof body.website === 'string' && body.website.trim().length > 0) {
+      if (isHoneypotTriggered(body.website)) {
         res.status(200).json({
           ok: true,
           provider: 'filtered',
@@ -861,6 +827,8 @@ async function startServer() {
         });
         return;
       }
+
+      if (await rejectFailedTurnstile(req, res, body)) return;
 
       const cleanName = typeof body.name === 'string' ? sanitizeHeaderValue(body.name) : '';
       const cleanEmail = typeof body.email === 'string' ? sanitizeHeaderValue(body.email) : '';

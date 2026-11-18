@@ -2,7 +2,5 @@
   "name": "Mohammed Sufyan — Software Engineer Portfolio",
   "description": "Software Engineer at Cisco Systems Inc. STO — security data platforms, multi-cloud systems, certifications, and enterprise career timeline.",
   "requestFramePermissions": [],
-  "majorCapabilities": [
-    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
-  ]
+  "majorCapabilities": []
 }
