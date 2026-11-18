@@ -917,7 +917,8 @@ async function startServer() {
     }
   });
 
-  app.all('/api/*', (_req: Request, res: Response) => {
+  // Express 5 / path-to-regexp require named wildcards (bare `/api/*` crashes startup).
+  app.all('/api/{*splat}', (_req: Request, res: Response) => {
     res.status(404).json({ error: 'API endpoint not found.' });
   });
 
@@ -934,7 +935,7 @@ async function startServer() {
     if (fs.existsSync(distPath)) {
       app.use(express.static(distPath));
     }
-    app.get('*', (_req: Request, res: Response) => {
+    app.get('/{*splat}', (_req: Request, res: Response) => {
       if (!fs.existsSync(indexPath)) {
         res.status(503).send('Production build not found. Run npm run build first.');
         return;
