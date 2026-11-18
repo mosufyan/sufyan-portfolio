@@ -1,3 +1,4 @@
+import { Linkedin } from './icons/Linkedin';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Award,
@@ -8,7 +9,6 @@ import {
   Download,
   ExternalLink,
   GraduationCap,
-  Linkedin,
   Mail,
   Megaphone,
   QrCode,
@@ -16,7 +16,7 @@ import {
   ShieldCheck,
   Sparkles,
   Trophy,
-  X,
+  X
 } from 'lucide-react';
 import { downloadVCard } from '../utils/vcard';
 import { AnimatePresence, motion } from 'motion/react';

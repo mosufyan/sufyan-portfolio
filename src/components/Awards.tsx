@@ -1,5 +1,6 @@
+import { Linkedin } from './icons/Linkedin';
 import { useEffect, useState } from 'react';
-import { Medal, Star, Trophy, Building2, Search, ChevronDown, ChevronsUpDown, ExternalLink, Linkedin, Quote } from 'lucide-react';
+import { Medal, Star, Trophy, Building2, Search, ChevronDown, ChevronsUpDown, ExternalLink, Quote } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Award, AWARDS_BY_ORGANIZATION, LINKEDIN_RECOMMENDATIONS } from '../data/portfolioData';
 import { CollapseTimeline, CollapseTimelineNode } from './CollapseTimeline';

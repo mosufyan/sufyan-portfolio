@@ -1,3 +1,4 @@
+import { Linkedin } from './icons/Linkedin';
 import { useEffect, useRef, useState } from 'react';
 import html2canvas from 'html2canvas-pro';
 import { jsPDF } from 'jspdf';
@@ -34,7 +35,6 @@ import {
   Loader2,
   Check,
   SlidersHorizontal,
-  Linkedin,
   Sun,
   Moon,
   Quote,

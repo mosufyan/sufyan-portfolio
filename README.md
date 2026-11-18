@@ -31,7 +31,7 @@ It includes multi-skill filtering, a command palette, dark/light themes, announc
 | **Themes** | Site dark/light mode + independent CV Light Paper / Dark Theme export |
 | **Contact** | Intent presets, honeypot + rate-limited `/api/contact` |
 | **CV / PWA** | Live preview, role-track presets, PDF/ATS export, optional install gate |
-| **Ops** | Vitest unit tests, CI (lint / test / audit / build), optional Cloud Run deploy |
+| **Ops** | Vitest unit tests, CI (lint / test / audit / build) |
 
 ## Tech stack
 
@@ -116,14 +116,13 @@ src/                 React UI (Hero, Experience, Skills, Resume modal, …)
 server.ts            Express app (APIs + static hosting in production)
 server/security.ts   Shared validation, CSP, rate limits, Turnstile hook
 public/              Static assets (icons, OG image, PWA)
-.github/workflows/   CI (+ optional Cloud Run deploy)
-scripts/             One-time Cloud Run / WIF setup helper
+.github/workflows/   CI (lint / test / audit / build)
 ```
 
-## CI / deploy notes
+## CI notes
 
-- **CI on every PR & `main` push:** typecheck → tests → prod audit → build  
-- **Cloud Run deploy** runs only when `ENABLE_CLOUD_RUN_DEPLOY=true` is set as a GitHub Actions variable (see `scripts/setup-cloud-run-ci.sh`)
+- **CI on every PR & `main` push:** typecheck → tests → prod audit → build
+- Production hosting is on Google Cloud Run via AI Studio; redeploy there after merging to `main` (CI does not deploy)
 
 ## Security
 
