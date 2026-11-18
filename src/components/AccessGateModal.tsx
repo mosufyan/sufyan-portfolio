@@ -194,6 +194,7 @@ export default function AccessGateModal({
           action,
           formatLabel,
           website: form.website,
+          theme: isLight ? 'light' : 'dark',
         }),
       });
 

@@ -69,7 +69,7 @@ function formatSanJoseTime(): string {
 }
 
 export default function Contact({ onOpenDigitalCard }: ContactProps) {
-  const { isLight } = useTheme();
+  const { theme, isLight } = useTheme();
   const shouldReduceMotion = useReducedMotion();
   const [formData, setFormData] = useState({
     name: '',
@@ -140,6 +140,7 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
           subject: formData.subject.trim(),
           message: formData.message.trim(),
           website: formData.website,
+          theme,
         }),
       });
 
