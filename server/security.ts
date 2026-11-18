@@ -109,8 +109,39 @@ export function rateLimitRetryAfterSeconds(
   return Math.max(1, Math.ceil((entry.resetAt - now) / 1000));
 }
 
+export function isAiStudioPreviewHost(hostHeader: string | undefined): boolean {
+  if (!hostHeader) return false;
+  const hostname = hostHeader.split(',')[0].trim().split(':')[0].toLowerCase();
+  return /^ais-(dev|pre)-[a-z0-9.-]+\.run\.app$/.test(hostname) || hostname.endsWith('.run.app');
+}
+
+export function shouldAllowPreviewIframe(
+  options: { isDev: boolean; host?: string },
+  env: NodeJS.ProcessEnv = process.env
+): boolean {
+  const strictFlag = (env.STRICT_FRAME_DENY || '').toLowerCase();
+  if (strictFlag === '1' || strictFlag === 'true' || strictFlag === 'yes') {
+    return false;
+  }
+  const allowFlag = (env.ALLOW_PREVIEW_IFRAME || '').toLowerCase();
+  if (allowFlag === '1' || allowFlag === 'true' || allowFlag === 'yes') {
+    return true;
+  }
+  if (options.isDev) {
+    return true;
+  }
+  return isAiStudioPreviewHost(options.host);
+}
+
 /** Build Content-Security-Policy matching production static assets + Google Fonts. */
-export function buildContentSecurityPolicy(isDev: boolean): string {
+export function buildContentSecurityPolicy(
+  isDev: boolean,
+  options: { allowPreviewIframe?: boolean } = {}
+): string {
+  const frameAncestors = options.allowPreviewIframe
+    ? "frame-ancestors 'self' https://aistudio.google.com https://*.google.com https://*.googleusercontent.com"
+    : "frame-ancestors 'none'";
+
   return [
     "default-src 'self'",
     isDev
@@ -127,21 +158,27 @@ export function buildContentSecurityPolicy(isDev: boolean): string {
     "manifest-src 'self'",
     "base-uri 'self'",
     "form-action 'self'",
-    "frame-ancestors 'none'",
+    frameAncestors,
     "object-src 'none'",
   ].join('; ');
 }
 
 export function applySecurityHeaders(
   setHeader: (name: string, value: string) => void,
-  options: { isDev: boolean; isHttps: boolean }
+  options: { isDev: boolean; isHttps: boolean; allowPreviewIframe?: boolean }
 ): void {
+  const allowPreviewIframe = Boolean(options.allowPreviewIframe);
   setHeader('X-Content-Type-Options', 'nosniff');
   setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
-  setHeader('Cross-Origin-Opener-Policy', 'same-origin');
-  setHeader('X-Frame-Options', 'DENY');
-  setHeader('Content-Security-Policy', buildContentSecurityPolicy(options.isDev));
+  setHeader('Cross-Origin-Opener-Policy', allowPreviewIframe ? 'same-origin-allow-popups' : 'same-origin');
+  if (!allowPreviewIframe) {
+    setHeader('X-Frame-Options', 'DENY');
+  }
+  setHeader(
+    'Content-Security-Policy',
+    buildContentSecurityPolicy(options.isDev, { allowPreviewIframe })
+  );
   if (options.isHttps) {
     setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   }

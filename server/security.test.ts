@@ -5,6 +5,7 @@ import {
   buildContentSecurityPolicy,
   createRateLimitBucket,
   escapeHtml,
+  isAiStudioPreviewHost,
   isAllowedRequestOrigin,
   isFormSubmitFallbackAllowed,
   isHoneypotTriggered,
@@ -15,6 +16,7 @@ import {
   resolveAllowedOrigins,
   sanitizeDisplayName,
   sanitizeHeaderValue,
+  shouldAllowPreviewIframe,
   verifyTurnstileToken,
 } from './security';
 
@@ -106,8 +108,25 @@ describe('CSP / headers', () => {
     }, { isDev: false, isHttps: true });
     expect(headers['X-Content-Type-Options']).toBe('nosniff');
     expect(headers['Cross-Origin-Opener-Policy']).toBe('same-origin');
+    expect(headers['X-Frame-Options']).toBe('DENY');
     expect(headers['Strict-Transport-Security']).toContain('max-age=31536000');
     expect(headers['Content-Security-Policy']).toContain("default-src 'self'");
+  });
+
+  it('allows AI Studio preview iframe in dev or on *.run.app while staying strict for custom domain prod', () => {
+    expect(isAiStudioPreviewHost('ais-dev-abc-123.us-west2.run.app')).toBe(true);
+    expect(isAiStudioPreviewHost('www.mohammedsufyan.com')).toBe(false);
+    expect(shouldAllowPreviewIframe({ isDev: true, host: 'localhost:3000' }, {})).toBe(true);
+    expect(shouldAllowPreviewIframe({ isDev: false, host: 'ais-pre-abc.us-west2.run.app' }, {})).toBe(true);
+    expect(shouldAllowPreviewIframe({ isDev: false, host: 'www.mohammedsufyan.com' }, {})).toBe(false);
+
+    const headers: Record<string, string> = {};
+    applySecurityHeaders((k, v) => {
+      headers[k] = v;
+    }, { isDev: true, isHttps: true, allowPreviewIframe: true });
+    expect(headers['X-Frame-Options']).toBeUndefined();
+    expect(headers['Content-Security-Policy']).toContain('https://aistudio.google.com');
+    expect(headers['Content-Security-Policy']).not.toContain("frame-ancestors 'none'");
   });
 });
 

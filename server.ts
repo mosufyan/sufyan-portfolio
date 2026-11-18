@@ -10,6 +10,7 @@ import {
   applySecurityHeaders,
   createRateLimitBucket,
   escapeHtml,
+  isAiStudioPreviewHost,
   isAllowedRequestOrigin,
   isFormSubmitFallbackAllowed,
   isHoneypotTriggered,
@@ -20,6 +21,7 @@ import {
   resolveAllowedOrigins,
   sanitizeDisplayName,
   sanitizeHeaderValue,
+  shouldAllowPreviewIframe,
   verifyTurnstileToken,
 } from './server/security.ts';
 
@@ -657,9 +659,16 @@ async function startServer() {
   }
 
   app.use((req: Request, res: Response, next: NextFunction) => {
+    const isDev = process.env.NODE_ENV !== 'production';
+    const requestHost =
+      (typeof req.headers['x-forwarded-host'] === 'string' && req.headers['x-forwarded-host']) ||
+      (typeof req.headers.host === 'string' && req.headers.host) ||
+      undefined;
+    const allowPreviewIframe = shouldAllowPreviewIframe({ isDev, host: requestHost });
     applySecurityHeaders((name, value) => res.setHeader(name, value), {
-      isDev: process.env.NODE_ENV !== 'production',
+      isDev,
       isHttps: Boolean(req.secure || req.headers['x-forwarded-proto'] === 'https'),
+      allowPreviewIframe,
     });
     next();
   });
@@ -671,7 +680,15 @@ async function startServer() {
       (typeof req.headers.origin === 'string' && req.headers.origin) ||
       (typeof req.headers.referer === 'string' && req.headers.referer) ||
       undefined;
-    if (!isAllowedRequestOrigin(originHeader, ALLOWED_ORIGINS)) {
+    const requestHost =
+      (typeof req.headers['x-forwarded-host'] === 'string' && req.headers['x-forwarded-host'].split(',')[0].trim()) ||
+      (typeof req.headers.host === 'string' && req.headers.host.split(',')[0].trim()) ||
+      undefined;
+    const dynamicAllowed =
+      requestHost && isAiStudioPreviewHost(requestHost)
+        ? [...ALLOWED_ORIGINS, `https://${requestHost}`, `http://${requestHost}`]
+        : ALLOWED_ORIGINS;
+    if (!isAllowedRequestOrigin(originHeader, dynamicAllowed)) {
       res.status(403).json({ error: 'Request origin is not allowed.' });
       return true;
     }
