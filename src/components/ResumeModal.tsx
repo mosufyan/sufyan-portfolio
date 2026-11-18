@@ -1,5 +1,5 @@
 import { Linkedin } from './icons/Linkedin';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import html2canvas from 'html2canvas-pro';
 import { jsPDF } from 'jspdf';
 import { AnimatePresence, motion } from 'motion/react';
@@ -38,7 +38,15 @@ import {
   Sun,
   Moon,
   Quote,
-  Copy
+  Copy,
+  ArrowUp,
+  ArrowDown,
+  RotateCcw,
+  FileText,
+  Clock,
+  Ruler,
+  ShieldCheck,
+  Radar
 } from 'lucide-react';
 import { useTheme } from '../theme/ThemeProvider';
 import {
@@ -51,7 +59,8 @@ import {
   AWARDS_BY_ORGANIZATION,
   AWARDS,
   LINKEDIN_RECOMMENDATIONS,
-  EDUCATION
+  EDUCATION,
+  type Certification
 } from '../data/portfolioData';
 import { buildAtsPlainTextResume } from '../utils/atsFormatter';
 import AccessGateModal, {
@@ -59,6 +68,11 @@ import AccessGateModal, {
   type AccessGateAction,
 } from './AccessGateModal';
 import IssuerMark from './IssuerMark';
+import {
+  CvImpactProofStrip,
+  CvTrajectoryAndCloudStrip,
+  CvVerificationQrBadge
+} from './CvInfographics';
 
 interface ResumeModalProps {
   isOpen: boolean;
@@ -86,6 +100,28 @@ interface ExportConfig {
   certsDepth: CertsDepth;
   awardsDepth: AwardsDepth;
 }
+
+type CvSectionKey = keyof ExportConfig['sections'];
+
+const DEFAULT_SECTION_ORDER: CvSectionKey[] = [
+  'overview',
+  'philosophy',
+  'experience',
+  'skills',
+  'certifications',
+  'awards',
+  'education',
+];
+
+const SECTION_LABELS: Record<CvSectionKey, string> = {
+  overview: 'Overview & Stats',
+  philosophy: 'Philosophy',
+  experience: 'Experience',
+  skills: 'Technical Skills',
+  certifications: 'Certifications',
+  awards: 'Honors & Awards',
+  education: 'Education',
+};
 
 const PRESETS: Record<'summary' | 'concise' | 'full' | 'security' | 'platform' | 'fullstack', ExportConfig> = {
   summary: {
@@ -222,12 +258,22 @@ function chunkArray<T>(items: T[], size: number): T[][] {
 export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
   const { theme: siteTheme } = useTheme();
   const contentRef = useRef<HTMLDivElement>(null);
+  const measureRef = useRef<HTMLDivElement>(null);
   const [preset, setPreset] = useState<PresetMode>('summary');
   const [config, setConfig] = useState<ExportConfig>(PRESETS.summary);
   const [cvTheme, setCvTheme] = useState<'dark' | 'light'>(siteTheme);
   const isLight = cvTheme === 'light';
 
   const [showCustomize, setShowCustomize] = useState(false);
+  const [sectionOrder, setSectionOrder] = useState<CvSectionKey[]>(DEFAULT_SECTION_ORDER);
+  const [showInfographics, setShowInfographics] = useState(true);
+  const [showPageGuides, setShowPageGuides] = useState(false);
+  const [inspectedCert, setInspectedCert] = useState<Certification | null>(null);
+  const [smartPlan, setSmartPlan] = useState<{
+    pageCount: number;
+    guides: Array<{ page: number; topPx: number }>;
+  }>({ pageCount: 1, guides: [] });
+
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [pdfSuccess, setPdfSuccess] = useState(false);
   const [atsCopied, setAtsCopied] = useState(false);
@@ -241,6 +287,7 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
       setCvTheme(siteTheme);
     } else {
       setPendingAction(null);
+      setInspectedCert(null);
     }
   }, [isOpen, siteTheme]);
 
@@ -274,9 +321,10 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
   const applyPreset = (mode: keyof typeof PRESETS) => {
     setPreset(mode);
     setConfig(PRESETS[mode]);
+    setInspectedCert(null);
   };
 
-  const toggleSection = (key: keyof ExportConfig['sections']) => {
+  const toggleSection = (key: CvSectionKey) => {
     setPreset('custom');
     setConfig((prev) => ({
       ...prev,
@@ -287,7 +335,20 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
     }));
   };
 
+  const moveSection = (index: number, direction: -1 | 1) => {
+    const target = index + direction;
+    if (target < 0 || target >= sectionOrder.length) return;
+    setSectionOrder((prev) => {
+      const next = [...prev];
+      const [item] = next.splice(index, 1);
+      next.splice(target, 0, item);
+      return next;
+    });
+  };
+
+  const isCustomOrder = sectionOrder.some((key, idx) => key !== DEFAULT_SECTION_ORDER[idx]);
   const selectedSectionCount = Object.values(config.sections).filter(Boolean).length;
+  const orderedVisibleSections = sectionOrder.filter((key) => config.sections[key]);
 
   const pillars = [
     'ARCHITECTURAL LEADERSHIP',
@@ -372,6 +433,297 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
   const totalVisibleCerts = visibleCertCategories.reduce((acc, c) => acc + c.certs.length, 0);
   const totalVisibleAwards = visibleAwardsGroups.reduce((acc, g) => acc + g.awards.length, 0);
 
+  /**
+   * Simulates the exact block-aware A4 page layout used by PDF export (8x9mm margins,
+   * keep-next heading chains, and whole-card break protection) so live break guides
+   * snap strictly to gaps between cards/sections instead of cutting across tiles.
+   */
+  const computeSmartA4Plan = (innerEl: HTMLDivElement | null, widthOverride?: number) => {
+    if (!innerEl) {
+      return { pageCount: 1, guides: [] as Array<{ page: number; topPx: number }> };
+    }
+
+    const containerRect = innerEl.getBoundingClientRect();
+    const effectiveWidth = Math.max(widthOverride ?? containerRect.width, 320);
+
+    // Match handleDownloadPdf A4 layout constants (210x297mm, marginX=8, marginY=9, footerReserve=7)
+    const marginX = 8;
+    const marginY = 9;
+    const footerReserveMm = 7;
+    const contentWidthMm = 210 - marginX * 2;
+    const maxPageY = 297 - marginY - footerReserveMm;
+    const maxContentHeightMm = maxPageY - marginY;
+    const blockGapMm = 2.5;
+    const pxToMm = contentWidthMm / effectiveWidth;
+
+    const sectionEls = Array.from(innerEl.querySelectorAll<HTMLElement>('[data-pdf-section]'));
+    if (sectionEls.length === 0) {
+      return { pageCount: 0, guides: [] as Array<{ page: number; topPx: number }> };
+    }
+
+    let pageCount = 1;
+    let currentY = marginY;
+    let prevBlockBottomPx = 0;
+    const guides: Array<{ page: number; topPx: number }> = [];
+
+    for (const section of sectionEls) {
+      const sectionRect = section.getBoundingClientRect();
+      if (sectionRect.height <= 0 || sectionRect.width <= 0) continue;
+
+      const blockEls = Array.from(section.querySelectorAll<HTMLElement>('[data-pdf-block]'));
+      const rawBlocks =
+        blockEls.length > 0
+          ? blockEls.map((el) => {
+              const rect = el.getBoundingClientRect();
+              const subblocks = Array.from(el.querySelectorAll<HTMLElement>('[data-pdf-subblock]')).map((sub) => {
+                const sRect = sub.getBoundingClientRect();
+                return {
+                  relTopPx: sRect.top - rect.top,
+                  heightPx: sRect.height,
+                };
+              });
+              return {
+                topPx: rect.top - containerRect.top,
+                heightPx: rect.height,
+                keepWithNext: el.hasAttribute('data-pdf-keep-next'),
+                subblocks,
+              };
+            })
+          : [
+              {
+                topPx: sectionRect.top - containerRect.top,
+                heightPx: sectionRect.height,
+                keepWithNext: false,
+                subblocks: [] as Array<{ relTopPx: number; heightPx: number }>,
+              },
+            ];
+
+      for (let i = 0; i < rawBlocks.length; i++) {
+        const block = rawBlocks[i];
+        if (block.heightPx <= 1) continue;
+
+        const blockHeightMm = block.heightPx * pxToMm;
+
+        let requiredHeightMm = blockHeightMm;
+        if (block.keepWithNext && i + 1 < rawBlocks.length) {
+          let lookIdx = i + 1;
+          let chainMm = blockHeightMm;
+          while (lookIdx < rawBlocks.length) {
+            const nextB = rawBlocks[lookIdx];
+            const nextMm = nextB.heightPx * pxToMm;
+            chainMm += blockGapMm + (nextB.keepWithNext ? nextMm : Math.min(nextMm, 52));
+            if (!nextB.keepWithNext) break;
+            lookIdx++;
+          }
+          if (chainMm <= maxContentHeightMm) {
+            requiredHeightMm = chainMm;
+          }
+        }
+
+        if (currentY + requiredHeightMm > maxPageY && currentY > marginY + 1) {
+          const gapStart = Math.min(prevBlockBottomPx, block.topPx);
+          const cleanGapTopPx = Math.round(gapStart + Math.max(0, block.topPx - gapStart) / 2);
+          guides.push({ page: pageCount, topPx: cleanGapTopPx });
+          pageCount++;
+          currentY = marginY;
+        }
+
+        if (blockHeightMm > maxContentHeightMm) {
+          const chunks: Array<{ startPx: number; endPx: number }> = [];
+          if (block.subblocks.length > 0) {
+            let chunkStart = 0;
+            let chunkEnd = 0;
+            for (const sub of block.subblocks) {
+              const subEnd = Math.min(block.heightPx, sub.relTopPx + sub.heightPx);
+              if ((subEnd - chunkStart) * pxToMm > maxContentHeightMm && chunkEnd > chunkStart) {
+                chunks.push({ startPx: chunkStart, endPx: chunkEnd });
+                chunkStart = sub.relTopPx;
+              }
+              chunkEnd = subEnd;
+            }
+            if (chunkEnd > chunkStart) {
+              chunks.push({ startPx: chunkStart, endPx: block.heightPx });
+            }
+          } else {
+            const stepPx = maxContentHeightMm / pxToMm;
+            for (let pos = 0; pos < block.heightPx; pos += stepPx) {
+              chunks.push({ startPx: pos, endPx: Math.min(block.heightPx, pos + stepPx) });
+            }
+          }
+
+          for (let cIdx = 0; cIdx < chunks.length; cIdx++) {
+            const ch = chunks[cIdx];
+            const chMm = (ch.endPx - ch.startPx) * pxToMm;
+            if (currentY + chMm > maxPageY && currentY > marginY + 1) {
+              guides.push({
+                page: pageCount,
+                topPx: Math.round(block.topPx + Math.max(0, ch.startPx - 4)),
+              });
+              pageCount++;
+              currentY = marginY;
+            }
+            currentY += chMm + (cIdx === chunks.length - 1 ? blockGapMm : 1.5);
+          }
+        } else {
+          currentY += blockHeightMm + blockGapMm;
+        }
+
+        prevBlockBottomPx = block.topPx + block.heightPx;
+      }
+    }
+
+    return { pageCount, guides };
+  };
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const scroller = contentRef.current;
+    const inner = measureRef.current;
+    if (!scroller || !inner) return;
+
+    const measure = () => {
+      const plan = computeSmartA4Plan(inner, scroller.clientWidth);
+      setSmartPlan((prev) => {
+        if (
+          prev.pageCount === plan.pageCount &&
+          prev.guides.length === plan.guides.length &&
+          prev.guides.every((g, idx) => g.topPx === plan.guides[idx]?.topPx)
+        ) {
+          return prev;
+        }
+        return plan;
+      });
+    };
+
+    const raf = requestAnimationFrame(measure);
+    const settledTimer = window.setTimeout(measure, 340);
+    const observer =
+      typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
+    observer?.observe(scroller);
+    observer?.observe(inner);
+    window.addEventListener('resize', measure);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      window.clearTimeout(settledTimer);
+      observer?.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, [isOpen, config, sectionOrder, showInfographics, inspectedCert, cvTheme]);
+
+  const pageTelemetry = useMemo(() => {
+    if (selectedSectionCount === 0) {
+      return { words: 0, estPages: 0, scanMins: 0, guides: [] as Array<{ page: number; topPx: number }> };
+    }
+
+    const countWords = (text?: string) => (text ? text.trim().split(/\s+/).filter(Boolean).length : 0);
+    let words = 0;
+
+    if (config.sections.overview) {
+      words += 55;
+      STATS.forEach((s) => {
+        words += countWords(s.label) + countWords(s.sublabel) + 2;
+      });
+      if (showInfographics) words += 35;
+    }
+
+    if (config.sections.philosophy) {
+      words += countWords(PERSONAL_INFO.philosophy.quote1) + countWords(PERSONAL_INFO.philosophy.body) + 55;
+    }
+
+    if (config.sections.experience) {
+      visibleExperience.forEach((comp) => {
+        words += countWords(comp.company) + 6;
+        comp.roles.forEach((r) => {
+          words += countWords(r.role) + countWords(r.domain) + 6;
+          r.highlights.forEach((h) => {
+            words += countWords(h);
+          });
+          if (config.experienceDepth !== 'compact') {
+            words += r.technologies.length * 2;
+          }
+        });
+      });
+    }
+
+    if (config.sections.skills) {
+      TECHNICAL_DISCIPLINES.forEach((d) => {
+        words += countWords(d.title) + 4;
+        if (config.skillsDepth === 'full') words += countWords(d.description);
+        words += (config.skillsDepth === 'compact' ? 5 : d.technologies.length) * 2;
+      });
+    }
+
+    if (config.sections.certifications) {
+      visibleCertCategories.forEach((cat) => {
+        words += countWords(cat.name) + cat.certs.length * 14;
+      });
+    }
+
+    if (config.sections.awards) {
+      visibleAwardsGroups.forEach((g) => {
+        words += countWords(g.organization) + 6;
+        g.awards.forEach((a) => {
+          words += countWords(a.title) + countWords(a.description) + 6;
+        });
+      });
+      visibleRecommendations.forEach((rec) => {
+        words += countWords(rec.author) + countWords(rec.role) + countWords(rec.quote) + 6;
+      });
+    }
+
+    if (config.sections.education) {
+      EDUCATION.forEach((edu) => {
+        words += countWords(edu.degree) + countWords(edu.institution) + countWords(edu.details) + 8;
+      });
+    }
+
+    const scanMins = Math.max(1, Math.round(words / 220));
+
+    return {
+      words,
+      estPages: smartPlan.pageCount,
+      scanMins,
+      guides: smartPlan.guides,
+    };
+  }, [
+    selectedSectionCount,
+    config,
+    showInfographics,
+    visibleExperience,
+    visibleCertCategories,
+    visibleAwardsGroups,
+    visibleRecommendations,
+    smartPlan,
+  ]);
+
+  const scrollToPreviewY = (targetTopPx: number) => {
+    const scroller = contentRef.current;
+    if (!scroller) return;
+    const centeredOffset = Math.max(0, targetTopPx - scroller.clientHeight * 0.45);
+    scroller.scrollTo({ top: centeredOffset, behavior: 'smooth' });
+  };
+
+  const handleTogglePageGuides = () => {
+    const next = !showPageGuides;
+    setShowPageGuides(next);
+    if (!next) return;
+
+    const scroller = contentRef.current;
+    const inner = measureRef.current;
+    if (!scroller || !inner) return;
+
+    const freshPlan = computeSmartA4Plan(inner, scroller.clientWidth);
+    setSmartPlan(freshPlan);
+
+    const firstBreakTop = freshPlan.guides[0]?.topPx;
+    if (firstBreakTop && scroller.scrollTop < firstBreakTop - scroller.clientHeight * 0.75) {
+      requestAnimationFrame(() => {
+        scrollToPreviewY(firstBreakTop);
+      });
+    }
+  };
+
   const getPdfFilename = () => {
     switch (preset) {
       case 'summary':
@@ -423,6 +775,7 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
       cloneHost.style.pointerEvents = 'none';
 
       const clonedContent = contentRef.current.cloneNode(true) as HTMLDivElement;
+      clonedContent.querySelectorAll('[data-pdf-ignore]').forEach((el) => el.remove());
       clonedContent.style.width = `${CAPTURE_WIDTH}px`;
       clonedContent.style.maxHeight = 'none';
       clonedContent.style.overflow = 'visible';
@@ -995,6 +1348,7 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
               </button>
 
               <button
+                type="button"
                 onClick={() => setShowCustomize((prev) => !prev)}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer ${
                   showCustomize
@@ -1004,6 +1358,26 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
               >
                 <SlidersHorizontal className="w-3.5 h-3.5" />
                 <span>Customize</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleTogglePageGuides}
+                disabled={selectedSectionCount === 0}
+                aria-pressed={showPageGuides}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer disabled:opacity-50 ${
+                  showPageGuides
+                    ? 'border-cyan-400/70 bg-cyan-500/20 text-cyan-200 shadow-xs shadow-cyan-500/10'
+                    : 'border-slate-700 bg-slate-900/70 hover:bg-slate-800 text-slate-300 hover:text-white'
+                }`}
+                title="Show dashed A4 page break boundary lines inside the CV preview (excluded from downloaded PDF)"
+              >
+                <Ruler className={`w-3.5 h-3.5 ${showPageGuides ? 'text-cyan-300' : ''}`} />
+                <span>
+                  {showPageGuides
+                    ? `A4 Guides: On (${pageTelemetry.estPages}p)`
+                    : 'A4 Guides'}
+                </span>
               </button>
 
               <ShineSurface className="rounded-lg" shineClassName="via-white/45">
@@ -1125,18 +1499,36 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
               })}
             </div>
 
-            <div className="text-[11px] font-mono text-slate-400 leading-snug">
-              {preset === 'summary' && 'Stats + Recent Roles + Compact Skills + Top 6 Certs + Education'}
-              {preset === 'concise' && `All Roles (Top 3 Highlights) + Full Skills + Top 8 Certs + Key Honors + ${visibleRecommendations.length} Endorsements`}
-              {preset === 'full' && `Complete Archive: All ${totalRoleCount} Roles + All ${CERTIFICATIONS.length} Certs + All ${AWARDS.length} Honors + ${LINKEDIN_RECOMMENDATIONS.length} Recommendations`}
-              {preset === 'security' && 'Security-leaning CV: philosophy + concise roles + full skills + top certs + featured honors'}
-              {preset === 'platform' && 'Platform-leaning CV: full roles + full skills + top certs + featured honors'}
-              {preset === 'fullstack' && 'Delivery-leaning CV: concise roles + full skills + top 6 certs + education'}
-              {preset === 'custom' && `${selectedSectionCount} section${selectedSectionCount === 1 ? '' : 's'} selected for export`}
+            <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono text-slate-400 leading-snug">
+              <div>
+                {preset === 'summary' && 'Stats + Recent Roles + Compact Skills + Top 6 Certs + Education'}
+                {preset === 'concise' && `All Roles (Top 3 Highlights) + Full Skills + Top 8 Certs + Key Honors + ${visibleRecommendations.length} Endorsements`}
+                {preset === 'full' && `Complete Archive: All ${totalRoleCount} Roles + All ${CERTIFICATIONS.length} Certs + All ${AWARDS.length} Honors + ${LINKEDIN_RECOMMENDATIONS.length} Recommendations`}
+                {preset === 'security' && 'Security-leaning CV: philosophy + concise roles + full skills + top certs + featured honors'}
+                {preset === 'platform' && 'Platform-leaning CV: full roles + full skills + top certs + featured honors'}
+                {preset === 'fullstack' && 'Delivery-leaning CV: concise roles + full skills + top 6 certs + education'}
+                {preset === 'custom' && `${selectedSectionCount} section${selectedSectionCount === 1 ? '' : 's'} selected for export`}
+              </div>
+
+              {selectedSectionCount > 0 && (
+                <div className="inline-flex flex-wrap items-center gap-2.5 text-[10px] font-mono text-cyan-300/90 bg-cyan-950/35 border border-cyan-500/25 px-2.5 py-1 rounded-lg">
+                  <span className="inline-flex items-center gap-1 tabular-nums">
+                    <FileText className="w-3 h-3 text-cyan-400" />
+                    ~{pageTelemetry.estPages} A4 {pageTelemetry.estPages === 1 ? 'page' : 'pages'}
+                  </span>
+                  <span className="text-slate-600">·</span>
+                  <span className="tabular-nums text-slate-300">{pageTelemetry.words.toLocaleString()} words</span>
+                  <span className="text-slate-600">·</span>
+                  <span className="inline-flex items-center gap-1 tabular-nums text-emerald-300">
+                    <Clock className="w-3 h-3 text-emerald-400" />
+                    ~{pageTelemetry.scanMins}m scan
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Expandable Section & Granularity Checklist */}
+          {/* Expandable Section, Reorder & Granularity Checklist */}
           <AnimatePresence initial={false}>
             {showCustomize && (
               <motion.div
@@ -1147,44 +1539,91 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
                 className="overflow-hidden border-t border-slate-800/80 bg-[#0a0e18]"
               >
                 <div className="px-5 sm:px-6 py-3.5 space-y-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400 mr-1">
-                  Include Sections:
-                </span>
-                {(
-                  [
-                    ['overview', 'Overview & Stats'],
-                    ['philosophy', 'Philosophy'],
-                    ['experience', 'Experience'],
-                    ['skills', 'Technical Skills'],
-                    ['certifications', 'Certifications'],
-                    ['awards', 'Honors & Awards'],
-                    ['education', 'Education']
-                  ] as const
-                ).map(([key, label]) => {
-                  const checked = config.sections[key];
-                  return (
-                    <button
-                      key={key}
-                      onClick={() => toggleSection(key)}
-                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-mono transition-colors cursor-pointer ${
-                        checked
-                          ? 'bg-cyan-950/50 border-cyan-500/50 text-cyan-200'
-                          : 'bg-slate-900/60 border-slate-800 text-slate-500 hover:text-slate-300'
-                      }`}
-                    >
-                      <span
-                        className={`w-3 h-3 rounded-sm flex items-center justify-center border ${
-                          checked ? 'bg-cyan-400 border-cyan-400 text-slate-950' : 'border-slate-600'
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
+                      Include &amp; Reorder Sections (arrows shift order in live preview &amp; PDF):
+                    </span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowInfographics((prev) => !prev)}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-mono transition-colors cursor-pointer ${
+                          showInfographics
+                            ? 'border-cyan-500/50 bg-cyan-950/40 text-cyan-300'
+                            : 'border-slate-800 bg-slate-900/60 text-slate-400 hover:text-slate-200'
                         }`}
                       >
-                        {checked && <Check className="w-2.5 h-2.5 stroke-[3]" />}
-                      </span>
-                      <span>{label}</span>
-                    </button>
-                  );
-                })}
-              </div>
+                        <Radar className="w-3 h-3" />
+                        <span>Visual Radars: {showInfographics ? 'On' : 'Off'}</span>
+                      </button>
+
+                      {isCustomOrder && (
+                        <button
+                          type="button"
+                          onClick={() => setSectionOrder(DEFAULT_SECTION_ORDER)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-700 bg-slate-900/70 hover:bg-slate-800 text-[11px] font-mono text-slate-300 cursor-pointer"
+                        >
+                          <RotateCcw className="w-3 h-3 text-cyan-400" />
+                          <span>Reset Order</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    {sectionOrder.map((key, idx) => {
+                      const checked = config.sections[key];
+                      const label = SECTION_LABELS[key];
+                      return (
+                        <div
+                          key={key}
+                          className={`inline-flex items-center rounded-lg border text-xs font-mono transition-colors ${
+                            checked
+                              ? 'bg-cyan-950/50 border-cyan-500/50 text-cyan-200'
+                              : 'bg-slate-900/60 border-slate-800 text-slate-500'
+                          }`}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => toggleSection(key)}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 cursor-pointer hover:text-white"
+                          >
+                            <span
+                              className={`w-3 h-3 rounded-sm flex items-center justify-center border ${
+                                checked ? 'bg-cyan-400 border-cyan-400 text-slate-950' : 'border-slate-600'
+                              }`}
+                            >
+                              {checked && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                            </span>
+                            <span>{label}</span>
+                          </button>
+
+                          <div className="flex items-center border-l border-slate-800/90 pr-1 pl-0.5 gap-0.5">
+                            <button
+                              type="button"
+                              onClick={() => moveSection(idx, -1)}
+                              disabled={idx === 0}
+                              aria-label={`Move ${label} up`}
+                              title={`Move ${label} earlier`}
+                              className="p-1 text-slate-400 hover:text-cyan-300 disabled:opacity-25 cursor-pointer disabled:cursor-default"
+                            >
+                              <ArrowUp className="w-3 h-3" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => moveSection(idx, 1)}
+                              disabled={idx === sectionOrder.length - 1}
+                              aria-label={`Move ${label} down`}
+                              title={`Move ${label} later`}
+                              className="p-1 text-slate-400 hover:text-cyan-300 disabled:opacity-25 cursor-pointer disabled:cursor-default"
+                            >
+                              <ArrowDown className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
 
               <div className="flex flex-wrap items-center gap-4 text-[11px] font-mono text-slate-400">
                 {config.sections.experience && (
@@ -1266,17 +1705,84 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
           ref={contentRef}
           className={`pdf-doc overflow-y-auto print:overflow-visible print:max-h-none ${t.doc}`}
         >
+          {showPageGuides && selectedSectionCount > 0 && (
+            <div
+              data-pdf-ignore
+              className={`sticky top-0 z-30 border-b px-4 sm:px-6 py-2 flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono backdrop-blur-md print:hidden ${
+                isLight
+                  ? 'bg-sky-50/95 border-sky-200 text-sky-900'
+                  : 'bg-[#08101d]/95 border-cyan-500/35 text-cyan-200'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Ruler className={`w-3.5 h-3.5 shrink-0 ${t.accent}`} />
+                <span>
+                  <strong>Smart A4 Break Guides</strong> · {pageTelemetry.estPages}{' '}
+                  {pageTelemetry.estPages === 1 ? 'page' : 'pages'} · auto-snapped between cards
+                </span>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => contentRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+                  className={`px-2 py-0.5 rounded border text-[10px] cursor-pointer ${t.accentBadge}`}
+                >
+                  Page 1 Top
+                </button>
+                {pageTelemetry.guides.map((guide) => (
+                  <button
+                    key={`jump-guide-${guide.page}`}
+                    type="button"
+                    onClick={() => scrollToPreviewY(guide.topPx)}
+                    className={`px-2 py-0.5 rounded border text-[10px] cursor-pointer ${t.accentBadgeStrong}`}
+                  >
+                    Break {guide.page} → {guide.page + 1}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div ref={measureRef} className="relative">
+          {showPageGuides &&
+            pageTelemetry.guides.map((guide) => (
+              <div
+                key={`a4-guide-${guide.page}`}
+                data-pdf-ignore
+                style={{ top: `${guide.topPx}px` }}
+                className={`pointer-events-none absolute inset-x-0 z-20 border-t-2 border-dashed print:hidden ${
+                  isLight ? 'border-sky-600/80' : 'border-cyan-400/80'
+                }`}
+              >
+                <span
+                  className={`absolute right-4 -top-3 px-2.5 py-0.5 rounded text-[10px] font-mono font-semibold border shadow-sm ${
+                    isLight
+                      ? 'bg-sky-50 border-sky-400 text-sky-900'
+                      : 'bg-[#08101d] border-cyan-400/60 text-cyan-200'
+                  }`}
+                >
+                  Clean Page {guide.page} End ↓ Next Card Starts on Page {guide.page + 1}
+                </span>
+              </div>
+            ))}
+
           {selectedSectionCount === 0 && (
             <div className={`p-12 text-center text-sm font-mono ${t.muted}`}>
               Select at least one section from Customize or choose a preset above to preview and export your PDF.
             </div>
           )}
 
-          {/* SECTION 1: HERO & OVERVIEW */}
-          {config.sections.overview && (
+          {orderedVisibleSections.map((sectionKey, visibleIdx) => {
+            const secSurface = visibleIdx % 2 === 0 ? t.secA : t.secB;
+
+            switch (sectionKey) {
+              case 'overview':
+                return (
             <section
+              key="overview"
               data-pdf-section
-              className={`pdf-section px-6 py-8 sm:px-10 sm:py-10 ${t.secA}`}
+              className={`pdf-section px-6 py-8 sm:px-10 sm:py-10 ${secSurface}`}
             >
               <div className="space-y-6">
                 <div data-pdf-block className="pdf-keep-together space-y-5">
@@ -1368,15 +1874,18 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
                     </div>
                   ))}
                 </div>
+
+                {showInfographics && <CvTrajectoryAndCloudStrip isLight={isLight} />}
               </div>
             </section>
-          )}
+                );
 
-          {/* SECTION 2: PHILOSOPHY & PERSONAL PROFILE */}
-          {config.sections.philosophy && (
+              case 'philosophy':
+                return (
             <section
+              key="philosophy"
               data-pdf-section
-              className={`pdf-section px-6 py-8 sm:px-10 sm:py-10 ${t.secB}`}
+              className={`pdf-section px-6 py-8 sm:px-10 sm:py-10 ${secSurface}`}
             >
               <div className="space-y-5">
                 <div data-pdf-block data-pdf-keep-next className="pdf-keep-next">
@@ -1422,13 +1931,14 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
                 </div>
               </div>
             </section>
-          )}
+                );
 
-          {/* SECTION 3: PROFESSIONAL EXPERIENCE */}
-          {config.sections.experience && (
+              case 'experience':
+                return (
             <section
+              key="experience"
               data-pdf-section
-              className={`pdf-section px-6 py-8 sm:px-10 sm:py-10 ${t.secA}`}
+              className={`pdf-section px-6 py-8 sm:px-10 sm:py-10 ${secSurface}`}
             >
               <div data-pdf-block data-pdf-keep-next className="pdf-keep-next mb-6">
                 <div className={`inline-flex items-center gap-1.5 text-xs font-mono font-medium tracking-wider uppercase mb-1.5 ${t.accent}`}>
@@ -1564,13 +2074,14 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
                 ))}
               </div>
             </section>
-          )}
+                );
 
-          {/* SECTION 4: TECHNICAL SKILLS & DISCIPLINES */}
-          {config.sections.skills && (
+              case 'skills':
+                return (
             <section
+              key="skills"
               data-pdf-section
-              className={`pdf-section px-6 py-8 sm:px-10 sm:py-10 ${t.secB}`}
+              className={`pdf-section px-6 py-8 sm:px-10 sm:py-10 ${secSurface}`}
             >
               <div className="space-y-5">
                 <div data-pdf-block data-pdf-keep-next className="pdf-keep-next">
@@ -1654,13 +2165,14 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
                 ))}
               </div>
             </section>
-          )}
+                );
 
-          {/* SECTION 5: LICENSES & OFFICIAL CERTIFICATIONS */}
-          {config.sections.certifications && (
+              case 'certifications':
+                return (
             <section
+              key="certifications"
               data-pdf-section
-              className={`pdf-section px-6 py-8 sm:px-10 sm:py-10 ${t.secA}`}
+              className={`pdf-section px-6 py-8 sm:px-10 sm:py-10 ${secSurface}`}
             >
               <div data-pdf-block data-pdf-keep-next className="pdf-keep-next mb-6">
                 <div className={`inline-flex items-center gap-1.5 text-xs font-mono font-medium tracking-wider uppercase mb-1.5 ${t.accent}`}>
@@ -1683,6 +2195,63 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
                   </a>
                 </p>
               </div>
+
+              {inspectedCert && (
+                <div
+                  data-pdf-ignore
+                  className={`print:hidden mb-6 rounded-xl border p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
+                    isLight
+                      ? 'border-sky-300 bg-sky-50/90'
+                      : 'border-cyan-500/40 bg-cyan-950/35'
+                  }`}
+                >
+                  <div className="flex items-start gap-3 min-w-0">
+                    <div className={`p-2 rounded-lg border shrink-0 ${t.accentBadge}`}>
+                      <ShieldCheck className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={`text-[10px] font-mono uppercase tracking-wider font-semibold ${t.accent}`}>
+                          Credential Verification Peek
+                        </span>
+                        <span className={`text-[10px] font-mono ${t.muted}`}>· {inspectedCert.issueDate}</span>
+                      </div>
+                      <div className={`text-sm font-display font-bold mt-0.5 ${t.heading}`}>
+                        {inspectedCert.title}
+                      </div>
+                      <div className={`text-[11px] font-mono mt-0.5 ${t.muted}`}>
+                        Issuer: <span className={t.body}>{inspectedCert.issuer}</span>
+                        {inspectedCert.credentialId && (
+                          <> · ID: <span className={t.body}>{inspectedCert.credentialId}</span></>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <a
+                      href={inspectedCert.credentialUrl || 'https://www.linkedin.com/in/mohammed-sufyan/details/certifications/'}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-mono font-medium transition-colors ${t.accentBadgeStrong}`}
+                    >
+                      <span>Verify Record</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => setInspectedCert(null)}
+                      aria-label="Dismiss verification peek"
+                      className={`p-1.5 rounded-lg border cursor-pointer ${
+                        isLight
+                          ? 'border-slate-300 bg-white text-slate-600 hover:text-slate-900'
+                          : 'border-slate-700 bg-slate-900 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              )}
 
               <div className="space-y-8">
                 {visibleCertCategories.map((category) => {
@@ -1707,20 +2276,33 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
                       {certRows.map((row, rowIdx) => (
                         <div key={rowIdx} data-pdf-block className="pdf-keep-together">
                           <div className="grid grid-cols-1 sm:grid-cols-2 print:grid-cols-2 pdf-cols-2 gap-4">
-                            {row.map((cert) => (
+                            {row.map((cert) => {
+                              const isInspected = inspectedCert?.id === cert.id;
+                              return (
                               <div
                                 key={cert.id}
-                                className={`rounded-xl border p-4 flex flex-col justify-between ${t.cardSubtle}`}
+                                className={`rounded-xl border p-4 flex flex-col justify-between transition-colors ${t.cardSubtle} ${
+                                  isInspected
+                                    ? isLight
+                                      ? 'ring-2 ring-sky-500/60 border-sky-400'
+                                      : 'ring-2 ring-cyan-400/50 border-cyan-400/60'
+                                    : ''
+                                }`}
                               >
                                 <div>
                                   <div className={`flex items-center justify-between pb-2.5 border-b text-[10px] font-mono ${t.divider}`}>
                                     <span className={t.muted}>
                                       {cert.issueDate}
                                     </span>
-                                    <span className={`flex items-center gap-1 font-medium ${t.emeraldText}`}>
+                                    <button
+                                      type="button"
+                                      onClick={() => setInspectedCert((prev) => (prev?.id === cert.id ? null : cert))}
+                                      className={`flex items-center gap-1 font-medium cursor-pointer hover:underline ${t.emeraldText}`}
+                                      title="Inspect verification metadata"
+                                    >
                                       <CheckCircle className="w-3 h-3" />
-                                      Verified
-                                    </span>
+                                      <span>Verified</span>
+                                    </button>
                                   </div>
 
                                   <div className="mt-2.5 flex items-center gap-1.5">
@@ -1754,7 +2336,7 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
                                   </div>
                                 </div>
 
-                                <div className={`pt-2.5 mt-3 border-t text-[10px] font-mono ${t.divider}`}>
+                                <div className={`pt-2.5 mt-3 border-t flex items-center justify-between gap-2 text-[10px] font-mono ${t.divider}`}>
                                   <a
                                     href={cert.credentialUrl || 'https://www.linkedin.com/in/mohammed-sufyan/details/certifications/'}
                                     target="_blank"
@@ -1764,9 +2346,20 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
                                     <span>{cert.credentialUrl || 'https://www.linkedin.com/in/mohammed-sufyan/details/certifications/'}</span>
                                     <ExternalLink className="w-3 h-3 shrink-0" />
                                   </a>
+                                  <button
+                                    type="button"
+                                    data-pdf-ignore
+                                    onClick={() => setInspectedCert((prev) => (prev?.id === cert.id ? null : cert))}
+                                    className={`print:hidden shrink-0 px-2 py-0.5 rounded border text-[9px] font-mono transition-colors cursor-pointer ${
+                                      isInspected ? t.accentBadgeStrong : t.accentBadge
+                                    }`}
+                                  >
+                                    {isInspected ? 'Viewing' : 'Quick Peek'}
+                                  </button>
                                 </div>
                               </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
                       ))}
@@ -1775,13 +2368,14 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
                 })}
               </div>
             </section>
-          )}
+                );
 
-          {/* SECTION 6: OFFICIAL RECOGNITIONS & HONORS + LINKEDIN RECOMMENDATIONS */}
-          {config.sections.awards && (
+              case 'awards':
+                return (
             <section
+              key="awards"
               data-pdf-section
-              className={`pdf-section px-6 py-8 sm:px-10 sm:py-10 ${t.secB}`}
+              className={`pdf-section px-6 py-8 sm:px-10 sm:py-10 ${secSurface}`}
             >
               <div data-pdf-block data-pdf-keep-next className="pdf-keep-next mb-6">
                 <div className={`inline-flex items-center gap-1.5 text-xs font-mono font-medium tracking-wider uppercase mb-1.5 ${t.accent}`}>
@@ -1799,6 +2393,12 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
                   , HCL America Inc./HCLTech, and Tata Consultancy Services.
                 </p>
               </div>
+
+              {showInfographics && (
+                <div className="mb-7">
+                  <CvImpactProofStrip isLight={isLight} />
+                </div>
+              )}
 
               <div className="space-y-8">
                 {visibleAwardsGroups.map((group) => {
@@ -2006,13 +2606,14 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
                 </div>
               </div>
             </section>
-          )}
+                );
 
-          {/* SECTION 7: EDUCATION & SCHOLASTIC HONORS */}
-          {config.sections.education && (
+              case 'education':
+                return (
             <section
+              key="education"
               data-pdf-section
-              className={`pdf-section px-6 py-8 sm:px-10 sm:py-10 ${t.secA}`}
+              className={`pdf-section px-6 py-8 sm:px-10 sm:py-10 ${secSurface}`}
             >
               <div className="space-y-6">
                 <div data-pdf-block data-pdf-keep-next className="pdf-keep-next">
@@ -2081,7 +2682,9 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
                 </div>
               </div>
             </section>
-          )}
+                );
+            }
+          })}
 
           {/* SECTION 8: CONTACT FOOTER */}
           {selectedSectionCount > 0 && (
@@ -2089,36 +2692,40 @@ export default function ResumeModal({ isOpen, onClose }: ResumeModalProps) {
               data-pdf-section
               className={`pdf-section px-6 py-6 sm:px-10 sm:py-8 ${t.secFooter}`}
             >
-              <div
-                data-pdf-block
-                className={`pdf-keep-together pdf-footer-row flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-[11px] font-mono ${t.muted}`}
-              >
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <span className={`font-bold ${t.heading}`}>{PERSONAL_INFO.name}</span>
-                  <span>·</span>
-                  <a href={`mailto:${PERSONAL_INFO.email}`} className={`break-all ${isLight ? 'hover:text-sky-700' : 'hover:text-cyan-300'}`}>
-                    {PERSONAL_INFO.email}
-                  </a>
-                  <span>·</span>
-                  <a href={PERSONAL_INFO.linkedin} target="_blank" rel="noopener noreferrer" className={`hover:underline break-all ${t.accentLink}`}>
-                    linkedin.com/in/mohammed-sufyan
-                  </a>
-                  <span>·</span>
-                  <a
-                    href="https://www.linkedin.com/in/mohammed-sufyan/details/recommendations/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={`hover:underline break-all ${t.accentLink}`}
-                  >
-                    Recommendations
-                  </a>
+              <div data-pdf-block className="pdf-keep-together">
+                <div
+                  className={`pdf-footer-row flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-[11px] font-mono ${t.muted}`}
+                >
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span className={`font-bold ${t.heading}`}>{PERSONAL_INFO.name}</span>
+                    <span>·</span>
+                    <a href={`mailto:${PERSONAL_INFO.email}`} className={`break-all ${isLight ? 'hover:text-sky-700' : 'hover:text-cyan-300'}`}>
+                      {PERSONAL_INFO.email}
+                    </a>
+                    <span>·</span>
+                    <a href={PERSONAL_INFO.linkedin} target="_blank" rel="noopener noreferrer" className={`hover:underline break-all ${t.accentLink}`}>
+                      linkedin.com/in/mohammed-sufyan
+                    </a>
+                    <span>·</span>
+                    <a
+                      href="https://www.linkedin.com/in/mohammed-sufyan/details/recommendations/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={`hover:underline break-all ${t.accentLink}`}
+                    >
+                      Recommendations
+                    </a>
+                  </div>
+                  <div className={t.subtle}>
+                    Zero Trust Distributed Systems · Multi-Cloud Architecture · San Jose, CA
+                  </div>
                 </div>
-                <div className={t.subtle}>
-                  Zero Trust Distributed Systems · Multi-Cloud Architecture · San Jose, CA
-                </div>
+
+                <CvVerificationQrBadge isLight={isLight} />
               </div>
             </section>
           )}
+          </div>
         </div>
 
           </motion.div>
