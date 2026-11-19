@@ -20,7 +20,6 @@ const CAPABILITY_MARQUEE_ITEMS = [
   { label: 'Kubernetes (EKS/AKS/GKE)', skill: 'Kubernetes (EKS/AKS/GKE)' },
   { label: 'Python & PySpark', skill: 'Python (Programming Language)' },
   { label: 'CI/CD & DevSecOps', skill: 'CI/CD Pipelines' },
-  { label: '28+ Enterprise Clients', skill: null },
   { label: 'US · UK · India Delivery', skill: null },
 ] as const;
 

@@ -17,6 +17,40 @@ interface ThemeProps {
 
 function getInfographicAccent(isLight: boolean, accent: CvAccentId = 'cyan') {
   switch (accent) {
+    case 'cobalt':
+      return {
+        text: isLight ? 'text-blue-700' : 'text-blue-400',
+        barPrimary: isLight ? 'bg-blue-600' : 'bg-blue-500',
+        barSecondary: isLight ? 'bg-indigo-600' : 'bg-indigo-400',
+        polyFill: isLight ? 'rgba(37, 99, 235, 0.15)' : 'rgba(96, 165, 250, 0.19)',
+        polyStroke: isLight ? '#2563eb' : '#60a5fa',
+        hubFill: isLight ? '#eff6ff' : '#0b152a',
+        hubStroke: isLight ? '#93c5fd' : '#1e3a8a',
+        hubText: isLight ? '#1d4ed8' : '#93c5fd',
+        iconBox: isLight
+          ? 'bg-blue-50 border-blue-200 text-blue-700'
+          : 'bg-blue-950/50 border-blue-500/35 text-blue-400',
+        badge: isLight
+          ? 'border-blue-200 bg-blue-50 text-blue-800'
+          : 'border-blue-500/30 bg-blue-950/40 text-blue-300',
+      };
+    case 'copper':
+      return {
+        text: isLight ? 'text-orange-700' : 'text-orange-400',
+        barPrimary: isLight ? 'bg-orange-600' : 'bg-orange-500',
+        barSecondary: isLight ? 'bg-amber-600' : 'bg-amber-400',
+        polyFill: isLight ? 'rgba(234, 88, 12, 0.14)' : 'rgba(251, 146, 60, 0.18)',
+        polyStroke: isLight ? '#ea580c' : '#fb923c',
+        hubFill: isLight ? '#fff7ed' : '#241208',
+        hubStroke: isLight ? '#fdba74' : '#7c2d12',
+        hubText: isLight ? '#c2410c' : '#fdba74',
+        iconBox: isLight
+          ? 'bg-orange-50 border-orange-200 text-orange-700'
+          : 'bg-orange-950/50 border-orange-500/35 text-orange-400',
+        badge: isLight
+          ? 'border-orange-200 bg-orange-50 text-orange-800'
+          : 'border-orange-500/30 bg-orange-950/40 text-orange-300',
+      };
     case 'emerald':
       return {
         text: isLight ? 'text-emerald-700' : 'text-emerald-400',

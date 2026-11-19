@@ -131,11 +131,13 @@ const CV_ACCENT_OPTIONS: Array<{
   swatchClass: string;
 }> = [
   { id: 'cyan', label: 'Cyan / Sky', swatchClass: 'bg-cyan-400' },
+  { id: 'cobalt', label: 'Cobalt Blue', swatchClass: 'bg-blue-400' },
   { id: 'emerald', label: 'Emerald', swatchClass: 'bg-emerald-400' },
+  { id: 'teal', label: 'Ocean Teal', swatchClass: 'bg-teal-400' },
   { id: 'indigo', label: 'Indigo', swatchClass: 'bg-indigo-400' },
   { id: 'violet', label: 'Violet', swatchClass: 'bg-violet-400' },
   { id: 'amber', label: 'Amber Gold', swatchClass: 'bg-amber-400' },
-  { id: 'teal', label: 'Ocean Teal', swatchClass: 'bg-teal-400' },
+  { id: 'copper', label: 'Copper Orange', swatchClass: 'bg-orange-400' },
   { id: 'rose', label: 'Crimson Rose', swatchClass: 'bg-rose-400' },
   { id: 'slate', label: 'Classic Slate', swatchClass: 'bg-slate-400' },
 ];
@@ -242,36 +244,6 @@ const PRESETS: Record<CvPresetKey, ExportConfig> = {
     skillsDepth: 'full',
     certsDepth: 'top6',
     awardsDepth: 'featured'
-  },
-  cloud: {
-    sections: {
-      overview: true,
-      philosophy: false,
-      experience: true,
-      skills: true,
-      certifications: true,
-      awards: true,
-      education: true
-    },
-    experienceDepth: 'concise',
-    skillsDepth: 'full',
-    certsDepth: 'full',
-    awardsDepth: 'featured'
-  },
-  leadership: {
-    sections: {
-      overview: true,
-      philosophy: true,
-      experience: true,
-      skills: true,
-      certifications: true,
-      awards: true,
-      education: true
-    },
-    experienceDepth: 'full',
-    skillsDepth: 'compact',
-    certsDepth: 'top6',
-    awardsDepth: 'full'
   },
 };
 
@@ -912,10 +884,6 @@ export default function ResumeModal({
         return 'Mohammed_Sufyan_Platform_Track.pdf';
       case 'fullstack':
         return 'Mohammed_Sufyan_Fullstack_Track.pdf';
-      case 'cloud':
-        return 'Mohammed_Sufyan_Cloud_AI_Track.pdf';
-      case 'leadership':
-        return 'Mohammed_Sufyan_Architect_Lead_Track.pdf';
       default:
         return 'Mohammed_Sufyan_Custom_CV.pdf';
     }
@@ -1290,10 +1258,6 @@ export default function ResumeModal({
         return 'Platform Track';
       case 'fullstack':
         return 'Full-stack Track';
-      case 'cloud':
-        return 'Cloud & AI Track';
-      case 'leadership':
-        return 'Architect / Lead';
       default:
         return 'Custom Selection';
     }
@@ -1349,6 +1313,58 @@ export default function ResumeModal({
 
   const accentTokens = (() => {
     switch (cvAccent) {
+      case 'cobalt':
+        return {
+          accent: isLight ? 'text-blue-700' : 'text-blue-400',
+          accentSoft: isLight ? 'text-blue-700' : 'text-blue-400/90',
+          accentLink: isLight ? 'text-blue-700' : 'text-blue-300',
+          accentHero: isLight ? 'text-blue-700' : 'text-blue-400',
+          accentBadge: isLight
+            ? 'bg-blue-50 border-blue-200 text-blue-800'
+            : 'bg-blue-950/40 border-blue-500/30 text-blue-300',
+          accentBadgeStrong: isLight
+            ? 'bg-blue-100 border-blue-300 text-blue-900'
+            : 'bg-blue-950/60 border-blue-500/40 text-blue-300',
+          chipPillar: isLight
+            ? 'bg-blue-50 border-blue-200 text-blue-800'
+            : 'bg-[#090d16] border-blue-700/60 text-blue-300/90',
+          iconBox: isLight
+            ? 'bg-white border-blue-200 text-blue-700'
+            : 'bg-slate-900 border-blue-700/60 text-blue-400',
+          bulletDot: isLight ? 'bg-blue-600' : 'bg-blue-400',
+          blockquote: isLight ? 'text-slate-800 border-blue-600' : 'text-slate-100 border-blue-400/80',
+          progressBar: isLight ? 'bg-gradient-to-r from-blue-600 to-indigo-600' : 'bg-gradient-to-r from-blue-500 to-indigo-400',
+          portraitFrame: isLight
+            ? 'border-blue-200 bg-slate-100'
+            : 'border-blue-500/35 bg-[radial-gradient(circle_at_50%_32%,#0f1f3d_0%,#091124_58%,#06080d_100%)]',
+          hoverLink: isLight ? 'hover:text-blue-700' : 'hover:text-blue-300',
+        };
+      case 'copper':
+        return {
+          accent: isLight ? 'text-orange-700' : 'text-orange-400',
+          accentSoft: isLight ? 'text-orange-700' : 'text-orange-400/90',
+          accentLink: isLight ? 'text-orange-700' : 'text-orange-300',
+          accentHero: isLight ? 'text-orange-700' : 'text-orange-400',
+          accentBadge: isLight
+            ? 'bg-orange-50 border-orange-200 text-orange-800'
+            : 'bg-orange-950/40 border-orange-500/30 text-orange-300',
+          accentBadgeStrong: isLight
+            ? 'bg-orange-100 border-orange-300 text-orange-900'
+            : 'bg-orange-950/60 border-orange-500/40 text-orange-300',
+          chipPillar: isLight
+            ? 'bg-orange-50 border-orange-200 text-orange-800'
+            : 'bg-[#090d16] border-orange-700/60 text-orange-300/90',
+          iconBox: isLight
+            ? 'bg-white border-orange-200 text-orange-700'
+            : 'bg-slate-900 border-orange-700/60 text-orange-400',
+          bulletDot: isLight ? 'bg-orange-600' : 'bg-orange-400',
+          blockquote: isLight ? 'text-slate-800 border-orange-600' : 'text-slate-100 border-orange-400/80',
+          progressBar: isLight ? 'bg-gradient-to-r from-orange-600 to-amber-600' : 'bg-gradient-to-r from-orange-500 to-amber-400',
+          portraitFrame: isLight
+            ? 'border-orange-200 bg-slate-100'
+            : 'border-orange-500/35 bg-[radial-gradient(circle_at_50%_32%,#361909_0%,#1d0e06_58%,#06080d_100%)]',
+          hoverLink: isLight ? 'hover:text-orange-700' : 'hover:text-orange-300',
+        };
       case 'emerald':
         return {
           accent: isLight ? 'text-emerald-700' : 'text-emerald-400',
@@ -1903,8 +1919,6 @@ export default function ResumeModal({
                   { id: 'security' as const, short: 'Security', long: 'Security Track' },
                   { id: 'platform' as const, short: 'Platform', long: 'Platform Track' },
                   { id: 'fullstack' as const, short: 'Full-stack', long: 'Full-stack Track' },
-                  { id: 'cloud' as const, short: 'Cloud/AI', long: 'Cloud & AI Track' },
-                  { id: 'leadership' as const, short: 'Architect', long: 'Architect / Lead' },
                 ]
               ).map((item) => {
                 const active = preset === item.id;
@@ -1940,8 +1954,6 @@ export default function ResumeModal({
                 {preset === 'security' && 'Security-leaning CV: philosophy + concise roles + full skills + top certs + featured honors'}
                 {preset === 'platform' && 'Platform-leaning CV: full roles + full skills + top certs + featured honors'}
                 {preset === 'fullstack' && 'Delivery-leaning CV: concise roles + full skills + top 6 certs + education'}
-                {preset === 'cloud' && `Cloud & AI Track: concise roles + full skills + all ${CERTIFICATIONS.length} cloud/AI certs + key honors`}
-                {preset === 'leadership' && `Architect / Lead CV: philosophy + all ${totalRoleCount} full roles + compact skills + all ${AWARDS.length} honors`}
                 {preset === 'custom' && `${selectedSectionCount} section${selectedSectionCount === 1 ? '' : 's'} selected for export`}
               </div>
 

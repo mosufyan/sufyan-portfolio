@@ -76,20 +76,24 @@ describe('cvShareConfig', () => {
     expect(url).toContain('sections=overview%2Cexperience%2Cskills');
   });
 
-  it('supports extended presets, densities, and accent palettes', () => {
-    const cloudParsed = parseCvShareSearch('?cv=cloud&density=ultra&accent=violet&theme=light');
-    expect(cloudParsed.shouldOpen).toBe(true);
-    expect(cloudParsed.preset).toBe('cloud');
-    expect(cloudParsed.density).toBe('ultra');
-    expect(cloudParsed.accent).toBe('violet');
+  it('supports extended densities and accent palettes while enforcing 6 presets', () => {
+    const parsed = parseCvShareSearch('?cv=platform&density=ultra&accent=violet&theme=light');
+    expect(parsed.shouldOpen).toBe(true);
+    expect(parsed.preset).toBe('platform');
+    expect(parsed.density).toBe('ultra');
+    expect(parsed.accent).toBe('violet');
 
-    const leadParsed = parseCvShareSearch('?cv=leadership&density=editorial&accent=amber&theme=dark');
-    expect(leadParsed.shouldOpen).toBe(true);
-    expect(leadParsed.preset).toBe('leadership');
-    expect(leadParsed.density).toBe('editorial');
-    expect(leadParsed.accent).toBe('amber');
+    const fullstackParsed = parseCvShareSearch('?cv=fullstack&density=editorial&accent=amber&theme=dark');
+    expect(fullstackParsed.shouldOpen).toBe(true);
+    expect(fullstackParsed.preset).toBe('fullstack');
+    expect(fullstackParsed.density).toBe('editorial');
+    expect(fullstackParsed.accent).toBe('amber');
 
     expect(parseCvShareSearch('?cv=summary&accent=teal').accent).toBe('teal');
     expect(parseCvShareSearch('?cv=summary&accent=rose').accent).toBe('rose');
+    expect(parseCvShareSearch('?cv=summary&accent=cobalt').accent).toBe('cobalt');
+    expect(parseCvShareSearch('?cv=summary&accent=copper').accent).toBe('copper');
+    expect(parseCvShareSearch('?cv=cloud').shouldOpen).toBe(false);
+    expect(parseCvShareSearch('?cv=leadership').shouldOpen).toBe(false);
   });
 });

@@ -4,19 +4,19 @@ export type CvPresetKey =
   | 'full'
   | 'security'
   | 'platform'
-  | 'fullstack'
-  | 'cloud'
-  | 'leadership';
+  | 'fullstack';
 
 export type CvPresetMode = CvPresetKey | 'custom';
 export type CvPrintDensity = 'ultra' | 'compact' | 'executive' | 'relaxed' | 'editorial';
 export type CvAccentId =
   | 'cyan'
+  | 'cobalt'
   | 'emerald'
+  | 'teal'
   | 'indigo'
   | 'violet'
   | 'amber'
-  | 'teal'
+  | 'copper'
   | 'rose'
   | 'slate';
 export type CvSectionKey =
@@ -45,8 +45,6 @@ const VALID_PRESETS = new Set<CvPresetMode>([
   'security',
   'platform',
   'fullstack',
-  'cloud',
-  'leadership',
   'custom',
 ]);
 const VALID_THEMES = new Set<'dark' | 'light'>(['dark', 'light']);
@@ -59,11 +57,13 @@ const VALID_DENSITIES = new Set<CvPrintDensity>([
 ]);
 const VALID_ACCENTS = new Set<CvAccentId>([
   'cyan',
+  'cobalt',
   'emerald',
+  'teal',
   'indigo',
   'violet',
   'amber',
-  'teal',
+  'copper',
   'rose',
   'slate',
 ]);

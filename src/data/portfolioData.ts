@@ -82,7 +82,6 @@ export const PERSONAL_INFO = {
   location: 'San Jose, California, United States · Hybrid',
   experienceYears: '13+',
   certificationsCount: '20x',
-  enterpriseClients: '28+',
   academicCgpa: '9.5/10',
   philosophy: {
     quote1:
