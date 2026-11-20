@@ -22,7 +22,7 @@
 Interactive personal portfolio built with **React**, **Vite**, **Express**, **Tailwind CSS**, **Firebase Auth & Firestore**, and **Motion**.
 It includes multi-skill filtering, a command palette (`⌘K`/`Ctrl+K`), an interactive CLI (`sufyanctl`), dark/light themes, real-time announcements, a digital business card, an OTP-verified inquiry & CV export studio, OTP-gated portfolio chat (grounded + optional Cursor LLM), and a full-page Owner Security & Governance Console accessible directly from the navbar.
 
-Architecture diagrams and module maps: **[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)**.
+Docs: **[Architecture](./docs/ARCHITECTURE.md)** · **[Security configuration](./docs/SECURITY_CONFIGURATION.md)** · **[External tools & costs](./docs/EXTERNAL_TOOLS_AND_COSTS.md)** · **[SECURITY.md](./SECURITY.md)**.
 
 ## Features
 

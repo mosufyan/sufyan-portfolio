@@ -34,6 +34,12 @@ This portfolio combines a public showcase with hardened lead-capture APIs (`/api
 
 Email security concerns to **sufyan.net@gmail.com**. Please allow reasonable time for response before public disclosure of non-critical issues.
 
+Full Cloudflare / Cloud Run / Firebase / Resend checklists, upgrade paths, and **cost/limit tables** live in:
+
+- [docs/SECURITY_CONFIGURATION.md](./docs/SECURITY_CONFIGURATION.md)
+- [docs/EXTERNAL_TOOLS_AND_COSTS.md](./docs/EXTERNAL_TOOLS_AND_COSTS.md)
+- [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)
+
 ## Operations & Hardening — how to implement each recommendation
 
 ### 1. Edge WAF + no production source maps (scraper bar)
