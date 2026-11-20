@@ -1,13 +1,15 @@
-import { useEffect, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import {
   Activity,
   Clock3,
   Copy,
   HeartPulse,
   Link2,
+  Loader2,
   LogOut,
   MessageSquare,
   MonitorSmartphone,
+  Save,
   ShieldCheck,
   UserRound,
 } from 'lucide-react';
@@ -23,6 +25,31 @@ import {
   filterActivityTimeline,
   type SiteTelemetrySnapshot,
 } from '../utils/ownerTracking';
+import type { PortfolioSettings } from '../utils/ownerGovernance';
+import ChatConfigFields from './ChatConfigFields';
+
+type ChatTrackingStats = {
+  botQuestions?: number;
+  liveRequests?: number;
+  liveSessions?: number;
+  llmCalls?: number;
+  llmFallbacks?: number;
+  openSessions?: number;
+  queuedSessions?: number;
+  activeSessions?: number;
+  ownerOnline?: boolean;
+  usage?: {
+    trackedVisitors?: number;
+    questions?: number;
+    llmCalls?: number;
+    liveSessions?: number;
+  };
+  policy?: {
+    llmConfigured?: boolean;
+    chatMaxQuestionsPerVisitor?: number;
+    enableChatLlm?: boolean;
+  };
+};
 
 export default function OwnerProfilePanel({
   isLight,
@@ -50,8 +77,42 @@ export default function OwnerProfilePanel({
     adminDelegates,
     contactMessageLogs,
     cvDownloadLogs,
+    savePortfolioSettings,
   } = useFirebase();
   const [timelineFilter, setTimelineFilter] = useState<'all' | 'auth' | 'ops' | 'outreach'>('all');
+  const [chatStats, setChatStats] = useState<ChatTrackingStats | null>(null);
+  const [chatDraft, setChatDraft] = useState<PortfolioSettings>(() => ({ ...portfolioSettings }));
+  const [chatSaving, setChatSaving] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
+  const [chatSaved, setChatSaved] = useState<string | null>(null);
+
+  useEffect(() => {
+    setChatDraft({ ...portfolioSettings });
+  }, [portfolioSettings]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        if (!user) return;
+        const idToken = await user.getIdToken();
+        const res = await fetch('/api/owner/chat/sessions', {
+          headers: { Authorization: `Bearer ${idToken}` },
+        });
+        if (!res.ok) return;
+        const data = (await res.json()) as { stats?: ChatTrackingStats };
+        if (!cancelled && data.stats) setChatStats(data.stats);
+      } catch {
+        /* non-fatal */
+      }
+    };
+    void load();
+    const timer = window.setInterval(() => void load(), 20_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [user]);
 
   const card = isLight ? 'border-slate-200 bg-white' : 'border-slate-800 bg-[#090d16]';
   const subCard = isLight ? 'border-slate-200 bg-slate-50' : 'border-slate-800/80 bg-[#070b14]';
@@ -168,22 +229,117 @@ export default function OwnerProfilePanel({
         ))}
       </div>
 
-      <button
-        type="button"
-        onClick={openChatTracking}
-        className={`w-full rounded-xl border p-4 text-left transition-colors cursor-pointer ${card} ${
-          isLight ? 'hover:border-sky-300' : 'hover:border-cyan-500/40'
-        }`}
-      >
-        <div className={`text-xs font-display font-bold flex items-center gap-1.5 ${titleCls}`}>
-          <MessageSquare className="w-4 h-4 text-cyan-400" />
-          Chat & live-agent tracking
+      <div className={`rounded-xl border p-4 space-y-3 ${card}`}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className={`text-xs font-display font-bold flex items-center gap-1.5 ${titleCls}`}>
+            <MessageSquare className="w-4 h-4 text-cyan-400" />
+            Chat tracking &amp; limits
+          </div>
+          <button
+            type="button"
+            onClick={openChatTracking}
+            className={`text-[10px] font-mono uppercase cursor-pointer ${
+              isLight ? 'text-sky-700 hover:underline' : 'text-cyan-300 hover:underline'
+            }`}
+          >
+            Open live inbox →
+          </button>
         </div>
-        <p className={`mt-1 text-[11px] font-mono ${mutedCls}`}>
-          Open the Chat console for bot Q&A volume, OTP live sessions, and real-time visitor replies. Presence
-          stays warm while the Owner Console is open.
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 text-[11px] font-mono">
+          {[
+            ['Bot questions', chatStats?.botQuestions ?? '—'],
+            ['Cursor LLM', chatStats?.llmCalls ?? '—'],
+            ['LLM fallbacks', chatStats?.llmFallbacks ?? '—'],
+            ['Live sessions', chatStats?.liveSessions ?? '—'],
+            ['Open / queued', `${chatStats?.openSessions ?? 0}/${chatStats?.queuedSessions ?? 0}`],
+            ['Tracked visitors', chatStats?.usage?.trackedVisitors ?? '—'],
+            [
+              'Max Q / visitor',
+              chatStats?.policy?.chatMaxQuestionsPerVisitor ??
+                portfolioSettings.chatMaxQuestionsPerVisitor,
+            ],
+            [
+              'Cursor API',
+              chatStats?.policy?.llmConfigured
+                ? portfolioSettings.enableChatLlm
+                  ? 'Ready'
+                  : 'Key set / LLM off'
+                : 'Not configured',
+            ],
+          ].map(([k, v]) => (
+            <div key={String(k)} className={`flex justify-between gap-2 rounded-lg border px-2.5 py-2 ${subCard}`}>
+              <span className={mutedCls}>{k}</span>
+              <span className={titleCls}>{v}</span>
+            </div>
+          ))}
+        </div>
+        <p className={`text-[11px] ${mutedCls}`}>
+          Owner online: {chatStats?.ownerOnline ? 'yes' : 'no'} · Presence warms while the console is open.
         </p>
-      </button>
+
+        {isPrimaryOwner && (
+          <form
+            className="space-y-3"
+            onSubmit={async (e: FormEvent) => {
+              e.preventDefault();
+              if (chatSaving) return;
+              setChatError(null);
+              setChatSaved(null);
+              setChatSaving(true);
+              try {
+                await savePortfolioSettings(chatDraft);
+                setChatSaved('Chat limits saved and synced to the Express policy cache.');
+              } catch (err) {
+                setChatError(err instanceof Error ? err.message : 'Unable to save chat settings.');
+              } finally {
+                setChatSaving(false);
+              }
+            }}
+          >
+            <ChatConfigFields
+              draft={chatDraft}
+              setDraft={setChatDraft}
+              isLight={isLight}
+              title="Per-visitor chat configuration"
+              description="Configure the ten chat settings from your owner profile (example: max 10 questions per visitor per window)."
+            />
+            {chatError && (
+              <div
+                role="alert"
+                className={`rounded-lg border px-3 py-2 text-xs ${
+                  isLight
+                    ? 'border-rose-300 bg-rose-50 text-rose-800'
+                    : 'border-rose-500/40 bg-rose-950/40 text-rose-200'
+                }`}
+              >
+                {chatError}
+              </div>
+            )}
+            {chatSaved && (
+              <div
+                role="status"
+                className={`rounded-lg border px-3 py-2 text-xs ${
+                  isLight
+                    ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
+                    : 'border-emerald-500/40 bg-emerald-950/35 text-emerald-200'
+                }`}
+              >
+                {chatSaved}
+              </div>
+            )}
+            <div className="flex justify-end">
+              <button
+                type="submit"
+                disabled={chatSaving}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#38bdf8] hover:bg-sky-300 disabled:opacity-50 text-slate-950 font-semibold text-xs cursor-pointer"
+              >
+                {chatSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                Save chat limits
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
 
       <div className={`rounded-xl border p-4 space-y-2 ${card}`}>
         <div className={`text-xs font-display font-bold flex items-center gap-1.5 ${titleCls}`}>

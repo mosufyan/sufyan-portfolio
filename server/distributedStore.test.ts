@@ -50,6 +50,16 @@ describe('distributedStore (memory fallback)', () => {
       enableCvDownloads: true,
       incidentMode: false,
       notifyOnNewInquiry: true,
+      enablePortfolioChat: true,
+      enableLiveChat: true,
+      enableChatLlm: false,
+      chatMaxQuestionsPerVisitor: 10,
+      chatMaxLlmPerVisitor: 5,
+      chatMaxLiveSessionsPerVisitor: 3,
+      chatRateWindowHours: 24,
+      chatLlmModel: '',
+      chatShowSuggestions: true,
+      chatOfferLiveAgent: true,
     };
     await expect(mod.loadDistributedOwnerPolicy(fallback)).resolves.toEqual(fallback);
   });

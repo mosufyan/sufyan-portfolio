@@ -513,6 +513,16 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
         enableCvDownloads: effective.enableCvDownloads,
         incidentMode: settings.incidentMode,
         notifyOnNewInquiry: settings.notifyOnNewInquiry,
+        enablePortfolioChat: effective.enablePortfolioChat,
+        enableLiveChat: effective.enableLiveChat,
+        enableChatLlm: effective.enableChatLlm,
+        chatMaxQuestionsPerVisitor: settings.chatMaxQuestionsPerVisitor,
+        chatMaxLlmPerVisitor: settings.chatMaxLlmPerVisitor,
+        chatMaxLiveSessionsPerVisitor: settings.chatMaxLiveSessionsPerVisitor,
+        chatRateWindowHours: settings.chatRateWindowHours,
+        chatLlmModel: settings.chatLlmModel,
+        chatShowSuggestions: settings.chatShowSuggestions,
+        chatOfferLiveAgent: settings.chatOfferLiveAgent,
       };
       const digest = JSON.stringify(payload);
       if (digest === lastPolicyDigestRef.current) return;
@@ -899,7 +909,7 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
         await syncOwnerPolicyToServer(currentUser, accessRules, clean);
         void recordAdminAudit(
           'settings_updated',
-          `Site settings saved (incident=${clean.incidentMode}, maintenance=${clean.maintenanceMode}, contact=${clean.enableContactForm}, cv=${clean.enableCvDownloads}, strictOtp=${clean.strictOtpForAll}, alerts=${clean.notifyOnNewInquiry})`
+          `Site settings saved (incident=${clean.incidentMode}, maintenance=${clean.maintenanceMode}, contact=${clean.enableContactForm}, cv=${clean.enableCvDownloads}, strictOtp=${clean.strictOtpForAll}, alerts=${clean.notifyOnNewInquiry}, chat=${clean.enablePortfolioChat}, llm=${clean.enableChatLlm}, maxQ=${clean.chatMaxQuestionsPerVisitor})`
         ).catch(() => {});
         if (previousIncident !== clean.incidentMode) {
           void recordAdminAudit(

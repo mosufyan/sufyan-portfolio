@@ -61,6 +61,7 @@ import {
   appendChatMessage,
   bumpBotQuestion,
   bumpLiveRequest,
+  bumpLlmCall,
   closeChatSession,
   createChatSession,
   getChatSession,
@@ -70,8 +71,17 @@ import {
   publicSessionView,
   touchOwnerPresence,
 } from './server/chatSessions.ts';
+import {
+  buildVisitorKey,
+  checkChatLimit,
+  consumeChatLimit,
+  getChatUsageTotals,
+  type ChatLimitPolicy,
+} from './server/chatLimits.ts';
+import { enrichAnswerWithCursorLlm, isCursorLlmConfigured } from './server/cursorLlm.ts';
 import { buildDynamicSocialSvg, SHARE_CARD_TRACKS, type ShareTrackId } from './src/utils/ogShare.ts';
 import {
+  DEFAULT_PORTFOLIO_SETTINGS,
   evaluateAccessRules,
   validateAccessRuleDraft,
   type CompactAccessRule,
@@ -157,6 +167,31 @@ interface RuntimeOwnerPolicy {
   enableCvDownloads: boolean;
   incidentMode: boolean;
   notifyOnNewInquiry: boolean;
+  enablePortfolioChat: boolean;
+  enableLiveChat: boolean;
+  enableChatLlm: boolean;
+  chatMaxQuestionsPerVisitor: number;
+  chatMaxLlmPerVisitor: number;
+  chatMaxLiveSessionsPerVisitor: number;
+  chatRateWindowHours: number;
+  chatLlmModel: string;
+  chatShowSuggestions: boolean;
+  chatOfferLiveAgent: boolean;
+}
+
+function chatLimitPolicyFromRuntime(policy: RuntimeOwnerPolicy): ChatLimitPolicy {
+  return {
+    maxQuestionsPerVisitor: policy.chatMaxQuestionsPerVisitor,
+    maxLlmPerVisitor: policy.chatMaxLlmPerVisitor,
+    maxLiveSessionsPerVisitor: policy.chatMaxLiveSessionsPerVisitor,
+    rateWindowHours: policy.chatRateWindowHours,
+  };
+}
+
+function clampPolicyInt(value: unknown, fallback: number, min: number, max: number): number {
+  const n = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(n)));
 }
 
 const POLICY_CACHE_PATH = path.join(__dirname, '.owner-policy-cache.json');
@@ -233,6 +268,16 @@ function loadInitialOwnerPolicy(): RuntimeOwnerPolicy {
     enableCvDownloads: true,
     incidentMode: false,
     notifyOnNewInquiry: true,
+    enablePortfolioChat: DEFAULT_PORTFOLIO_SETTINGS.enablePortfolioChat,
+    enableLiveChat: DEFAULT_PORTFOLIO_SETTINGS.enableLiveChat,
+    enableChatLlm: DEFAULT_PORTFOLIO_SETTINGS.enableChatLlm,
+    chatMaxQuestionsPerVisitor: DEFAULT_PORTFOLIO_SETTINGS.chatMaxQuestionsPerVisitor,
+    chatMaxLlmPerVisitor: DEFAULT_PORTFOLIO_SETTINGS.chatMaxLlmPerVisitor,
+    chatMaxLiveSessionsPerVisitor: DEFAULT_PORTFOLIO_SETTINGS.chatMaxLiveSessionsPerVisitor,
+    chatRateWindowHours: DEFAULT_PORTFOLIO_SETTINGS.chatRateWindowHours,
+    chatLlmModel: DEFAULT_PORTFOLIO_SETTINGS.chatLlmModel,
+    chatShowSuggestions: DEFAULT_PORTFOLIO_SETTINGS.chatShowSuggestions,
+    chatOfferLiveAgent: DEFAULT_PORTFOLIO_SETTINGS.chatOfferLiveAgent,
   };
   try {
     if (!fs.existsSync(POLICY_CACHE_PATH)) return defaults;
@@ -245,6 +290,50 @@ function loadInitialOwnerPolicy(): RuntimeOwnerPolicy {
       incidentMode: Boolean(parsed.incidentMode),
       notifyOnNewInquiry:
         typeof parsed.notifyOnNewInquiry === 'boolean' ? parsed.notifyOnNewInquiry : true,
+      enablePortfolioChat:
+        typeof parsed.enablePortfolioChat === 'boolean'
+          ? parsed.enablePortfolioChat
+          : defaults.enablePortfolioChat,
+      enableLiveChat:
+        typeof parsed.enableLiveChat === 'boolean' ? parsed.enableLiveChat : defaults.enableLiveChat,
+      enableChatLlm:
+        typeof parsed.enableChatLlm === 'boolean' ? parsed.enableChatLlm : defaults.enableChatLlm,
+      chatMaxQuestionsPerVisitor: clampPolicyInt(
+        parsed.chatMaxQuestionsPerVisitor,
+        defaults.chatMaxQuestionsPerVisitor,
+        1,
+        200
+      ),
+      chatMaxLlmPerVisitor: clampPolicyInt(
+        parsed.chatMaxLlmPerVisitor,
+        defaults.chatMaxLlmPerVisitor,
+        0,
+        100
+      ),
+      chatMaxLiveSessionsPerVisitor: clampPolicyInt(
+        parsed.chatMaxLiveSessionsPerVisitor,
+        defaults.chatMaxLiveSessionsPerVisitor,
+        0,
+        50
+      ),
+      chatRateWindowHours: clampPolicyInt(
+        parsed.chatRateWindowHours,
+        defaults.chatRateWindowHours,
+        1,
+        168
+      ),
+      chatLlmModel:
+        typeof parsed.chatLlmModel === 'string'
+          ? parsed.chatLlmModel.slice(0, 64)
+          : defaults.chatLlmModel,
+      chatShowSuggestions:
+        typeof parsed.chatShowSuggestions === 'boolean'
+          ? parsed.chatShowSuggestions
+          : defaults.chatShowSuggestions,
+      chatOfferLiveAgent:
+        typeof parsed.chatOfferLiveAgent === 'boolean'
+          ? parsed.chatOfferLiveAgent
+          : defaults.chatOfferLiveAgent,
     };
   } catch {
     return defaults;
@@ -1607,6 +1696,16 @@ async function startServer() {
         enableCvDownloads?: unknown;
         incidentMode?: unknown;
         notifyOnNewInquiry?: unknown;
+        enablePortfolioChat?: unknown;
+        enableLiveChat?: unknown;
+        enableChatLlm?: unknown;
+        chatMaxQuestionsPerVisitor?: unknown;
+        chatMaxLlmPerVisitor?: unknown;
+        chatMaxLiveSessionsPerVisitor?: unknown;
+        chatRateWindowHours?: unknown;
+        chatLlmModel?: unknown;
+        chatShowSuggestions?: unknown;
+        chatOfferLiveAgent?: unknown;
       };
 
       const normalizedRules: CompactAccessRule[] = [];
@@ -1649,6 +1748,57 @@ async function startServer() {
           typeof raw.notifyOnNewInquiry === 'boolean'
             ? raw.notifyOnNewInquiry
             : runtimeOwnerPolicy.notifyOnNewInquiry,
+        enablePortfolioChat: incidentMode
+          ? false
+          : typeof raw.enablePortfolioChat === 'boolean'
+            ? raw.enablePortfolioChat
+            : runtimeOwnerPolicy.enablePortfolioChat,
+        enableLiveChat: incidentMode
+          ? false
+          : typeof raw.enableLiveChat === 'boolean'
+            ? raw.enableLiveChat
+            : runtimeOwnerPolicy.enableLiveChat,
+        enableChatLlm: incidentMode
+          ? false
+          : typeof raw.enableChatLlm === 'boolean'
+            ? raw.enableChatLlm
+            : runtimeOwnerPolicy.enableChatLlm,
+        chatMaxQuestionsPerVisitor: clampPolicyInt(
+          raw.chatMaxQuestionsPerVisitor,
+          runtimeOwnerPolicy.chatMaxQuestionsPerVisitor,
+          1,
+          200
+        ),
+        chatMaxLlmPerVisitor: clampPolicyInt(
+          raw.chatMaxLlmPerVisitor,
+          runtimeOwnerPolicy.chatMaxLlmPerVisitor,
+          0,
+          100
+        ),
+        chatMaxLiveSessionsPerVisitor: clampPolicyInt(
+          raw.chatMaxLiveSessionsPerVisitor,
+          runtimeOwnerPolicy.chatMaxLiveSessionsPerVisitor,
+          0,
+          50
+        ),
+        chatRateWindowHours: clampPolicyInt(
+          raw.chatRateWindowHours,
+          runtimeOwnerPolicy.chatRateWindowHours,
+          1,
+          168
+        ),
+        chatLlmModel:
+          typeof raw.chatLlmModel === 'string'
+            ? raw.chatLlmModel.slice(0, 64)
+            : runtimeOwnerPolicy.chatLlmModel,
+        chatShowSuggestions:
+          typeof raw.chatShowSuggestions === 'boolean'
+            ? raw.chatShowSuggestions
+            : runtimeOwnerPolicy.chatShowSuggestions,
+        chatOfferLiveAgent:
+          typeof raw.chatOfferLiveAgent === 'boolean'
+            ? raw.chatOfferLiveAgent
+            : runtimeOwnerPolicy.chatOfferLiveAgent,
       });
 
       res.status(200).json({ ok: true, ruleCount: normalizedRules.length });
@@ -2589,11 +2739,23 @@ async function startServer() {
   // ——— Portfolio chatbot + OTP-gated live agent ———
   app.get('/api/chat/status', (_req: Request, res: Response) => {
     const stats = getChatStats();
+    const chatEnabled = runtimeOwnerPolicy.enablePortfolioChat && !runtimeOwnerPolicy.incidentMode;
+    const liveEnabled =
+      chatEnabled && runtimeOwnerPolicy.enableLiveChat && isDirectEmailTransportConfigured();
     res.status(200).json({
       ok: true,
+      enabled: chatEnabled,
       ownerOnline: stats.ownerOnline,
-      liveChatAvailable: isDirectEmailTransportConfigured(),
-      suggestions: listChatSuggestions(),
+      liveChatAvailable: liveEnabled,
+      llmConfigured: isCursorLlmConfigured() && runtimeOwnerPolicy.enableChatLlm,
+      limits: {
+        maxQuestionsPerVisitor: runtimeOwnerPolicy.chatMaxQuestionsPerVisitor,
+        maxLlmPerVisitor: runtimeOwnerPolicy.chatMaxLlmPerVisitor,
+        maxLiveSessionsPerVisitor: runtimeOwnerPolicy.chatMaxLiveSessionsPerVisitor,
+        rateWindowHours: runtimeOwnerPolicy.chatRateWindowHours,
+      },
+      suggestions: runtimeOwnerPolicy.chatShowSuggestions ? listChatSuggestions() : [],
+      offerLiveAgent: runtimeOwnerPolicy.chatOfferLiveAgent,
     });
   });
 
@@ -2604,6 +2766,10 @@ async function startServer() {
         return;
       }
       if (rejectDisallowedOrigin(req, res)) return;
+      if (!runtimeOwnerPolicy.enablePortfolioChat || runtimeOwnerPolicy.incidentMode) {
+        res.status(503).json({ error: 'Portfolio chat is temporarily unavailable.' });
+        return;
+      }
       const clientIp = extractClientIp(req);
       if (
         await enforceRateLimit(res, 'chat', clientIp, {
@@ -2615,15 +2781,71 @@ async function startServer() {
       }
       const raw = (req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {}) as {
         question?: unknown;
+        visitorId?: unknown;
       };
       const question = typeof raw.question === 'string' ? raw.question.trim() : '';
+      const visitorId = typeof raw.visitorId === 'string' ? raw.visitorId.trim() : '';
       if (question.length < 3) {
         res.status(400).json({ error: 'Please enter a question (at least 3 characters).' });
         return;
       }
+
+      const visitorKey = buildVisitorKey({ ipAddress: clientIp, visitorId });
+      const limitPolicy = chatLimitPolicyFromRuntime(runtimeOwnerPolicy);
+      const questionLimit = consumeChatLimit(visitorKey, 'question', limitPolicy);
+      if (!questionLimit.allowed) {
+        res.status(429).json({
+          error: questionLimit.reason,
+          remaining: questionLimit.remaining,
+          resetAtMs: questionLimit.resetAtMs,
+        });
+        return;
+      }
+
       bumpBotQuestion();
-      const answer = answerPortfolioQuestion(question);
-      res.status(200).json({ ok: true, ...answer, ownerOnline: isOwnerOnline() });
+
+      const wantLlm =
+        runtimeOwnerPolicy.enableChatLlm &&
+        isCursorLlmConfigured() &&
+        runtimeOwnerPolicy.chatMaxLlmPerVisitor > 0;
+      let provider: 'cursor' | 'grounded' = 'grounded';
+      let answer = answerPortfolioQuestion(question);
+
+      if (wantLlm) {
+        const llmLimit = consumeChatLimit(visitorKey, 'llm', limitPolicy);
+        if (llmLimit.allowed) {
+          const enriched = await enrichAnswerWithCursorLlm(question, {
+            apiKey: process.env.CURSOR_API_KEY || '',
+            modelId: runtimeOwnerPolicy.chatLlmModel,
+          });
+          answer = enriched.answer;
+          provider = enriched.provider;
+          bumpLlmCall(enriched.provider === 'cursor');
+        }
+      }
+
+      if (!runtimeOwnerPolicy.chatOfferLiveAgent) {
+        answer = { ...answer, offerLiveAgent: false };
+      }
+
+      const llmRemaining = checkChatLimit(visitorKey, 'llm', limitPolicy).remaining;
+
+      res.status(200).json({
+        ok: true,
+        ...answer,
+        provider,
+        ownerOnline: isOwnerOnline(),
+        remaining: {
+          questions: questionLimit.remaining,
+          llm: llmRemaining,
+        },
+        limits: {
+          maxQuestionsPerVisitor: runtimeOwnerPolicy.chatMaxQuestionsPerVisitor,
+          maxLlmPerVisitor: runtimeOwnerPolicy.chatMaxLlmPerVisitor,
+          rateWindowHours: runtimeOwnerPolicy.chatRateWindowHours,
+        },
+        resetAtMs: questionLimit.resetAtMs,
+      });
     } catch {
       res.status(500).json({ error: 'Unable to answer right now. Please try again.' });
     }
@@ -2636,6 +2858,14 @@ async function startServer() {
         return;
       }
       if (rejectDisallowedOrigin(req, res)) return;
+      if (
+        !runtimeOwnerPolicy.enablePortfolioChat ||
+        !runtimeOwnerPolicy.enableLiveChat ||
+        runtimeOwnerPolicy.incidentMode
+      ) {
+        res.status(503).json({ error: 'Live chat is temporarily unavailable.' });
+        return;
+      }
       if (!isDirectEmailTransportConfigured()) {
         res.status(503).json({
           error: 'Live chat verification is temporarily unavailable. Please use the contact form instead.',
@@ -2698,6 +2928,21 @@ async function startServer() {
       });
       if (accessCheck.blocked) {
         res.status(403).json({ error: 'This email or network address is restricted from live chat.' });
+        return;
+      }
+
+      const liveVisitorKey = buildVisitorKey({ ipAddress: clientIp, email });
+      const liveLimit = checkChatLimit(
+        liveVisitorKey,
+        'live',
+        chatLimitPolicyFromRuntime(runtimeOwnerPolicy)
+      );
+      if (!liveLimit.allowed) {
+        res.status(429).json({
+          error: liveLimit.reason,
+          remaining: liveLimit.remaining,
+          resetAtMs: liveLimit.resetAtMs,
+        });
         return;
       }
 
@@ -2790,6 +3035,24 @@ async function startServer() {
       }
 
       const p = verified.payload;
+      const liveVisitorKey = buildVisitorKey({
+        ipAddress: p.ipAddress || clientIp,
+        email: p.email,
+      });
+      const liveLimit = consumeChatLimit(
+        liveVisitorKey,
+        'live',
+        chatLimitPolicyFromRuntime(runtimeOwnerPolicy)
+      );
+      if (!liveLimit.allowed) {
+        res.status(429).json({
+          error: liveLimit.reason,
+          remaining: liveLimit.remaining,
+          resetAtMs: liveLimit.resetAtMs,
+        });
+        return;
+      }
+
       const session = createChatSession({
         visitorName: p.name,
         visitorEmail: p.email,
@@ -2804,6 +3067,8 @@ async function startServer() {
         sessionReceipt,
         session: publicSessionView(session),
         ownerOnline: isOwnerOnline(),
+        remaining: { live: liveLimit.remaining },
+        resetAtMs: liveLimit.resetAtMs,
       });
     } catch (error) {
       console.error('Chat live verify error:', error instanceof Error ? error.message : error);
@@ -2893,7 +3158,23 @@ async function startServer() {
     touchOwnerPresence();
     res.status(200).json({
       ok: true,
-      stats: getChatStats(),
+      stats: {
+        ...getChatStats(),
+        usage: getChatUsageTotals(),
+        policy: {
+          enablePortfolioChat: runtimeOwnerPolicy.enablePortfolioChat,
+          enableLiveChat: runtimeOwnerPolicy.enableLiveChat,
+          enableChatLlm: runtimeOwnerPolicy.enableChatLlm,
+          chatMaxQuestionsPerVisitor: runtimeOwnerPolicy.chatMaxQuestionsPerVisitor,
+          chatMaxLlmPerVisitor: runtimeOwnerPolicy.chatMaxLlmPerVisitor,
+          chatMaxLiveSessionsPerVisitor: runtimeOwnerPolicy.chatMaxLiveSessionsPerVisitor,
+          chatRateWindowHours: runtimeOwnerPolicy.chatRateWindowHours,
+          chatLlmModel: runtimeOwnerPolicy.chatLlmModel,
+          chatShowSuggestions: runtimeOwnerPolicy.chatShowSuggestions,
+          chatOfferLiveAgent: runtimeOwnerPolicy.chatOfferLiveAgent,
+          llmConfigured: isCursorLlmConfigured(),
+        },
+      },
       sessions: listChatSessions().map((s) => publicSessionView(s)),
     });
   });

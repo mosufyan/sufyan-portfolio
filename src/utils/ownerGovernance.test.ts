@@ -41,6 +41,10 @@ describe('ownerGovernance utilities', () => {
       strictOtpForAll: true,
       incidentMode: true,
       notifyOnNewInquiry: false,
+      chatMaxQuestionsPerVisitor: 999,
+      chatMaxLlmPerVisitor: -2,
+      enableChatLlm: true,
+      chatLlmModel: 'composer-2',
     });
     expect(sanitized.availabilityStatus).toBe('advisory');
     expect(sanitized.maintenanceMode).toBe(true);
@@ -48,12 +52,27 @@ describe('ownerGovernance utilities', () => {
     expect(sanitized.enableCvDownloads).toBe(DEFAULT_PORTFOLIO_SETTINGS.enableCvDownloads);
     expect(sanitized.incidentMode).toBe(true);
     expect(sanitized.notifyOnNewInquiry).toBe(false);
+    expect(sanitized.chatMaxQuestionsPerVisitor).toBe(200);
+    expect(sanitized.chatMaxLlmPerVisitor).toBe(0);
+    expect(sanitized.enableChatLlm).toBe(true);
+    expect(sanitized.chatLlmModel).toBe('composer-2');
 
     const effective = getEffectivePortfolioSettings(sanitized);
     expect(effective.maintenanceMode).toBe(true);
     expect(effective.enableContactForm).toBe(false);
     expect(effective.enableCvDownloads).toBe(false);
     expect(effective.strictOtpForAll).toBe(true);
+    expect(effective.enablePortfolioChat).toBe(false);
+    expect(effective.enableLiveChat).toBe(false);
+    expect(effective.enableChatLlm).toBe(false);
+  });
+
+  it('defaults chat caps to ten questions per visitor', () => {
+    const sanitized = sanitizePortfolioSettings({});
+    expect(sanitized.chatMaxQuestionsPerVisitor).toBe(10);
+    expect(sanitized.enablePortfolioChat).toBe(true);
+    expect(sanitized.enableLiveChat).toBe(true);
+    expect(sanitized.enableChatLlm).toBe(false);
   });
 
   it('validates admin delegate drafts', () => {

@@ -6,6 +6,10 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import {
+  exportChatUsageSnapshot,
+  importChatUsageSnapshot,
+} from './chatLimits.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CACHE_PATH = path.join(__dirname, '..', '.owner-chat-cache.json');
@@ -39,6 +43,15 @@ interface ChatCacheFile {
   botQuestions: number;
   liveRequests: number;
   liveSessions: number;
+  llmCalls: number;
+  llmFallbacks: number;
+  usages?: Array<{
+    visitorKey: string;
+    windowStartedAtMs: number;
+    questions: number;
+    llmCalls: number;
+    liveSessions: number;
+  }>;
 }
 
 const MAX_SESSIONS = 200;
@@ -49,6 +62,8 @@ let ownerPresenceAtMs = 0;
 let botQuestions = 0;
 let liveRequests = 0;
 let liveSessions = 0;
+let llmCalls = 0;
+let llmFallbacks = 0;
 const sessions = new Map<string, ChatSession>();
 
 function loadCache(): void {
@@ -59,10 +74,15 @@ function loadCache(): void {
     botQuestions = Number(parsed.botQuestions) || 0;
     liveRequests = Number(parsed.liveRequests) || 0;
     liveSessions = Number(parsed.liveSessions) || 0;
+    llmCalls = Number(parsed.llmCalls) || 0;
+    llmFallbacks = Number(parsed.llmFallbacks) || 0;
     if (Array.isArray(parsed.sessions)) {
       for (const s of parsed.sessions.slice(-MAX_SESSIONS)) {
         if (s?.sessionId) sessions.set(s.sessionId, s);
       }
+    }
+    if (Array.isArray(parsed.usages)) {
+      importChatUsageSnapshot(parsed.usages);
     }
   } catch {
     /* ignore */
@@ -84,6 +104,9 @@ function scheduleFlush(): void {
         botQuestions,
         liveRequests,
         liveSessions,
+        llmCalls,
+        llmFallbacks,
+        usages: exportChatUsageSnapshot(),
       };
       fs.writeFileSync(CACHE_PATH, JSON.stringify(payload), 'utf8');
     } catch {
@@ -104,6 +127,12 @@ export function bumpLiveRequest(): void {
   scheduleFlush();
 }
 
+export function bumpLlmCall(success: boolean): void {
+  if (success) llmCalls += 1;
+  else llmFallbacks += 1;
+  scheduleFlush();
+}
+
 export function touchOwnerPresence(now = Date.now()): void {
   ownerPresenceAtMs = now;
   scheduleFlush();
@@ -119,7 +148,11 @@ export function getChatStats() {
     botQuestions,
     liveRequests,
     liveSessions,
+    llmCalls,
+    llmFallbacks,
     openSessions: open.length,
+    queuedSessions: open.filter((s) => s.status === 'queued').length,
+    activeSessions: open.filter((s) => s.status === 'active').length,
     ownerOnline: isOwnerOnline(),
     ownerPresenceAtMs,
   };

@@ -246,12 +246,18 @@ service cloud.firestore {
           'availabilityStatus', 'availabilityText', 'maintenanceMode', 'maintenanceMessage',
           'enableContactForm', 'enableCvDownloads', 'strictOtpForAll', 'showAnnouncementsBadge',
           'incidentMode', 'incidentMessage', 'notifyOnNewInquiry',
+          'enablePortfolioChat', 'enableLiveChat', 'enableChatLlm',
+          'chatMaxQuestionsPerVisitor', 'chatMaxLlmPerVisitor', 'chatMaxLiveSessionsPerVisitor',
+          'chatRateWindowHours', 'chatLlmModel', 'chatShowSuggestions', 'chatOfferLiveAgent',
           'updatedByUid', 'updatedAt'
         ])
         && data.keys().hasOnly([
           'availabilityStatus', 'availabilityText', 'maintenanceMode', 'maintenanceMessage',
           'enableContactForm', 'enableCvDownloads', 'strictOtpForAll', 'showAnnouncementsBadge',
           'incidentMode', 'incidentMessage', 'notifyOnNewInquiry',
+          'enablePortfolioChat', 'enableLiveChat', 'enableChatLlm',
+          'chatMaxQuestionsPerVisitor', 'chatMaxLlmPerVisitor', 'chatMaxLiveSessionsPerVisitor',
+          'chatRateWindowHours', 'chatLlmModel', 'chatShowSuggestions', 'chatOfferLiveAgent',
           'updatedByUid', 'updatedAt'
         ])
         && data.availabilityStatus is string
@@ -268,6 +274,25 @@ service cloud.firestore {
         && data.incidentMode is bool
         && data.incidentMessage is string && data.incidentMessage.size() <= 300
         && data.notifyOnNewInquiry is bool
+        && data.enablePortfolioChat is bool
+        && data.enableLiveChat is bool
+        && data.enableChatLlm is bool
+        && data.chatMaxQuestionsPerVisitor is int
+        && data.chatMaxQuestionsPerVisitor >= 1
+        && data.chatMaxQuestionsPerVisitor <= 200
+        && data.chatMaxLlmPerVisitor is int
+        && data.chatMaxLlmPerVisitor >= 0
+        && data.chatMaxLlmPerVisitor <= 100
+        && data.chatMaxLiveSessionsPerVisitor is int
+        && data.chatMaxLiveSessionsPerVisitor >= 0
+        && data.chatMaxLiveSessionsPerVisitor <= 50
+        && data.chatRateWindowHours is int
+        && data.chatRateWindowHours >= 1
+        && data.chatRateWindowHours <= 168
+        && data.chatLlmModel is string
+        && data.chatLlmModel.size() <= 64
+        && data.chatShowSuggestions is bool
+        && data.chatOfferLiveAgent is bool
         && data.updatedByUid is string && data.updatedByUid.size() >= 1 && data.updatedByUid.size() <= 128 && data.updatedByUid == request.auth.uid
         && data.updatedAt is timestamp;
     }

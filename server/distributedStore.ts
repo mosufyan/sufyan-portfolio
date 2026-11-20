@@ -39,6 +39,16 @@ export interface RuntimeOwnerPolicyPayload {
   enableCvDownloads: boolean;
   incidentMode: boolean;
   notifyOnNewInquiry: boolean;
+  enablePortfolioChat: boolean;
+  enableLiveChat: boolean;
+  enableChatLlm: boolean;
+  chatMaxQuestionsPerVisitor: number;
+  chatMaxLlmPerVisitor: number;
+  chatMaxLiveSessionsPerVisitor: number;
+  chatRateWindowHours: number;
+  chatLlmModel: string;
+  chatShowSuggestions: boolean;
+  chatOfferLiveAgent: boolean;
 }
 
 function createUpstashClient(): Redis | null {
@@ -134,6 +144,11 @@ export async function loadDistributedOwnerPolicy(
   try {
     const raw = await redis.get<RuntimeOwnerPolicyPayload>(POLICY_REDIS_KEY);
     if (!raw || typeof raw !== 'object') return fallback;
+    const clamp = (value: unknown, fb: number, min: number, max: number) => {
+      const n = typeof value === 'number' ? value : Number(value);
+      if (!Number.isFinite(n)) return fb;
+      return Math.min(max, Math.max(min, Math.round(n)));
+    };
     return {
       rules: Array.isArray(raw.rules) ? raw.rules.slice(0, 200) : fallback.rules,
       strictOtpForAll: Boolean(raw.strictOtpForAll),
@@ -146,6 +161,38 @@ export async function loadDistributedOwnerPolicy(
         typeof raw.notifyOnNewInquiry === 'boolean'
           ? raw.notifyOnNewInquiry
           : fallback.notifyOnNewInquiry,
+      enablePortfolioChat:
+        typeof raw.enablePortfolioChat === 'boolean'
+          ? raw.enablePortfolioChat
+          : fallback.enablePortfolioChat,
+      enableLiveChat:
+        typeof raw.enableLiveChat === 'boolean' ? raw.enableLiveChat : fallback.enableLiveChat,
+      enableChatLlm:
+        typeof raw.enableChatLlm === 'boolean' ? raw.enableChatLlm : fallback.enableChatLlm,
+      chatMaxQuestionsPerVisitor: clamp(
+        raw.chatMaxQuestionsPerVisitor,
+        fallback.chatMaxQuestionsPerVisitor,
+        1,
+        200
+      ),
+      chatMaxLlmPerVisitor: clamp(raw.chatMaxLlmPerVisitor, fallback.chatMaxLlmPerVisitor, 0, 100),
+      chatMaxLiveSessionsPerVisitor: clamp(
+        raw.chatMaxLiveSessionsPerVisitor,
+        fallback.chatMaxLiveSessionsPerVisitor,
+        0,
+        50
+      ),
+      chatRateWindowHours: clamp(raw.chatRateWindowHours, fallback.chatRateWindowHours, 1, 168),
+      chatLlmModel:
+        typeof raw.chatLlmModel === 'string' ? raw.chatLlmModel.slice(0, 64) : fallback.chatLlmModel,
+      chatShowSuggestions:
+        typeof raw.chatShowSuggestions === 'boolean'
+          ? raw.chatShowSuggestions
+          : fallback.chatShowSuggestions,
+      chatOfferLiveAgent:
+        typeof raw.chatOfferLiveAgent === 'boolean'
+          ? raw.chatOfferLiveAgent
+          : fallback.chatOfferLiveAgent,
     };
   } catch (error) {
     console.error('Upstash policy load error; using local fallback:', error);

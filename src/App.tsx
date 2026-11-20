@@ -282,7 +282,7 @@ export default function App() {
                 onChangeReadingMode={setReadingMode}
                 onOpenCommandPalette={() => setCommandPaletteOpen(true)}
               />
-              <ChatWidget />
+              {effectivePortfolioSettings.enablePortfolioChat && <ChatWidget />}
             </>
           )}
         </div>

@@ -81,7 +81,8 @@ Email security concerns to **sufyan.net@gmail.com**. Please allow reasonable tim
 
 ### Portfolio chatbot & live agent
 
-- **Bot answers** are grounded retrieval over `portfolioData` (no LLM required). Optional future: wire `CHAT_LLM_*` for generative polish on top of the same sources.
+- **Bot answers** are grounded retrieval over `portfolioData` by default. Optional **Cursor Cloud Agents API** enrichment when `CURSOR_API_KEY` is set and Owner Profile / Site Controls enable `enableChatLlm` (no-repo agent + grounded context; times out to retrieval).
+- **Per-visitor caps** (default 10 questions / window, plus LLM + live-session caps) are owner-configurable and enforced server-side; tracking KPIs appear on the Owner Profile.
 - **Live agent** requires email OTP (same mail transport as contact/CV). Sessions live in Express memory + `.owner-chat-cache.json`; owner console `#owner/chat` replies in near-real-time while presence heartbeats mark you online.
 - Rate-limited under the `chat` bucket; allow/block rules still apply to live-chat emails.
 
@@ -103,4 +104,9 @@ FIREBASE_SERVICE_ACCOUNT_JSON='{"type":"service_account",...}'
 # Shared rate limits + policy (multi-instance)
 UPSTASH_REDIS_REST_URL=https://....upstash.io
 UPSTASH_REDIS_REST_TOKEN=...
+
+# Optional Cursor LLM enrichment for portfolio chat
+CURSOR_API_KEY=...
+# CURSOR_API_BASE_URL=https://api.cursor.com
+# CHAT_LLM_TIMEOUT_MS=12000
 ```

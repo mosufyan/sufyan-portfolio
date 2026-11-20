@@ -31,6 +31,7 @@ import {
   type PortfolioSettings,
   validateAccessRuleDraft,
 } from '../utils/ownerGovernance';
+import ChatConfigFields from './ChatConfigFields';
 
 function formatAuditTime(ms: number): string {
   try {
@@ -629,6 +630,8 @@ export function SiteControlsPanel({ isLight }: { isLight: boolean }) {
             className={`w-full rounded-lg border px-3 py-2 text-xs focus:outline-none resize-y ${inputCls}`}
           />
         </div>
+
+        <ChatConfigFields draft={draft} setDraft={setDraft} isLight={isLight} />
 
         <div className="flex items-center justify-end gap-2 pt-1">
           <button

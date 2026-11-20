@@ -26,10 +26,28 @@ type LiveSession = {
   messages: Array<{ id: string; role: string; text: string; createdAtMs: number }>;
 };
 
+function getOrCreateVisitorId(): string {
+  try {
+    const key = 'ms_chat_visitor_id';
+    const existing = window.localStorage.getItem(key);
+    if (existing && existing.length >= 8) return existing.slice(0, 64);
+    const id =
+      typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID()
+        : `v-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    window.localStorage.setItem(key, id);
+    return id;
+  } catch {
+    return `v-${Date.now()}`;
+  }
+}
+
 export default function ChatWidget() {
   const { isLight } = useTheme();
   const shouldReduceMotion = useReducedMotion();
   const [open, setOpen] = useState(false);
+  const [enabled, setEnabled] = useState(true);
+  const [liveAvailable, setLiveAvailable] = useState(true);
   const [mode, setMode] = useState<'bot' | 'live-start' | 'live-otp' | 'live'>('bot');
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
@@ -65,9 +83,20 @@ export default function ChatWidget() {
   useEffect(() => {
     let cancelled = false;
     void fetch('/api/chat/status')
-      .then(async (r) => (r.ok ? ((await r.json()) as { ownerOnline?: boolean; suggestions?: string[] }) : null))
+      .then(async (r) =>
+        r.ok
+          ? ((await r.json()) as {
+              enabled?: boolean;
+              ownerOnline?: boolean;
+              suggestions?: string[];
+              liveChatAvailable?: boolean;
+            })
+          : null
+      )
       .then((data) => {
         if (cancelled || !data) return;
+        setEnabled(data.enabled !== false);
+        setLiveAvailable(data.liveChatAvailable !== false);
         setOwnerOnline(Boolean(data.ownerOnline));
         if (Array.isArray(data.suggestions)) setSuggestions(data.suggestions.slice(0, 5));
       })
@@ -115,7 +144,7 @@ export default function ChatWidget() {
       const res = await fetch('/api/chat/ask', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: clean }),
+        body: JSON.stringify({ question: clean, visitorId: getOrCreateVisitorId() }),
       });
       const data = (await res.json().catch(() => ({}))) as {
         error?: string;
@@ -124,20 +153,28 @@ export default function ChatWidget() {
         suggestions?: string[];
         offerLiveAgent?: boolean;
         ownerOnline?: boolean;
+        provider?: string;
+        remaining?: { questions?: number };
       };
       if (!res.ok) throw new Error(data.error || 'Unable to answer right now.');
       if (typeof data.ownerOnline === 'boolean') setOwnerOnline(data.ownerOnline);
       if (Array.isArray(data.suggestions)) setSuggestions(data.suggestions);
+      const remainingHint =
+        typeof data.remaining?.questions === 'number'
+          ? ` (${data.remaining.questions} questions left in this window)`
+          : '';
       setBubbles((prev) => [
         ...prev,
         {
           id: `b-${Date.now()}`,
           role: 'bot',
-          text: data.answer || 'No answer returned.',
+          text: `${data.answer || 'No answer returned.'}${
+            data.provider === 'cursor' ? '\n\n— enriched via Cursor API' : ''
+          }${remainingHint ? `\n\n${remainingHint}` : ''}`,
           sources: data.sources,
         },
       ]);
-      if (data.offerLiveAgent) {
+      if (data.offerLiveAgent && liveAvailable) {
         setBubbles((prev) => [
           ...prev,
           {
@@ -271,6 +308,8 @@ export default function ChatWidget() {
         }))
       : bubbles;
 
+  if (!enabled) return null;
+
   return (
     <div className="pointer-events-none fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] right-[max(1.25rem,env(safe-area-inset-right))] z-[42] flex flex-col items-end gap-3 print:hidden">
       <AnimatePresence>
@@ -367,14 +406,16 @@ export default function ChatWidget() {
                     {s}
                   </button>
                 ))}
-                <button
-                  type="button"
-                  onClick={() => setMode('live-start')}
-                  className="inline-flex items-center gap-1 text-[10px] font-mono px-2 py-1 rounded-lg border border-cyan-500/40 text-cyan-300 cursor-pointer"
-                >
-                  <Headphones className="w-3 h-3" />
-                  Request live agent
-                </button>
+                {liveAvailable && (
+                  <button
+                    type="button"
+                    onClick={() => setMode('live-start')}
+                    className="inline-flex items-center gap-1 text-[10px] font-mono px-2 py-1 rounded-lg border border-cyan-500/40 text-cyan-300 cursor-pointer"
+                  >
+                    <Headphones className="w-3 h-3" />
+                    Request live agent
+                  </button>
+                )}
               </div>
             )}
 

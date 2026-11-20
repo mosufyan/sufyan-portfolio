@@ -54,6 +54,17 @@ export const PORTFOLIO_SETTINGS_CONSTRAINTS = {
   incidentMessageMaxLength: 300,
   uidMinLength: 1,
   uidMaxLength: 128,
+  chatLlmModelMaxLength: 64,
+  chatMaxQuestionsPerVisitorMin: 1,
+  chatMaxQuestionsPerVisitorMax: 200,
+  chatMaxLlmPerVisitorMin: 0,
+  chatMaxLlmPerVisitorMax: 100,
+  chatMaxLiveSessionsPerVisitorMin: 0,
+  chatMaxLiveSessionsPerVisitorMax: 50,
+  chatRateWindowHoursMin: 1,
+  chatRateWindowHoursMax: 168,
+  chatLlmTimeoutMsMin: 3000,
+  chatLlmTimeoutMsMax: 60000,
 } as const;
 
 export interface PortfolioSettings {
@@ -70,6 +81,26 @@ export interface PortfolioSettings {
   incidentMessage: string;
   /** When true, new verified inquiries also trigger an owner alert email subject tag. */
   notifyOnNewInquiry: boolean;
+  /** Portfolio grounded chatbot widget. */
+  enablePortfolioChat: boolean;
+  /** OTP-gated live agent chat. */
+  enableLiveChat: boolean;
+  /** Optional Cursor Cloud Agents enrichment on top of grounded retrieval. */
+  enableChatLlm: boolean;
+  /** Max bot questions per visitor within the rate window (default 10). */
+  chatMaxQuestionsPerVisitor: number;
+  /** Max Cursor LLM-enriched answers per visitor within the rate window. */
+  chatMaxLlmPerVisitor: number;
+  /** Max OTP live sessions per visitor email within the rate window. */
+  chatMaxLiveSessionsPerVisitor: number;
+  /** Sliding window length for per-visitor chat caps (hours). */
+  chatRateWindowHours: number;
+  /** Optional Cursor model id (empty = account default). */
+  chatLlmModel: string;
+  /** Show starter suggestion chips in the chat widget. */
+  chatShowSuggestions: boolean;
+  /** Offer live-agent handoff when bot confidence is low. */
+  chatOfferLiveAgent: boolean;
 }
 
 export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
@@ -86,7 +117,23 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
   incidentMessage:
     'Incident response mode is active. Public contact and CV exports are temporarily paused.',
   notifyOnNewInquiry: true,
+  enablePortfolioChat: true,
+  enableLiveChat: true,
+  enableChatLlm: false,
+  chatMaxQuestionsPerVisitor: 10,
+  chatMaxLlmPerVisitor: 5,
+  chatMaxLiveSessionsPerVisitor: 3,
+  chatRateWindowHours: 24,
+  chatLlmModel: '',
+  chatShowSuggestions: true,
+  chatOfferLiveAgent: true,
 };
+
+function clampInt(value: unknown, fallback: number, min: number, max: number): number {
+  const n = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(n)));
+}
 
 export interface AdminDelegateDraft {
   uid: string;
@@ -249,6 +296,54 @@ export function sanitizePortfolioSettings(input: Partial<PortfolioSettings> | nu
       typeof input.notifyOnNewInquiry === 'boolean'
         ? input.notifyOnNewInquiry
         : DEFAULT_PORTFOLIO_SETTINGS.notifyOnNewInquiry,
+    enablePortfolioChat:
+      typeof input.enablePortfolioChat === 'boolean'
+        ? input.enablePortfolioChat
+        : DEFAULT_PORTFOLIO_SETTINGS.enablePortfolioChat,
+    enableLiveChat:
+      typeof input.enableLiveChat === 'boolean'
+        ? input.enableLiveChat
+        : DEFAULT_PORTFOLIO_SETTINGS.enableLiveChat,
+    enableChatLlm:
+      typeof input.enableChatLlm === 'boolean'
+        ? input.enableChatLlm
+        : DEFAULT_PORTFOLIO_SETTINGS.enableChatLlm,
+    chatMaxQuestionsPerVisitor: clampInt(
+      input.chatMaxQuestionsPerVisitor,
+      DEFAULT_PORTFOLIO_SETTINGS.chatMaxQuestionsPerVisitor,
+      PORTFOLIO_SETTINGS_CONSTRAINTS.chatMaxQuestionsPerVisitorMin,
+      PORTFOLIO_SETTINGS_CONSTRAINTS.chatMaxQuestionsPerVisitorMax
+    ),
+    chatMaxLlmPerVisitor: clampInt(
+      input.chatMaxLlmPerVisitor,
+      DEFAULT_PORTFOLIO_SETTINGS.chatMaxLlmPerVisitor,
+      PORTFOLIO_SETTINGS_CONSTRAINTS.chatMaxLlmPerVisitorMin,
+      PORTFOLIO_SETTINGS_CONSTRAINTS.chatMaxLlmPerVisitorMax
+    ),
+    chatMaxLiveSessionsPerVisitor: clampInt(
+      input.chatMaxLiveSessionsPerVisitor,
+      DEFAULT_PORTFOLIO_SETTINGS.chatMaxLiveSessionsPerVisitor,
+      PORTFOLIO_SETTINGS_CONSTRAINTS.chatMaxLiveSessionsPerVisitorMin,
+      PORTFOLIO_SETTINGS_CONSTRAINTS.chatMaxLiveSessionsPerVisitorMax
+    ),
+    chatRateWindowHours: clampInt(
+      input.chatRateWindowHours,
+      DEFAULT_PORTFOLIO_SETTINGS.chatRateWindowHours,
+      PORTFOLIO_SETTINGS_CONSTRAINTS.chatRateWindowHoursMin,
+      PORTFOLIO_SETTINGS_CONSTRAINTS.chatRateWindowHoursMax
+    ),
+    chatLlmModel: clampString(
+      input.chatLlmModel ?? DEFAULT_PORTFOLIO_SETTINGS.chatLlmModel,
+      PORTFOLIO_SETTINGS_CONSTRAINTS.chatLlmModelMaxLength
+    ),
+    chatShowSuggestions:
+      typeof input.chatShowSuggestions === 'boolean'
+        ? input.chatShowSuggestions
+        : DEFAULT_PORTFOLIO_SETTINGS.chatShowSuggestions,
+    chatOfferLiveAgent:
+      typeof input.chatOfferLiveAgent === 'boolean'
+        ? input.chatOfferLiveAgent
+        : DEFAULT_PORTFOLIO_SETTINGS.chatOfferLiveAgent,
   };
 }
 
@@ -261,6 +356,9 @@ export function getEffectivePortfolioSettings(settings: PortfolioSettings): Port
     enableContactForm: false,
     enableCvDownloads: false,
     strictOtpForAll: true,
+    enablePortfolioChat: false,
+    enableLiveChat: false,
+    enableChatLlm: false,
     maintenanceMessage: settings.incidentMessage || settings.maintenanceMessage,
   };
 }
