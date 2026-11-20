@@ -12,6 +12,7 @@ type FirestoreLike = {
   collection: (name: string) => {
     doc: (id: string) => {
       set: (data: Record<string, unknown>, opts?: { merge?: boolean }) => Promise<void>;
+      get: () => Promise<{ exists: boolean; data: () => Record<string, unknown> | undefined }>;
     };
   };
 };
@@ -108,5 +109,24 @@ export async function adminWriteContactMessage(
   } catch (error) {
     console.error('Admin contact_messages write failed:', error);
     return false;
+  }
+}
+
+export async function adminGetContactMessage(
+  messageId: string
+): Promise<{ senderEmail: string; senderName: string } | null> {
+  if (!tryInitAdmin() || !firestore) return null;
+  try {
+    const snap = await firestore.collection('contact_messages').doc(messageId).get();
+    if (!snap.exists) return null;
+    const data = snap.data() || {};
+    const senderEmail =
+      typeof data.senderEmail === 'string' ? data.senderEmail.trim().toLowerCase() : '';
+    if (!senderEmail) return null;
+    const senderName = typeof data.senderName === 'string' ? data.senderName.trim() : '';
+    return { senderEmail, senderName };
+  } catch (error) {
+    console.error('Admin contact_messages read failed:', error);
+    return null;
   }
 }

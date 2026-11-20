@@ -32,6 +32,10 @@ type Mode = 'welcome' | 'register' | 'otp' | 'chat';
 
 const SESSION_STORAGE_KEY = 'ms_chat_verified_session_v1';
 
+function chatReceiptHeaders(receipt: string): HeadersInit {
+  return { 'X-Chat-Receipt': receipt };
+}
+
 function getOrCreateVisitorId(): string {
   try {
     const key = 'ms_chat_visitor_id';
@@ -118,6 +122,12 @@ export default function ChatWidget() {
   const [liveReceipt, setLiveReceipt] = useState<string | null>(null);
   const [liveSession, setLiveSession] = useState<LiveSession | null>(null);
   const [customerName, setCustomerName] = useState('');
+  const [turnstileSiteKey, setTurnstileSiteKey] = useState(
+    () => (import.meta.env.VITE_TURNSTILE_SITE_KEY as string | undefined) || ''
+  );
+  const [turnstileToken, setTurnstileToken] = useState('');
+  const turnstileContainerRef = useRef<HTMLDivElement | null>(null);
+  const turnstileWidgetIdRef = useRef<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
   const panel = isLight
@@ -149,10 +159,70 @@ export default function ChatWidget() {
         if (Array.isArray(data.suggestions)) setSuggestions(data.suggestions.slice(0, 5));
       })
       .catch(() => {});
+    if (!turnstileSiteKey) {
+      void fetch('/api/access-config')
+        .then(async (r) => (r.ok ? ((await r.json()) as { turnstileSiteKey?: string }) : null))
+        .then((cfg) => {
+          if (!cancelled && cfg?.turnstileSiteKey) setTurnstileSiteKey(cfg.turnstileSiteKey);
+        })
+        .catch(() => {});
+    }
     return () => {
       cancelled = true;
     };
-  }, [open]);
+  }, [open, turnstileSiteKey]);
+
+  useEffect(() => {
+    if (!open || mode !== 'register' || !turnstileSiteKey) return;
+    const container = turnstileContainerRef.current;
+    if (!container) return;
+    let cancelled = false;
+    const mount = () => {
+      if (cancelled || !window.turnstile || !turnstileContainerRef.current) return;
+      if (turnstileWidgetIdRef.current) {
+        window.turnstile.remove(turnstileWidgetIdRef.current);
+        turnstileWidgetIdRef.current = null;
+      }
+      turnstileWidgetIdRef.current = window.turnstile.render(turnstileContainerRef.current, {
+        sitekey: turnstileSiteKey,
+        theme: isLight ? 'light' : 'dark',
+        callback: (token: string) => setTurnstileToken(token),
+        'expired-callback': () => setTurnstileToken(''),
+        'error-callback': () => setTurnstileToken(''),
+      });
+    };
+    if (window.turnstile) {
+      mount();
+    } else {
+      const existing = document.querySelector('script[data-turnstile]');
+      if (!existing) {
+        const script = document.createElement('script');
+        script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+        script.async = true;
+        script.dataset.turnstile = '1';
+        script.onload = () => mount();
+        document.head.appendChild(script);
+      } else {
+        const timer = window.setInterval(() => {
+          if (window.turnstile) {
+            window.clearInterval(timer);
+            mount();
+          }
+        }, 200);
+        return () => {
+          cancelled = true;
+          window.clearInterval(timer);
+        };
+      }
+    }
+    return () => {
+      cancelled = true;
+      if (turnstileWidgetIdRef.current && window.turnstile) {
+        window.turnstile.remove(turnstileWidgetIdRef.current);
+        turnstileWidgetIdRef.current = null;
+      }
+    };
+  }, [open, mode, turnstileSiteKey, isLight]);
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' });
@@ -161,9 +231,9 @@ export default function ChatWidget() {
   useEffect(() => {
     if (mode !== 'chat' || !liveSession || !liveReceipt) return;
     const id = window.setInterval(() => {
-      void fetch(
-        `/api/chat/live/${encodeURIComponent(liveSession.sessionId)}?receipt=${encodeURIComponent(liveReceipt)}`
-      )
+      void fetch(`/api/chat/live/${encodeURIComponent(liveSession.sessionId)}`, {
+        headers: chatReceiptHeaders(liveReceipt),
+      })
         .then(async (r) =>
           r.ok
             ? ((await r.json()) as { session?: LiveSession; ownerOnline?: boolean })
@@ -227,9 +297,9 @@ export default function ChatWidget() {
     const stored = loadStoredSession();
     if (stored) {
       setBusy(true);
-      void fetch(
-        `/api/chat/live/${encodeURIComponent(stored.sessionId)}?receipt=${encodeURIComponent(stored.receipt)}`
-      )
+      void fetch(`/api/chat/live/${encodeURIComponent(stored.sessionId)}`, {
+        headers: chatReceiptHeaders(stored.receipt),
+      })
         .then(async (r) =>
           r.ok
             ? ((await r.json()) as { session?: LiveSession; ownerOnline?: boolean })
@@ -265,12 +335,14 @@ export default function ChatWidget() {
     try {
       const res = await fetch('/api/chat/ask', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...chatReceiptHeaders(liveReceipt),
+        },
         body: JSON.stringify({
           question: clean,
           visitorId: getOrCreateVisitorId(),
           sessionId: liveSession.sessionId,
-          receipt: liveReceipt,
         }),
       });
       const data = (await res.json().catch(() => ({}))) as {
@@ -315,6 +387,9 @@ export default function ChatWidget() {
     setBusy(true);
     setError(null);
     try {
+      if (turnstileSiteKey && turnstileToken.trim().length < 10) {
+        throw new Error('Please complete the bot verification challenge.');
+      }
       const res = await fetch('/api/chat/live/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -325,6 +400,7 @@ export default function ChatWidget() {
           interest: form.interest.trim(),
           openingMessage: form.openingMessage.trim(),
           website: form.website,
+          turnstileToken: turnstileToken || undefined,
           theme: isLight ? 'light' : 'dark',
         }),
       });
@@ -410,8 +486,11 @@ export default function ChatWidget() {
     try {
       const res = await fetch(`/api/chat/live/${encodeURIComponent(liveSession.sessionId)}/message`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ receipt: liveReceipt, text: cleaned }),
+        headers: {
+          'Content-Type': 'application/json',
+          ...chatReceiptHeaders(liveReceipt),
+        },
+        body: JSON.stringify({ text: cleaned }),
       });
       const data = (await res.json().catch(() => ({}))) as {
         error?: string;
@@ -650,6 +729,9 @@ export default function ChatWidget() {
                     rows={2}
                     className={`w-full rounded-xl border px-3 py-2 text-xs focus:outline-none resize-none focus:border-cyan-400 ${field}`}
                   />
+                  {turnstileSiteKey ? (
+                    <div ref={turnstileContainerRef} className="min-h-[65px]" />
+                  ) : null}
                   <input
                     tabIndex={-1}
                     autoComplete="off"

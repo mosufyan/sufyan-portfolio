@@ -39,6 +39,40 @@ describe('distributedStore (memory fallback)', () => {
     expect(blocked.retryAfterSeconds).toBeGreaterThan(0);
   });
 
+  it('fails closed when Redis incr throws', async () => {
+    vi.stubEnv('UPSTASH_REDIS_REST_URL', 'https://example.upstash.io');
+    vi.stubEnv('UPSTASH_REDIS_REST_TOKEN', 'test-token');
+    vi.resetModules();
+    vi.doMock('@upstash/redis', () => ({
+      Redis: class {
+        incr() {
+          return Promise.reject(new Error('redis down'));
+        }
+        pexpire() {
+          return Promise.resolve(1);
+        }
+        pttl() {
+          return Promise.resolve(1000);
+        }
+        get() {
+          return Promise.resolve(null);
+        }
+        set() {
+          return Promise.resolve('OK');
+        }
+      },
+    }));
+    const mod = await import('./distributedStore.ts');
+    const result = await mod.checkDistributedRateLimit('chat', 'fail-closed-key', {
+      maxRequests: 5,
+      windowMs: 60_000,
+    });
+    expect(result.limited).toBe(true);
+    expect(result.backend).toBe('redis');
+    expect(result.retryAfterSeconds).toBeGreaterThan(0);
+    vi.doUnmock('@upstash/redis');
+  });
+
   it('loadDistributedOwnerPolicy returns fallback without redis', async () => {
     vi.stubEnv('UPSTASH_REDIS_REST_URL', '');
     vi.stubEnv('UPSTASH_REDIS_REST_TOKEN', '');

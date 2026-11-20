@@ -52,11 +52,13 @@ import {
   type RateLimitNamespace,
 } from './server/distributedStore.ts';
 import {
+  adminGetContactMessage,
   adminWriteContactMessage,
   adminWriteCvDownload,
   isFirebaseAdminConfigured,
 } from './server/firebaseAdmin.ts';
 import { answerPortfolioQuestion, listChatSuggestions } from './server/chatKnowledge.ts';
+import { extractChatReceipt as extractChatReceiptToken } from './server/chatReceipt.ts';
 import {
   appendChatMessage,
   bumpBotQuestion,
@@ -1996,20 +1998,49 @@ async function startServer() {
         originalSubject?: unknown;
       };
 
-      const toEmail = typeof raw.toEmail === 'string' ? raw.toEmail.trim().toLowerCase() : '';
-      const toName = typeof raw.toName === 'string' ? raw.toName.trim() : '';
+      const toEmailRaw = typeof raw.toEmail === 'string' ? raw.toEmail.trim().toLowerCase() : '';
+      const toNameRaw = typeof raw.toName === 'string' ? raw.toName.trim() : '';
       const subject = typeof raw.subject === 'string' ? raw.subject.trim() : '';
       const body = typeof raw.body === 'string' ? raw.body.trim() : '';
       const messageId = typeof raw.messageId === 'string' ? raw.messageId.trim() : '';
       const originalSubject =
         typeof raw.originalSubject === 'string' ? raw.originalSubject.trim().slice(0, 200) : '';
 
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(toEmail)) {
-        res.status(400).json({ error: 'A valid recipient email is required.' });
+      if (!messageId || messageId.length < 4) {
+        res.status(400).json({ error: 'A valid inquiry messageId is required to send a reply.' });
         return;
       }
       if (subject.length < 3 || body.length < 3) {
         res.status(400).json({ error: 'Reply subject and body must be at least 3 characters.' });
+        return;
+      }
+
+      // Bind recipient to the stored inquiry when Admin SDK is available (prevents arbitrary outbound mail).
+      let toEmail = toEmailRaw;
+      let toName = toNameRaw;
+      if (isFirebaseAdminConfigured()) {
+        const inquiry = await adminGetContactMessage(messageId);
+        if (!inquiry) {
+          res.status(404).json({ error: 'Inquiry not found for reply binding.' });
+          return;
+        }
+        if (toEmailRaw && toEmailRaw !== inquiry.senderEmail) {
+          res.status(403).json({ error: 'Reply recipient must match the inquiry sender email.' });
+          return;
+        }
+        toEmail = inquiry.senderEmail;
+        if (!toName) toName = inquiry.senderName;
+      } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(toEmail)) {
+        res.status(400).json({ error: 'A valid recipient email is required.' });
+        return;
+      }
+
+      if (
+        await enforceRateLimit(res, 'contact', `owner-reply:${authCheck.email || authCheck.uid || 'actor'}`, {
+          maxRequests: 30,
+          error: 'Too many owner replies. Please wait a few minutes.',
+        })
+      ) {
         return;
       }
 
@@ -2024,7 +2055,7 @@ async function startServer() {
       res.status(200).json({
         ok: true,
         provider: result.provider,
-        messageId: messageId || undefined,
+        messageId,
       });
     } catch (error) {
       const message =
@@ -2974,7 +3005,7 @@ async function startServer() {
       const question = typeof raw.question === 'string' ? raw.question.trim() : '';
       const visitorId = typeof raw.visitorId === 'string' ? raw.visitorId.trim() : '';
       const sessionId = typeof raw.sessionId === 'string' ? raw.sessionId.trim() : '';
-      const receipt = typeof raw.receipt === 'string' ? raw.receipt : undefined;
+      const receipt = extractChatReceipt(req, raw.receipt);
       if (question.length < 3) {
         res.status(400).json({ error: 'Please enter a question (at least 3 characters).' });
         return;
@@ -2995,11 +3026,12 @@ async function startServer() {
         sessionEmail = auth.email;
       }
 
+      // Never trust client visitorId as a quota boundary — IP for anonymous, email after OTP.
       const visitorKey = buildVisitorKey({
         ipAddress: clientIp,
-        visitorId,
         email: sessionEmail || undefined,
       });
+      void visitorId; // retained for future analytics only
       const limitPolicy = chatLimitPolicyFromRuntime(runtimeOwnerPolicy);
       const questionLimit = consumeChatLimit(visitorKey, 'question', limitPolicy);
       if (!questionLimit.allowed) {
@@ -3027,8 +3059,8 @@ async function startServer() {
       let answer = answerPortfolioQuestion(question);
 
       if (wantLlm) {
-        const llmLimit = consumeChatLimit(visitorKey, 'llm', limitPolicy);
-        if (llmLimit.allowed) {
+        const llmCheck = checkChatLimit(visitorKey, 'llm', limitPolicy);
+        if (llmCheck.allowed) {
           const enriched = await enrichAnswerWithCursorLlm(question, {
             apiKey: process.env.CURSOR_API_KEY || '',
             modelId: runtimeOwnerPolicy.chatLlmModel,
@@ -3040,7 +3072,13 @@ async function startServer() {
               : answer.followUps,
           };
           provider = enriched.provider;
-          bumpLlmCall(enriched.provider === 'cursor');
+          // Only spend LLM quota when Cursor actually returned an enriched answer.
+          if (enriched.provider === 'cursor') {
+            consumeChatLimit(visitorKey, 'llm', limitPolicy);
+            bumpLlmCall(true);
+          } else {
+            bumpLlmCall(false);
+          }
         }
       }
 
@@ -3324,9 +3362,18 @@ async function startServer() {
     }
   });
 
+  function extractChatReceipt(req: Request, bodyReceipt?: unknown): string | undefined {
+    return extractChatReceiptToken({
+      headers: req.headers as Record<string, string | string[] | undefined>,
+      bodyReceipt,
+      // Never accept query receipts — they leak via access logs and Referer.
+      allowQuery: false,
+    });
+  }
+
   app.get('/api/chat/live/:sessionId', (req: Request, res: Response) => {
     const sessionId = typeof req.params.sessionId === 'string' ? req.params.sessionId : '';
-    const receipt = typeof req.query.receipt === 'string' ? req.query.receipt : undefined;
+    const receipt = extractChatReceipt(req);
     const auth = verifyChatSessionReceipt(receipt, sessionId);
     if (!auth.ok) {
       res.status(401).json({ error: 'Invalid or expired chat session.' });
@@ -3355,7 +3402,7 @@ async function startServer() {
       const body = (req.body && typeof req.body === 'object' && !Array.isArray(req.body)
         ? req.body
         : {}) as { receipt?: unknown; text?: unknown };
-      const receipt = typeof body.receipt === 'string' ? body.receipt : undefined;
+      const receipt = extractChatReceipt(req, body.receipt);
       const auth = verifyChatSessionReceipt(receipt, sessionId);
       if (!auth.ok) {
         res.status(401).json({ error: 'Invalid or expired chat session.' });

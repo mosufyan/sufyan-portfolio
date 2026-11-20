@@ -59,13 +59,11 @@ export function buildVisitorKey(input: {
   email?: string;
 }): string {
   const ip = (input.ipAddress || 'unknown').slice(0, 64);
-  const visitorId = (input.visitorId || '').trim().slice(0, 64);
   const email = (input.email || '').trim().toLowerCase().slice(0, 254);
-  const material = email
-    ? `email:${email}`
-    : visitorId
-      ? `vid:${visitorId}|ip:${ip}`
-      : `ip:${ip}`;
+  // Client-supplied visitorId is intentionally ignored for quota keys (spoofable).
+  // Prefer verified email after OTP; otherwise fall back to IP only.
+  void input.visitorId;
+  const material = email ? `email:${email}` : `ip:${ip}`;
   return crypto.createHash('sha256').update(material).digest('hex').slice(0, 32);
 }
 

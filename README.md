@@ -20,7 +20,9 @@
 ---
 
 Interactive personal portfolio built with **React**, **Vite**, **Express**, **Tailwind CSS**, **Firebase Auth & Firestore**, and **Motion**.
-It includes multi-skill filtering, a command palette (`⌘K`/`Ctrl+K`), an interactive CLI (`sufyanctl`), dark/light themes, real-time announcements, a digital business card, an OTP-verified inquiry & CV export studio, and a full-page Owner Security & Governance Console accessible directly from the navbar.
+It includes multi-skill filtering, a command palette (`⌘K`/`Ctrl+K`), an interactive CLI (`sufyanctl`), dark/light themes, real-time announcements, a digital business card, an OTP-verified inquiry & CV export studio, OTP-gated portfolio chat (grounded + optional Cursor LLM), and a full-page Owner Security & Governance Console accessible directly from the navbar.
+
+Architecture diagrams and module maps: **[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)**.
 
 ## Features
 
@@ -32,7 +34,8 @@ It includes multi-skill filtering, a command palette (`⌘K`/`Ctrl+K`), an inter
 | **Contact (`Transmit Message`)** | Quick-intent presets, mandatory 6-digit email OTP verification, Cloudflare Turnstile, honeypot, inquiry triage |
 | **CV / PWA studio** | Live preview, custom presets, A4 print layout, ATS plain-text export, OTP-gated lead telemetry |
 | **Owner Console (Full-Page)** | Navbar Google Sign-In, CV & Message analytics charts, Light/Dark exact-layout PDF export, triage pipeline, announcements CRUD, allow/block rules, site/maintenance toggles, admin audit log |
-| **Ops** | Vitest unit tests, CI (`tsc --noEmit` / tests / `npm audit` / build) |
+| **Portfolio chat** | OTP-gated welcome, Turnstile on live start, grounded Q&A + follow-ups, optional Cursor LLM with per-visitor caps, header-bound session receipts |
+| **Ops** | Vitest unit tests, CI (`tsc --noEmit` / tests / `npm audit` / build), architecture docs |
 
 ## Tech stack
 

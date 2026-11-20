@@ -360,10 +360,12 @@ service cloud.firestore {
         && data.createdAt is timestamp;
     }
 
-    // Portfolio Announcements (public read only when published/due; admin mutations)
+    // Portfolio Announcements (public list must be constrained to status==published;
+    // unfiltered collection queries fail closed when drafts exist — clients use where())
     match /announcements/{announcementId} {
       allow get: if isValidId(announcementId) && (isAdmin() || isPubliclyVisibleAnnouncement());
-      allow list: if isAdmin() || isPubliclyVisibleAnnouncement();
+      allow list: if isAdmin()
+        || (resource.data.status == 'published');
 
       allow create: if isVerifiedUser()
         && isValidId(announcementId)
@@ -458,7 +460,10 @@ service cloud.firestore {
         && isAdmin();
     }
 
-    // Portfolio Feature & Maintenance Settings (public read; primary-owner write only)
+    // Portfolio Feature & Maintenance Settings
+    // Public get of the singleton is intentional for UX flags (maintenance, contact/CV toggles,
+    // announcement badge). No secrets live here — email API keys, OTP secrets, Redis, and
+    // Cursor credentials stay in server env. Rate caps are also enforced server-side.
     match /portfolio_settings/{settingsId} {
       allow get: if settingsId == 'global';
       allow list: if false;

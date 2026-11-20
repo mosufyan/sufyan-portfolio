@@ -148,8 +148,13 @@ export async function checkDistributedRateLimit(
     }
     return { limited: false, retryAfterSeconds: 0, backend: 'redis' };
   } catch (error) {
-    console.error('Upstash rate-limit error; falling back to memory:', error);
-    return checkMemoryRateLimit(namespace, cleanKey, { windowMs, maxRequests, now });
+    // Fail closed when Redis is configured but unreachable — avoid per-replica bypass.
+    console.error('Upstash rate-limit error; denying request (fail-closed):', error);
+    return {
+      limited: true,
+      retryAfterSeconds: Math.max(1, Math.ceil(windowMs / 1000)),
+      backend: 'redis',
+    };
   }
 }
 

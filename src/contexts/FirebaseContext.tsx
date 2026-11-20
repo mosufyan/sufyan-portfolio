@@ -25,6 +25,7 @@ import {
   serverTimestamp,
   setDoc,
   updateDoc,
+  where,
   writeBatch,
   type Timestamp,
 } from 'firebase/firestore';
@@ -179,50 +180,6 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
     return () => unsubscribe();
   }, []);
 
-  useEffect(() => {
-    if (!authReady) return;
-
-    const path = 'announcements';
-    const q = query(collection(db, path), orderBy('createdAt', 'desc'));
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const items: AnnouncementRecord[] = snapshot.docs.map((docSnap) => {
-          const data = docSnap.data();
-          const statusRaw = typeof data.status === 'string' ? data.status : 'published';
-          const status: AnnouncementStatus =
-            statusRaw === 'draft' || statusRaw === 'scheduled' || statusRaw === 'published'
-              ? statusRaw
-              : 'published';
-          const scheduledAtMs =
-            typeof data.scheduledAtMs === 'number' && Number.isFinite(data.scheduledAtMs) && data.scheduledAtMs > 0
-              ? Math.floor(data.scheduledAtMs)
-              : null;
-          return {
-            id: docSnap.id,
-            date: typeof data.date === 'string' ? data.date : '',
-            title: typeof data.title === 'string' ? data.title : '',
-            summary: typeof data.summary === 'string' ? data.summary : '',
-            badge: (typeof data.badge === 'string' ? data.badge : 'VERIFIED') as AnnouncementBadge,
-            linkUrl: typeof data.linkUrl === 'string' ? data.linkUrl : '',
-            status,
-            scheduledAtMs,
-            source: 'cloud',
-          };
-        });
-        setCloudAnnouncements(items);
-        setLoadingAnnouncements(false);
-      },
-      (error) => {
-        setLoadingAnnouncements(false);
-        setCloudAnnouncements((prev) => prev ?? []);
-        handleFirestoreError(error, OperationType.GET, path);
-      }
-    );
-
-    return () => unsubscribe();
-  }, [authReady]);
-
   // Public singleton portfolio_settings/global subscription
   useEffect(() => {
     if (!authReady) return;
@@ -272,6 +229,54 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
 
   const isOwner = isPrimaryOwner || isDelegateAdmin;
   ownerAccessRef.current = isOwner;
+
+  useEffect(() => {
+    if (!authReady) return;
+
+    const path = 'announcements';
+    // Admins list all statuses; public visitors must constrain to published so Firestore
+    // rules do not reject the whole query when drafts exist.
+    const q = isOwner
+      ? query(collection(db, path), orderBy('createdAt', 'desc'))
+      : query(collection(db, path), where('status', '==', 'published'), orderBy('createdAt', 'desc'));
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const items: AnnouncementRecord[] = snapshot.docs.map((docSnap) => {
+          const data = docSnap.data();
+          const statusRaw = typeof data.status === 'string' ? data.status : 'published';
+          const status: AnnouncementStatus =
+            statusRaw === 'draft' || statusRaw === 'scheduled' || statusRaw === 'published'
+              ? statusRaw
+              : 'published';
+          const scheduledAtMs =
+            typeof data.scheduledAtMs === 'number' && Number.isFinite(data.scheduledAtMs) && data.scheduledAtMs > 0
+              ? Math.floor(data.scheduledAtMs)
+              : null;
+          return {
+            id: docSnap.id,
+            date: typeof data.date === 'string' ? data.date : '',
+            title: typeof data.title === 'string' ? data.title : '',
+            summary: typeof data.summary === 'string' ? data.summary : '',
+            badge: (typeof data.badge === 'string' ? data.badge : 'VERIFIED') as AnnouncementBadge,
+            linkUrl: typeof data.linkUrl === 'string' ? data.linkUrl : '',
+            status,
+            scheduledAtMs,
+            source: 'cloud',
+          };
+        });
+        setCloudAnnouncements(items);
+        setLoadingAnnouncements(false);
+      },
+      (error) => {
+        setLoadingAnnouncements(false);
+        setCloudAnnouncements((prev) => prev ?? []);
+        handleFirestoreError(error, OperationType.GET, path);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [authReady, isOwner]);
 
   // Strictly attach cv_downloads PII stream ONLY when verified portfolio owner is signed in
   useEffect(() => {

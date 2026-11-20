@@ -20,14 +20,14 @@ describe('chatLimits', () => {
     resetChatUsageStoreForTests();
   });
 
-  it('builds stable visitor keys from email or visitor id', () => {
+  it('builds stable visitor keys from email (ignores spoofable visitorId)', () => {
     const a = buildVisitorKey({ ipAddress: '1.2.3.4', email: 'A@Example.com' });
     const b = buildVisitorKey({ ipAddress: '9.9.9.9', email: 'a@example.com' });
     expect(a).toBe(b);
-    const c = buildVisitorKey({ ipAddress: '1.2.3.4', visitorId: 'vid-1' });
-    const d = buildVisitorKey({ ipAddress: '1.2.3.4', visitorId: 'vid-1' });
-    expect(c).toBe(d);
-    expect(c).not.toBe(a);
+    const spoofA = buildVisitorKey({ ipAddress: '1.2.3.4', visitorId: 'vid-1' });
+    const spoofB = buildVisitorKey({ ipAddress: '1.2.3.4', visitorId: 'vid-2' });
+    expect(spoofA).toBe(spoofB);
+    expect(spoofA).not.toBe(a);
   });
 
   it('enforces per-visitor question caps (default 10)', () => {
@@ -63,5 +63,24 @@ describe('chatLimits', () => {
     const nextWindow = t0 + 24 * 60 * 60 * 1000 + 1;
     expect(checkChatLimit(key, 'question', policy, nextWindow).allowed).toBe(true);
     expect(checkChatLimit(key, 'question', policy, nextWindow).remaining).toBe(10);
+  });
+
+  it('keys anonymous visitors by IP only (same IP shares quota)', () => {
+    const a = buildVisitorKey({ ipAddress: '203.0.113.50' });
+    const b = buildVisitorKey({ ipAddress: '203.0.113.50', visitorId: 'spoofed' });
+    expect(a).toBe(b);
+    consumeChatLimit(a, 'question', { ...policy, maxQuestionsPerVisitor: 1 });
+    expect(checkChatLimit(b, 'question', { ...policy, maxQuestionsPerVisitor: 1 }).allowed).toBe(
+      false
+    );
+  });
+
+  it('separates email-verified visitors from IP-only visitors', () => {
+    const ipKey = buildVisitorKey({ ipAddress: '203.0.113.77' });
+    const emailKey = buildVisitorKey({
+      ipAddress: '203.0.113.77',
+      email: 'recruiter@example.com',
+    });
+    expect(ipKey).not.toBe(emailKey);
   });
 });
