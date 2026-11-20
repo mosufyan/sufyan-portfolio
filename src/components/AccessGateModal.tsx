@@ -24,6 +24,13 @@ import {
   collectClientTelemetryContext,
   type CvTrackingSummary,
 } from '../utils/cvDownloadLogValidation';
+import {
+  PHONE_COUNTRY_OPTIONS,
+  detectCountryFromPlusPrefix,
+  guessDefaultPhoneCountry,
+  validateAndNormalizePhone,
+  type SelectedPhoneCountry,
+} from '../utils/phoneValidation';
 import ModalHeaderScan from './ModalHeaderScan';
 import { EASE_OUT_EXPO } from './MotionPrimitives';
 import ShineSurface from './ShineSurface';
@@ -227,7 +234,8 @@ export default function AccessGateModal({
   const { isLight: siteIsLight } = useTheme();
   const isLight = isLightProp ?? siteIsLight;
   const alignClass = useModalPlacement(action !== null);
-  const { recordCvDownloadLog } = useFirebase();
+  const { recordCvDownloadLog, portfolioSettings } = useFirebase();
+  const exportsPaused = action !== null && action !== 'install' && !portfolioSettings.enableCvDownloads;
 
   const [form, setForm] = useState({
     name: '',
@@ -236,6 +244,9 @@ export default function AccessGateModal({
     reason: '',
     website: '',
   });
+  const [phoneCountry, setPhoneCountry] = useState<SelectedPhoneCountry>(() =>
+    guessDefaultPhoneCountry()
+  );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [otpStep, setOtpStep] = useState<OtpStepState | null>(null);
@@ -358,25 +369,28 @@ export default function AccessGateModal({
     const cleanPhone = form.phone.trim();
     const cleanReason = form.reason.trim();
 
-    if (!cleanEmail && !cleanPhone) {
-      setError('Please provide either your Email ID or Phone Number to continue.');
+    if (!cleanEmail) {
+      setError('Please enter your Email ID (required for OTP verification).');
       return;
     }
 
-    if (cleanEmail) {
-      const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+$/;
-      if (/[?#<>()[\]\\,;:\s]/.test(cleanEmail) || !emailRegex.test(cleanEmail)) {
-        setError('Please enter a valid email address.');
-        return;
-      }
+    const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+$/;
+    if (/[?#<>()[\]\\,;:\s]/.test(cleanEmail) || !emailRegex.test(cleanEmail)) {
+      setError('Please enter a valid email address.');
+      return;
     }
 
+    let normalizedPhone = '';
     if (cleanPhone) {
-      const digits = cleanPhone.replace(/\D/g, '').length;
-      if (!/^[+\d\s().-]+$/.test(cleanPhone) || digits < 7 || digits > 15) {
-        setError('Please enter a valid phone number (at least 7 digits).');
+      const phoneCheck = validateAndNormalizePhone(cleanPhone, phoneCountry);
+      if (!phoneCheck.valid) {
+        setError(
+          phoneCheck.reason ||
+            'Please enter a genuine phone number with country code.'
+        );
         return;
       }
+      normalizedPhone = phoneCheck.normalizedE164;
     }
 
     if (cleanReason.length < 3) {
@@ -404,7 +418,7 @@ export default function AccessGateModal({
         body: JSON.stringify({
           name: cleanName,
           email: cleanEmail,
-          phone: cleanPhone,
+          phone: normalizedPhone,
           reason: cleanReason,
           action,
           formatLabel,
@@ -593,7 +607,33 @@ export default function AccessGateModal({
               </button>
             </div>
 
-            {otpStep ? (
+            {exportsPaused ? (
+              <div className="p-5 sm:p-6 space-y-4">
+                <div
+                  className={`rounded-xl border p-4 text-xs leading-relaxed space-y-1.5 ${
+                    isLight
+                      ? 'border-amber-300 bg-amber-50 text-amber-900'
+                      : 'border-amber-500/40 bg-amber-950/30 text-amber-200'
+                  }`}
+                >
+                  <div className="font-mono font-semibold uppercase text-[11px]">
+                    CV Downloads Temporarily Paused
+                  </div>
+                  <p>
+                    The portfolio owner has temporarily paused PDF, print, and ATS text exports. Please check back shortly or use the Contact section to request a copy directly.
+                  </p>
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={close}
+                    className={`px-4 py-2 rounded-xl border text-xs font-medium transition-colors cursor-pointer ${cancelBtn}`}
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            ) : otpStep ? (
               <form onSubmit={handleOtpSubmit} className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 sm:p-5 space-y-4">
                 {error && (
                   <div
@@ -745,11 +785,12 @@ export default function AccessGateModal({
                         className={`flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-wider mb-1.5 ${label}`}
                       >
                         <Mail className={`w-3 h-3 ${icon}`} />
-                        <span>Email ID</span>
+                        <span>Email ID *</span>
                       </label>
                       <input
                         id="access-gate-email"
                         type="email"
+                        required
                         maxLength={254}
                         value={form.email}
                         onChange={(e) => {
@@ -767,24 +808,65 @@ export default function AccessGateModal({
                         className={`flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-wider mb-1.5 ${label}`}
                       >
                         <Phone className={`w-3 h-3 ${icon}`} />
-                        <span>Phone Number</span>
+                        <span>Phone Number (Optional)</span>
                       </label>
-                      <input
-                        id="access-gate-phone"
-                        type="tel"
-                        maxLength={40}
-                        value={form.phone}
-                        onChange={(e) => {
-                          if (error) setError(null);
-                          setForm((prev) => ({ ...prev, phone: e.target.value }));
-                        }}
-                        placeholder="+1 (408) 555-1234"
-                        className={`w-full px-3.5 py-2.5 rounded-xl border text-xs sm:text-sm focus:outline-none transition-colors ${field}`}
-                      />
+                      <div className="flex gap-1.5">
+                        <select
+                          aria-label="Phone country code"
+                          value={phoneCountry}
+                          onChange={(e) => {
+                            if (error) setError(null);
+                            setPhoneCountry(e.target.value as SelectedPhoneCountry);
+                          }}
+                          className={`w-[86px] shrink-0 px-2 py-2.5 rounded-xl border text-xs font-mono focus:outline-none transition-colors ${field}`}
+                        >
+                          {PHONE_COUNTRY_OPTIONS.map((opt) => (
+                            <option key={opt.code} value={opt.code}>
+                              {opt.label} {opt.dialCode}
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          id="access-gate-phone"
+                          type="tel"
+                          maxLength={40}
+                          value={form.phone}
+                          onChange={(e) => {
+                            if (error) setError(null);
+                            const nextVal = e.target.value;
+                            const detected = detectCountryFromPlusPrefix(nextVal);
+                            if (detected) setPhoneCountry(detected);
+                            setForm((prev) => ({ ...prev, phone: nextVal }));
+                          }}
+                          placeholder={
+                            PHONE_COUNTRY_OPTIONS.find((opt) => opt.code === phoneCountry)?.example ||
+                            '(408) 839-4720'
+                          }
+                          className={`flex-1 min-w-0 px-3 py-2.5 rounded-xl border text-xs sm:text-sm focus:outline-none transition-colors ${field}`}
+                        />
+                      </div>
+                      {form.phone.trim().length > 0 && (() => {
+                        const preview = validateAndNormalizePhone(form.phone, phoneCountry);
+                        if (preview.valid) {
+                          return (
+                            <p className="mt-1 text-[10px] font-mono text-emerald-500 truncate">
+                              Verified format: {preview.internationalDisplay} ({preview.countryCode})
+                            </p>
+                          );
+                        }
+                        if (form.phone.replace(/\D/g, '').length >= 7) {
+                          return (
+                            <p className="mt-1 text-[10px] font-mono text-amber-500">
+                              {preview.reason}
+                            </p>
+                          );
+                        }
+                        return null;
+                      })()}
                     </div>
                   </div>
                   <p className={`text-[11px] font-mono ${muted}`}>
-                    Provide a valid Email ID or Phone Number (VPN/proxy networks require Email OTP).
+                    Email ID is required for 6-digit OTP verification when triggered. Phone Number is optional (dummy/test numbers are blocked).
                   </p>
                 </div>
 

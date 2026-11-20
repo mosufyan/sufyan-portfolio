@@ -19,26 +19,69 @@
 
 ---
 
-Interactive personal portfolio built with **React**, **Vite**, **Express**, and **Motion**.  
-It includes multi-skill filtering, a command palette, dark/light themes, announcements, a digital business card, and a gated CV export studio.
+Interactive personal portfolio built with **React**, **Vite**, **Express**, **Tailwind CSS**, **Firebase Auth & Firestore**, and **Motion**.
+It includes multi-skill filtering, a command palette (`⌘K`/`Ctrl+K`), an interactive CLI (`sufyanctl`), dark/light themes, real-time announcements, a digital business card, an OTP-verified inquiry & CV export studio, and a full-page Owner Security & Governance Console accessible directly from the navbar.
 
 ## Features
 
 | Area | What you get |
 |------|----------------|
 | **Experience & skills** | Multi-select skill filters, saved presets, proof metrics, deep links via `?skill=` |
-| **Navigation** | Sticky nav, mobile TOC, ⌘K / Ctrl+K command palette |
-| **Themes** | Site dark/light mode + independent CV Light Paper / Dark Theme export |
-| **Contact** | Intent presets, honeypot + rate-limited `/api/contact` |
-| **CV / PWA** | Live preview, role-track presets, PDF/ATS export, optional install gate |
-| **Ops** | Vitest unit tests, CI (lint / test / audit / build) |
+| **Navigation** | Sticky single-line navbar, mobile drawer, `⌘K` / `Ctrl+K` command palette, `sufyanctl` terminal |
+| **Themes** | Site Dark / Light Paper mode + independent CV & Analytics PDF Light/Dark export |
+| **Contact (`Transmit Message`)** | Quick-intent presets, mandatory 6-digit email OTP verification, Cloudflare Turnstile, honeypot, inquiry triage |
+| **CV / PWA studio** | Live preview, custom presets, A4 print layout, ATS plain-text export, OTP-gated lead telemetry |
+| **Owner Console (Full-Page)** | Navbar Google Sign-In, CV & Message analytics charts, Light/Dark exact-layout PDF export, triage pipeline, announcements CRUD, allow/block rules, site/maintenance toggles, admin audit log |
+| **Ops** | Vitest unit tests, CI (`tsc --noEmit` / tests / `npm audit` / build) |
 
 ## Tech stack
 
-- **Frontend:** React 19, Vite 8, Tailwind CSS 4, Motion
-- **Backend:** Express (contact + CV access APIs, production static hosting)
-- **Tooling:** TypeScript, Vitest, GitHub Actions
-- **Hosting:** Google Cloud Run (+ Artifact Registry when CI deploy is enabled)
+- **Frontend:** React 19, Vite 8, Tailwind CSS 4, Motion, Recharts (`CvAnalyticsCharts`), `html2canvas-pro` + `jspdf`
+- **Backend:** Express (OTP verification, telemetry, policy sync, dynamic OG cards, production static hosting)
+- **Database & Auth:** Firebase Authentication (Google Sign-In) + Cloud Firestore with strict Security Rules
+- **Tooling:** TypeScript, Vitest, ESLint (`firestore.rules`), GitHub Actions
+- **Hosting:** Google Cloud Run
+
+---
+
+## Security Architecture & Hardening
+
+This codebase applies layered defense-in-depth across the Express API server, React client, Cloud Firestore Security Rules, and crawler/bot boundary:
+
+### 1. Authentication, RBAC & Owner Governance
+- **Verified Owner Sign-In (`Firebase Auth`)**: Owner console authentication uses Google Sign-In directly from the main navbar, verifying `request.auth.token.email == 'sufyan.net@gmail.com'` and `email_verified == true`.
+- **Cryptographic Backend Policy Sync (`/api/owner/policy-sync`)**: When the owner updates access rules or maintenance/pause toggles in Firestore, the client forwards a fresh Firebase ID Token (`Authorization: Bearer <token>`). The Express server verifies the **RS256 signature** against Google’s official `securetoken@system.gserviceaccount.com` X.509 certificates and checks `aud`, `iss`, `exp`, and verified owner email before persisting runtime enforcement rules.
+- **Immutable Admin Audit Trail (`admin_audit_logs`)**: Every owner sign-in, sign-out, settings toggle, rule mutation, announcement change, and inquiry triage update logs an immutable timestamped audit record.
+
+### 2. Cloud Firestore Security Rules (`firestore.rules`)
+- **Global Default Deny**: `match /{document=**}` denies all reads/writes by default.
+- **PII Collection Isolation**: `cv_downloads`, `contact_messages`, `admin_audit_logs`, `access_rules`, and `admins` block all public reads/lists (`isVerifiedOwnerEmail()` / `isAdmin()` required).
+- **Strict Field-Level Validation**: Every collection validates exact required/allowed key sets (`hasAll`/`hasOnly`), data types, string min/max bounds, enum allowlists, `https://` URL constraints, `request.time` server timestamp equality, and immutable field preservation on updates.
+- **Denial-of-Wallet List Guard**: List rules check JWT claims (`isVerifiedOwnerEmail()`) without extra Firestore `get()`/`exists()` reads per document.
+
+### 3. Lead Verification, Mandatory Email OTP & Anti-Abuse
+- **Mandatory Contact Email OTP**: `/api/contact` never delivers unverified web form emails directly. Submissions first trigger a 6-digit single-use HMAC-signed challenge email (`/api/contact-verify-otp`, max attempts capped, 10-minute expiry).
+- **Adaptive CV / PWA Gate (`/api/cv-access` & `/api/cv-verify-otp`)**: Validates mandatory email + DNS MX/A domain deliverability checks (`dns.resolveMx`) and E.164 phone validation (blocking fake/sequential numbers). Triggers mandatory 6-digit email OTP verification automatically on VPN/proxy/hosting ASNs, timezone mismatches, or whenever global `Strict OTP` is enabled.
+- **Real-Time Allowlist & Blocklist Enforcement**: Owner rules (`email`, `domain`, `ip`) and emergency pause toggles (`enableContactForm`, `enableCvDownloads`) are enforced across `/api/contact`, `/api/contact-verify-otp`, `/api/cv-access`, `/api/cv-verify-otp`, and `/api/cv-event`.
+- **Dual Rate Limiting**: Per-IP rate limiting (`15 requests / 15 min` on contact/CV access, `40 / 15 min` on repeat events, with `Retry-After` headers) paired with **per-email OTP cooldown buckets** (`5 OTP dispatches / 15 min` per normalized address) to prevent proxy-rotated inbox flooding.
+
+### 4. Bot, Crawler & Scraper Protection
+- **Cloudflare Turnstile**: Both `/api/contact` and `/api/cv-access` verify Cloudflare Turnstile challenge tokens server-side (`challenges.cloudflare.com/turnstile/v0/siteverify`) whenever `TURNSTILE_SECRET_KEY` is configured.
+- **Silent Honeypot Trap**: Hidden off-screen `website` field absorbs dumb form bots (returns deceptive `200 OK` `{ provider: 'filtered' }` without triggering mail or Firestore writes).
+- **Automated Scraper & AI-Crawler Filtering**:
+  - Express middleware (`isBlockedBotUserAgent`) returns `403` to AI training crawlers and security scanners (`GPTBot`, `ChatGPT-User`, `OAI-SearchBot`, `Google-Extended`, `CCBot`, `ClaudeBot`, `anthropic-ai`, `Bytespider`, `PerplexityBot`, `Amazonbot`, `Scrapy`, `sqlmap`, `nikto`, `nuclei`, etc.), and rejects headless automation / empty-UA scripted POST mutations to `/api/contact*` and `/api/cv-*`.
+  - `public/robots.txt` disallows `/api/` globally and blocks major AI dataset scrapers while allowing legitimate search engines and social preview bots (`Googlebot`, `Bingbot`, `LinkedInBot`, `Twitterbot`).
+  - `index.html` includes `<meta name="robots" content="noai, noimageai, noarchive" />` and API routes emit `X-Robots-Tag: noindex, nofollow, noarchive`.
+
+### 5. HTTP Security Headers, Injection & CSRF Defenses
+- **Security Headers (`server/security.ts`)**: Strict `Content-Security-Policy` (no `unsafe-eval` in production), `Strict-Transport-Security`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()`, `Cross-Origin-Opener-Policy: same-origin-allow-popups` (required for Firebase Google Auth popups), and `X-Frame-Options: DENY` / `frame-ancestors 'none'` in custom-domain production.
+- **Cross-Origin & Fetch Metadata Enforcement**: Mutation POST endpoints enforce both `Origin`/`Referer` allowlisting (`ALLOWED_ORIGINS`) and Fetch Metadata rejection (`Sec-Fetch-Site: cross-site` -> `403`).
+- **Sanitization & Injection Prevention**: Strict email character allowlisting, `sanitizeHeaderValue` / `sanitizeDisplayName` stripping CR/LF/control bytes to eliminate SMTP header injection, `escapeHtml` across all email templates and dynamic OG meta tags, plus validated `resolveSafeBaseUrl()` to prevent HTTP `Host` header injection.
+- **Zero Client Secrets**: All mail credentials, OTP HMAC secrets, Firebase public key verification, and Turnstile secrets stay strictly server-side (`.env` gitignored).
+
+For threat model notes and operational recommendations (WAF, Redis rate limits, Firebase App Check), see [SECURITY.md](./SECURITY.md).
+
+---
 
 ## Quick start (local)
 
@@ -57,7 +100,7 @@ npm install
 
 ### 2. Environment (optional for local UI)
 
-Copy the example env file if you want real email delivery from the contact / CV gate forms:
+Copy `.env.example` to `.env` if you want live email OTP verification and Cloudflare Turnstile locally:
 
 ```bash
 cp .env.example .env
@@ -68,6 +111,7 @@ Minimum useful vars:
 ```bash
 CONTACT_TO_EMAIL="you@example.com"
 APP_URL="http://localhost:3000"
+SESSION_SECRET="replace-with-long-random-secret"
 
 # Pick one mail transport:
 GMAIL_USER="you@example.com"
@@ -75,9 +119,11 @@ GMAIL_APP_PASSWORD="your-app-password"
 # or
 RESEND_API_KEY="re_xxx"
 RESEND_FROM_EMAIL="Portfolio <onboarding@resend.dev>"
-```
 
-Without mail credentials, the UI still runs; contact/CV notification emails will fail until a transport is configured.
+# Optional Cloudflare Turnstile:
+VITE_TURNSTILE_SITE_KEY="0x..."
+TURNSTILE_SECRET_KEY="0x..."
+```
 
 ### 3. Run the app
 
@@ -87,13 +133,11 @@ npm run dev
 
 Open **[http://localhost:3000](http://localhost:3000)**.
 
-This starts Express + Vite middleware together (API routes + hot reload).
-
 ### Common scripts
 
 | Command | Purpose |
 |---------|---------|
-| `npm run dev` | Local development server |
+| `npm run dev` | Local Express + Vite dev server |
 | `npm run build` | Production Vite build → `dist/` |
 | `npm start` | Serve production build + APIs (`NODE_ENV=production`) |
 | `npm run lint` | Typecheck (`tsc --noEmit`) |
@@ -107,27 +151,17 @@ npm run build
 npm start
 ```
 
-Then visit `http://localhost:3000`.
-
 ## Project layout
 
 ```text
-src/                 React UI (Hero, Experience, Skills, Resume modal, …)
-server.ts            Express app (APIs + static hosting in production)
-server/security.ts   Shared validation, CSP, rate limits, Turnstile hook
-public/              Static assets (icons, OG image, PWA)
+src/                 React UI, Owner Console, Resume Studio, Contexts & Utilities
+server.ts            Express server (APIs, OTP, RS256 owner policy sync, OG tags, SPA serving)
+server/security.ts   Validation, CSP, headers, IP/email rate limits, bot/origin guards, Turnstile
+server/telemetry.ts  IP/ASN intelligence, risk scoring, HMAC OTP/session tokens, MX & phone checks
+firestore.rules      Strict schema-validated Firebase Security Rules
+public/              Static assets (icons, robots.txt, manifest, OG cards)
 .github/workflows/   CI (lint / test / audit / build)
 ```
-
-## CI notes
-
-- **CI on every PR & `main` push:** typecheck → tests → prod audit → build
-- Production hosting is on Google Cloud Run via AI Studio; redeploy there after merging to `main` (CI does not deploy)
-
-## Security
-
-Lead-capture APIs use validation, honeypots, rate limits, and security headers.  
-CV “unlock” is **lead telemetry**, not DRM — see [SECURITY.md](./SECURITY.md).
 
 ## License
 

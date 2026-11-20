@@ -33,3 +33,24 @@
 - Public visitor attempting `create` with ghost field (`isVerifiedAdmin: true`) or `downloadId != pathId` or forged `createdAt` -> **DENIED**.
 - Public visitor injecting 50KB `reason` or `userAgent` string (Denial-of-Wallet) -> **DENIED**.
 
+## Contact Inquiry Logs (`/contact_messages/{messageId}`) Invariants
+9. **Strict PII Isolation**: `/contact_messages` stores sender emails, phones, message bodies, and IP addresses. Public visitors and non-owner signed-in users are strictly forbidden from reading (`get` or `list`) any record. Only verified `sufyan.net@gmail.com` (or trusted `/admins/{uid}`) may read/list/delete/triage.
+10. **Immutable Core + Owner-Only Triage Updates**: Core message fields (`messageId`, `senderName`, `senderEmail`, `senderPhone`, `subject`, `message`, `ipAddress`, `createdAt`, etc.) are permanently immutable. Visitors creating a record cannot inject `triageStatus`, `ownerNote`, or `triagedAt`. Only verified admins may update `triageStatus`, `ownerNote`, and `triagedAt` (`triagedAt == request.time`).
+11. **Schema & Size Bounds**: Every create/update validates the shared `isValidContactMessageLog` blueprint (`affectedKeys().hasOnly(['triageStatus', 'ownerNote', 'triagedAt'])` on update), preventing Denial-of-Wallet payload bloat.
+
+## Admin Audit Logs (`/admin_audit_logs/{auditId}`) Invariants
+12. **Owner-Only Governance Trail**: Strictly restricted to verified `sufyan.net@gmail.com` (or `/admins/{uid}`) for `get`, `list`, `create`, and `delete`; updates are globally denied (`allow update: if false`). `actorUid == request.auth.uid` and `createdAt == request.time` are enforced on create.
+
+## Portfolio Feature & Maintenance Settings (`/portfolio_settings/{settingsId}`) Invariants
+13. **Public Non-PII Config + Owner-Only Mutations**: Only document ID `'global'` may be publicly `get`-read (`list` is denied). Create/update requires verified owner/admin, strict key allowlist, `updatedByUid == request.auth.uid`, and `updatedAt == request.time`. Deletes are denied.
+
+## Access Allowlist / Blocklist Rules (`/access_rules/{ruleId}`) Invariants
+14. **PII-Isolated Security Policy**: Rule values (emails, domains, IPs) are strictly owner-only for `get`, `list`, `create`, and `delete` (`update` denied). `createdByUid == request.auth.uid` and `createdAt == request.time` are enforced on create.
+
+## Additional Dirty Dozen Checks
+- Unauthenticated or non-owner user attempting `get`, `list`, or `update` on `/contact_messages`, `/admin_audit_logs`, or `/access_rules` -> **DENIED**.
+- Public visitor attempting `create` on `/contact_messages` with pre-populated `triageStatus` or `ownerNote` -> **DENIED**.
+- Owner attempting `update` on `/contact_messages` altering `senderEmail`, `message`, or `createdAt` -> **DENIED**.
+- Unauthenticated or non-owner user attempting `create` or `update` on `/portfolio_settings/global`, or `get` on `/portfolio_settings/other` -> **DENIED**.
+- Spoofed `actorUid` or `createdByUid` or `updatedByUid` differing from `request.auth.uid` -> **DENIED**.
+

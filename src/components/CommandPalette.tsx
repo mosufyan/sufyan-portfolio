@@ -33,6 +33,7 @@ import {
   WORK_EXPERIENCE,
 } from '../data/portfolioData';
 import { useTheme } from '../theme/ThemeProvider';
+import { useFirebase } from '../contexts/FirebaseContext';
 import ModalHeaderScan from './ModalHeaderScan';
 import { EASE_OUT_EXPO } from './MotionPrimitives';
 
@@ -46,6 +47,7 @@ interface CommandPaletteProps {
   onOpenAnnouncements: () => void;
   onOpenDigitalCard?: () => void;
   onOpenTerminal?: () => void;
+  onOpenOwnerConsole?: () => void;
 }
 
 interface PaletteItem {
@@ -67,8 +69,10 @@ export default function CommandPalette({
   onOpenAnnouncements,
   onOpenDigitalCard,
   onOpenTerminal,
+  onOpenOwnerConsole,
 }: CommandPaletteProps) {
   const { isLight } = useTheme();
+  const { isOwner } = useFirebase();
   const alignClass = useModalPlacement(isOpen);
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
@@ -169,6 +173,21 @@ export default function CommandPalette({
           onOpenTerminal?.();
         },
       },
+      ...(isOwner && onOpenOwnerConsole
+        ? [
+            {
+              id: 'act-owner-console',
+              group: 'Actions' as const,
+              title: 'Open Full-Page Owner Console',
+              subtitle: 'Analytics, Light/Dark PDF export, message triage, rules & site toggles',
+              keywords: 'owner admin console dashboard analytics settings triage audit',
+              action: () => {
+                onClose();
+                onOpenOwnerConsole();
+              },
+            },
+          ]
+        : []),
       {
         id: 'sec-philosophy',
         group: 'Sections',
@@ -310,7 +329,7 @@ export default function CommandPalette({
     }
 
     return items;
-  }, [onClose, onFocusCompany, onOpenAnnouncements, onOpenDigitalCard, onOpenResume, onOpenTerminal, onSelectCertification, onSelectSkill]);
+  }, [isOwner, onClose, onFocusCompany, onOpenAnnouncements, onOpenDigitalCard, onOpenOwnerConsole, onOpenResume, onOpenTerminal, onSelectCertification, onSelectSkill]);
 
   const filteredItems = useMemo(() => {
     const q = query.trim().toLowerCase();

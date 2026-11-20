@@ -13,6 +13,8 @@ import {
   escapeHtml,
   isAiStudioPreviewHost,
   isAllowedRequestOrigin,
+  isBlockedBotUserAgent,
+  isDisallowedFetchSite,
   isFormSubmitFallbackAllowed,
   isHoneypotTriggered,
   isRateLimited,
@@ -20,6 +22,7 @@ import {
   isValidPhoneNumber,
   rateLimitRetryAfterSeconds,
   resolveAllowedOrigins,
+  resolveSafeBaseUrl,
   sanitizeDisplayName,
   sanitizeHeaderValue,
   shouldAllowPreviewIframe,
@@ -32,22 +35,39 @@ import {
   extractClientIp,
   generateDownloadId,
   generateSessionId,
-  isPlausiblePhoneNumber,
   lookupIpIntelligence,
   maskEmailAddress,
   signSessionReceipt,
+  validatePhoneDetails,
   verifyEmailMxRecord,
   verifyOtpChallenge,
   verifySessionReceipt,
+  type ContactOtpPendingPayload,
   type OtpChallengeRecord,
   type VerificationStatus,
   type VisitorTelemetryReport,
 } from './server/telemetry.ts';
 import { buildDynamicSocialSvg, SHARE_CARD_TRACKS, type ShareTrackId } from './src/utils/ogShare.ts';
+import {
+  evaluateAccessRules,
+  validateAccessRuleDraft,
+  type CompactAccessRule,
+} from './src/utils/ownerGovernance.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+function readFirebaseProjectId(): string {
+  try {
+    const raw = fs.readFileSync(path.join(__dirname, 'firebase-applet-config.json'), 'utf8');
+    const parsed = JSON.parse(raw) as { projectId?: string };
+    return parsed.projectId || 'elite-choir-53kqt';
+  } catch {
+    return 'elite-choir-53kqt';
+  }
+}
+
+const FIREBASE_PROJECT_ID = readFirebaseProjectId();
 const PORT = Number(process.env.PORT) || 3000;
 const DESTINATION_EMAIL = process.env.CONTACT_TO_EMAIL || 'sufyan.net@gmail.com';
 const TURNSTILE_SECRET = process.env.TURNSTILE_SECRET_KEY?.trim() || '';
@@ -62,7 +82,141 @@ const ALLOWED_ORIGINS = resolveAllowedOrigins(process.env.APP_URL, PORT);
 const contactRateLimitMap = createRateLimitBucket();
 const cvAccessRateLimitMap = createRateLimitBucket();
 const cvEventRateLimitMap = createRateLimitBucket();
+const otpEmailRateLimitMap = createRateLimitBucket();
 const otpChallengeStore = new Map<string, OtpChallengeRecord>();
+const contactOtpChallengeStore = new Map<string, OtpChallengeRecord<ContactOtpPendingPayload>>();
+
+interface RuntimeOwnerPolicy {
+  rules: CompactAccessRule[];
+  strictOtpForAll: boolean;
+  enableContactForm: boolean;
+  enableCvDownloads: boolean;
+}
+
+const POLICY_CACHE_PATH = path.join(__dirname, '.owner-policy-cache.json');
+
+function loadInitialOwnerPolicy(): RuntimeOwnerPolicy {
+  const defaults: RuntimeOwnerPolicy = {
+    rules: [],
+    strictOtpForAll: false,
+    enableContactForm: true,
+    enableCvDownloads: true,
+  };
+  try {
+    if (!fs.existsSync(POLICY_CACHE_PATH)) return defaults;
+    const parsed = JSON.parse(fs.readFileSync(POLICY_CACHE_PATH, 'utf8')) as Partial<RuntimeOwnerPolicy>;
+    return {
+      rules: Array.isArray(parsed.rules) ? parsed.rules.slice(0, 200) : [],
+      strictOtpForAll: Boolean(parsed.strictOtpForAll),
+      enableContactForm: typeof parsed.enableContactForm === 'boolean' ? parsed.enableContactForm : true,
+      enableCvDownloads: typeof parsed.enableCvDownloads === 'boolean' ? parsed.enableCvDownloads : true,
+    };
+  } catch {
+    return defaults;
+  }
+}
+
+let runtimeOwnerPolicy: RuntimeOwnerPolicy = loadInitialOwnerPolicy();
+
+function saveRuntimeOwnerPolicy(next: RuntimeOwnerPolicy): void {
+  runtimeOwnerPolicy = next;
+  try {
+    fs.writeFileSync(POLICY_CACHE_PATH, JSON.stringify(next, null, 2), 'utf8');
+  } catch {
+    /* non-fatal in read-only filesystem */
+  }
+}
+
+let cachedFirebaseCerts: { certs: Record<string, string>; expiresAt: number } | null = null;
+
+async function getFirebasePublicCerts(): Promise<Record<string, string>> {
+  const now = Date.now();
+  if (cachedFirebaseCerts && cachedFirebaseCerts.expiresAt > now) {
+    return cachedFirebaseCerts.certs;
+  }
+  const res = await fetch(
+    'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com',
+    { signal: AbortSignal.timeout(5000) }
+  );
+  if (!res.ok) {
+    throw new Error('Unable to fetch Firebase verification certificates.');
+  }
+  const cacheControl = res.headers.get('cache-control') || '';
+  const maxAgeMatch = /max-age=(\d+)/i.exec(cacheControl);
+  const ttlMs = maxAgeMatch ? Math.max(60, Number(maxAgeMatch[1])) * 1000 : 3600 * 1000;
+  const certs = (await res.json()) as Record<string, string>;
+  cachedFirebaseCerts = { certs, expiresAt: now + ttlMs };
+  return certs;
+}
+
+async function verifyOwnerFirebaseIdToken(authHeader: string | undefined): Promise<{ ok: true; email: string; uid: string } | { ok: false; error: string }> {
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return { ok: false, error: 'Missing owner authorization token.' };
+  }
+  const token = authHeader.slice(7).trim();
+  const parts = token.split('.');
+  if (parts.length !== 3) {
+    return { ok: false, error: 'Malformed authorization token.' };
+  }
+
+  try {
+    const [headerB64, payloadB64, sigB64] = parts;
+    const header = JSON.parse(Buffer.from(headerB64, 'base64url').toString('utf8')) as {
+      alg?: string;
+      kid?: string;
+    };
+    const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8')) as {
+      aud?: string;
+      iss?: string;
+      sub?: string;
+      exp?: number;
+      iat?: number;
+      email?: string;
+      email_verified?: boolean;
+    };
+
+    if (header.alg !== 'RS256' || !header.kid) {
+      return { ok: false, error: 'Unsupported token signature algorithm.' };
+    }
+
+    const certs = await getFirebasePublicCerts();
+    const cert = certs[header.kid];
+    if (!cert) {
+      return { ok: false, error: 'Unknown signing key identifier.' };
+    }
+
+    const verifier = crypto.createVerify('RSA-SHA256');
+    verifier.update(`${headerB64}.${payloadB64}`);
+    verifier.end();
+    const sigBuf = Buffer.from(sigB64, 'base64url');
+    if (!verifier.verify(cert, sigBuf)) {
+      return { ok: false, error: 'Invalid token signature.' };
+    }
+
+    const nowSec = Math.floor(Date.now() / 1000);
+    if (
+      payload.aud !== FIREBASE_PROJECT_ID ||
+      payload.iss !== `https://securetoken.google.com/${FIREBASE_PROJECT_ID}` ||
+      !payload.sub ||
+      typeof payload.exp !== 'number' ||
+      payload.exp <= nowSec
+    ) {
+      return { ok: false, error: 'Token expired or audience mismatch.' };
+    }
+
+    if (
+      !payload.email ||
+      payload.email.toLowerCase() !== DESTINATION_EMAIL.toLowerCase() ||
+      payload.email_verified !== true
+    ) {
+      return { ok: false, error: 'Restricted to verified portfolio owner.' };
+    }
+
+    return { ok: true, email: payload.email, uid: payload.sub };
+  } catch {
+    return { ok: false, error: 'Failed to verify owner authorization token.' };
+  }
+}
 
 interface ContactPayload {
   name: string;
@@ -71,6 +225,8 @@ interface ContactPayload {
   subject?: string;
   message: string;
   theme?: EmailTheme;
+  messageId?: string;
+  telemetryNote?: string;
 }
 
 function buildPortfolioEmailHtml(payload: ContactPayload, timestamp: string): string {
@@ -81,6 +237,7 @@ function buildPortfolioEmailHtml(payload: ContactPayload, timestamp: string): st
   const safeSubject = payload.subject ? escapeHtml(payload.subject) : 'Portfolio Architecture Inquiry';
   const safeMessage = escapeHtml(payload.message).replace(/\r?\n/g, '<br />');
   const safeTime = escapeHtml(timestamp);
+  const safeTelemetryNote = payload.telemetryNote ? escapeHtml(payload.telemetryNote) : '';
 
   return `<!DOCTYPE html>
 <html lang="en" data-theme="${p.theme}">
@@ -213,6 +370,7 @@ function buildPortfolioEmailHtml(payload: ContactPayload, timestamp: string): st
           <!-- Footer -->
           <tr>
             <td style="padding:16px 28px;background-color:${p.footerBg};border-top:1px solid ${p.border};font-size:11px;font-family:monospace;color:${p.textSoft};">
+              ${safeTelemetryNote ? `<div style="margin-bottom:6px;color:${p.text};">${safeTelemetryNote}</div>` : ''}
               Dispatched from Mohammed Sufyan Portfolio · Zero Trust Distributed Systems · Multi-Cloud Architecture
             </td>
           </tr>
@@ -229,11 +387,13 @@ function buildPlainTextEmail(payload: ContactPayload, timestamp: string): string
     'MOHAMMED SUFYAN — PORTFOLIO INBOUND TRANSMISSION',
     '================================================',
     `Received: ${timestamp}`,
+    ...(payload.messageId ? [`Ref ID:   ${payload.messageId}`] : []),
     `Theme:    ${parseEmailTheme(payload.theme)}`,
     `Name:     ${payload.name}`,
     `Email:    ${payload.email}`,
     `Phone:    ${payload.phone || 'Not provided'}`,
     `Subject:  ${payload.subject || 'Portfolio Architecture Inquiry'}`,
+    ...(payload.telemetryNote ? [`Network:  ${payload.telemetryNote}`] : []),
     '',
     'Message Details:',
     '----------------',
@@ -585,10 +745,19 @@ function buildCvAccessPlainText(
   ].join('\n');
 }
 
-function buildOtpEmailHtml(name: string, code: string, theme: EmailTheme): string {
+function buildOtpEmailHtml(
+  name: string,
+  code: string,
+  theme: EmailTheme,
+  purpose: 'cv' | 'contact' = 'cv'
+): string {
   const p = getEmailPalette(theme);
   const safeName = escapeHtml(name || 'there');
   const safeCode = escapeHtml(code);
+  const actionPhrase =
+    purpose === 'contact'
+      ? 'authenticate your email and transmit your message on <strong>mohammedsufyan.com</strong>'
+      : 'unlock your CV download on <strong>mohammedsufyan.com</strong>';
 
   return `<!DOCTYPE html>
 <html lang="en" data-theme="${p.theme}">
@@ -606,14 +775,14 @@ function buildOtpEmailHtml(name: string, code: string, theme: EmailTheme): strin
             <td style="padding:22px 26px;background-color:${p.headerBg};border-bottom:1px solid ${p.border};">
               <div style="font-size:15px;font-weight:700;color:${p.textStrong};">MOHAMMED SUFYAN</div>
               <div style="font-size:11px;font-family:monospace;color:${p.accent};text-transform:uppercase;margin-top:2px;">
-                Portfolio Access Verification
+                ${purpose === 'contact' ? 'Contact Transmission Verification' : 'Portfolio Access Verification'}
               </div>
             </td>
           </tr>
           <tr>
             <td style="padding:26px;">
               <p style="margin:0 0 14px 0;font-size:14px;color:${p.text};line-height:1.6;">
-                Hi ${safeName}, please enter the 6-digit verification code below to unlock your CV download on <strong>mohammedsufyan.com</strong>:
+                Hi ${safeName}, please enter the 6-digit verification code below to ${actionPhrase}:
               </p>
               <div style="margin:20px 0;padding:18px;border-radius:12px;background-color:${p.panelBg};border:1px solid ${p.accentSoftBorder};text-align:center;">
                 <span style="font-size:32px;font-weight:700;font-family:monospace;letter-spacing:0.25em;color:${p.accent};">
@@ -857,13 +1026,20 @@ async function sendVisitorOtpEmail(params: {
   name: string;
   code: string;
   theme: EmailTheme;
+  purpose?: 'cv' | 'contact';
 }): Promise<{ provider: string }> {
-  const html = buildOtpEmailHtml(params.name, params.code, params.theme);
-  const text = `Hi ${params.name || 'there'},\n\nYour verification code for mohammedsufyan.com is: ${params.code}\n\nThis code expires in 10 minutes.`;
+  const purpose = params.purpose ?? 'cv';
+  const html = buildOtpEmailHtml(params.name, params.code, params.theme, purpose);
+  const text = `Hi ${params.name || 'there'},\n\nYour verification code for mohammedsufyan.com (${
+    purpose === 'contact' ? 'Transmit Message' : 'CV Access'
+  }) is: ${params.code}\n\nThis code expires in 10 minutes.`;
   return dispatchEmailMessage({
     to: params.email,
     fromDisplayName: 'Mohammed Sufyan Portfolio',
-    subjectLine: `${params.code} — Verification Code for Mohammed Sufyan's CV`,
+    subjectLine:
+      purpose === 'contact'
+        ? `${params.code} — Verification Code to Send Your Message`
+        : `${params.code} — Verification Code for Mohammed Sufyan's CV`,
     html,
     text,
   });
@@ -977,12 +1153,38 @@ async function startServer() {
       isHttps: Boolean(req.secure || req.headers['x-forwarded-proto'] === 'https'),
       allowPreviewIframe,
     });
+
+    const userAgent =
+      typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : undefined;
+    const isSensitivePost =
+      req.method === 'POST' &&
+      (req.path.startsWith('/api/contact') || req.path.startsWith('/api/cv-'));
+
+    if (isBlockedBotUserAgent(userAgent, isSensitivePost)) {
+      res.status(403).json({
+        error: 'Automated crawler or script access is not permitted.',
+      });
+      return;
+    }
+
+    if (req.path.startsWith('/api/')) {
+      res.setHeader(
+        'X-Robots-Tag',
+        req.path === '/api/og-card.svg' ? 'noarchive' : 'noindex, nofollow, noarchive'
+      );
+    }
+
     next();
   });
 
   app.use(express.json({ limit: '256kb' }));
 
   function rejectDisallowedOrigin(req: Request, res: Response): boolean {
+    if (isDisallowedFetchSite(req.headers['sec-fetch-site'])) {
+      res.status(403).json({ error: 'Cross-site requests are not allowed.' });
+      return true;
+    }
+
     const originHeader =
       (typeof req.headers.origin === 'string' && req.headers.origin) ||
       (typeof req.headers.referer === 'string' && req.headers.referer) ||
@@ -1032,8 +1234,67 @@ async function startServer() {
     res.status(200).json({
       turnstileSiteKey: TURNSTILE_SITE_KEY,
       otpSupported: isDirectEmailTransportConfigured(),
-      forceOtp: FORCE_CV_OTP,
+      forceOtp: FORCE_CV_OTP || runtimeOwnerPolicy.strictOtpForAll,
     });
+  });
+
+  app.post('/api/owner/policy-sync', async (req: Request, res: Response) => {
+    try {
+      if (!req.is('application/json')) {
+        res.status(415).json({ error: 'Content-Type must be application/json.' });
+        return;
+      }
+      if (rejectDisallowedOrigin(req, res)) return;
+
+      const authCheck = await verifyOwnerFirebaseIdToken(req.headers.authorization);
+      if (!authCheck.ok) {
+        res.status(401).json({ error: authCheck.error });
+        return;
+      }
+
+      const raw = (req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {}) as {
+        rules?: unknown;
+        strictOtpForAll?: unknown;
+        enableContactForm?: unknown;
+        enableCvDownloads?: unknown;
+      };
+
+      const normalizedRules: CompactAccessRule[] = [];
+      if (Array.isArray(raw.rules)) {
+        for (const item of raw.rules.slice(0, 200)) {
+          if (!item || typeof item !== 'object') continue;
+          const check = validateAccessRuleDraft(item as {
+            ruleType: 'allow' | 'block';
+            matchType: 'email' | 'domain' | 'ip';
+            value: string;
+            note?: string;
+          });
+          if (check.valid && check.normalized) {
+            normalizedRules.push(check.normalized);
+          }
+        }
+      }
+
+      saveRuntimeOwnerPolicy({
+        rules: normalizedRules,
+        strictOtpForAll:
+          typeof raw.strictOtpForAll === 'boolean'
+            ? raw.strictOtpForAll
+            : runtimeOwnerPolicy.strictOtpForAll,
+        enableContactForm:
+          typeof raw.enableContactForm === 'boolean'
+            ? raw.enableContactForm
+            : runtimeOwnerPolicy.enableContactForm,
+        enableCvDownloads:
+          typeof raw.enableCvDownloads === 'boolean'
+            ? raw.enableCvDownloads
+            : runtimeOwnerPolicy.enableCvDownloads,
+      });
+
+      res.status(200).json({ ok: true, ruleCount: normalizedRules.length });
+    } catch {
+      res.status(500).json({ error: 'Unable to sync owner security policy.' });
+    }
   });
 
   app.get(['/api/og-card.svg', '/og-card.svg'], (req: Request, res: Response) => {
@@ -1060,7 +1321,14 @@ async function startServer() {
 
       if (rejectDisallowedOrigin(req, res)) return;
 
-      const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+      if (!runtimeOwnerPolicy.enableContactForm) {
+        res.status(503).json({
+          error: 'The contact form is temporarily paused by the portfolio owner. Please reach out directly via email.',
+        });
+        return;
+      }
+
+      const clientIp = extractClientIp(req);
       if (isRateLimited(clientIp, contactRateLimitMap)) {
         res.setHeader('Retry-After', String(rateLimitRetryAfterSeconds(clientIp, contactRateLimitMap)));
         res.status(429).json({
@@ -1074,6 +1342,8 @@ async function startServer() {
         website?: unknown;
         turnstileToken?: unknown;
         theme?: unknown;
+        clientTimezone?: unknown;
+        referrer?: unknown;
       };
 
       // Silent honeypot sink for automated spam bots
@@ -1096,6 +1366,17 @@ async function startServer() {
       const cleanSubject = typeof subject === 'string' ? sanitizeHeaderValue(subject) : '';
       const cleanMessage = typeof message === 'string' ? message.trim() : '';
 
+      const accessCheck = evaluateAccessRules(runtimeOwnerPolicy.rules, {
+        email: cleanEmail,
+        ipAddress: clientIp,
+      });
+      if (accessCheck.blocked) {
+        res.status(403).json({
+          error: 'This email domain or network address is restricted from submitting inquiries.',
+        });
+        return;
+      }
+
       if (!cleanName || !cleanEmail || !cleanMessage) {
         res.status(400).json({ error: 'Please fill out the required fields: Name, Email, and Message.' });
         return;
@@ -1117,29 +1398,216 @@ async function startServer() {
         return;
       }
 
-      if (cleanPhone && !isValidPhoneNumber(cleanPhone)) {
-        res.status(400).json({ error: 'Please provide a valid phone number or leave it blank.' });
+      const mxCheck = await verifyEmailMxRecord(cleanEmail);
+      if (!mxCheck.ok) {
+        res.status(400).json({ error: mxCheck.reason || 'Please provide a valid, active email domain.' });
         return;
       }
 
-      const result = await sendContactEmail({
-        name: cleanName,
+      const contactPhoneCheck = validatePhoneDetails(cleanPhone);
+      if (cleanPhone && (!isValidPhoneNumber(cleanPhone) || !contactPhoneCheck.valid)) {
+        res.status(400).json({
+          error:
+            contactPhoneCheck.reason ||
+            'Please provide a genuine phone number (with country code) or leave it blank.',
+        });
+        return;
+      }
+
+      if (!isDirectEmailTransportConfigured()) {
+        res.status(503).json({
+          error: 'Email OTP verification service is currently unavailable. Please email directly.',
+        });
+        return;
+      }
+
+      const normalizedOtpEmail = `contact:${cleanEmail.toLowerCase()}`;
+      if (isRateLimited(normalizedOtpEmail, otpEmailRateLimitMap, { maxRequests: 5 })) {
+        res.setHeader(
+          'Retry-After',
+          String(rateLimitRetryAfterSeconds(normalizedOtpEmail, otpEmailRateLimitMap))
+        );
+        res.status(429).json({
+          error: 'Too many verification codes sent to this email. Please check your inbox or wait a few minutes.',
+        });
+        return;
+      }
+
+      const normalizedContactPhone = contactPhoneCheck.internationalDisplay || cleanPhone;
+      const clientTimezone =
+        typeof body.clientTimezone === 'string'
+          ? sanitizeHeaderValue(body.clientTimezone).slice(0, 64)
+          : '';
+      const referrer =
+        typeof body.referrer === 'string'
+          ? sanitizeHeaderValue(body.referrer).slice(0, 200)
+          : typeof req.headers.referer === 'string'
+            ? sanitizeHeaderValue(req.headers.referer).slice(0, 200)
+            : '';
+      const userAgent =
+        typeof req.headers['user-agent'] === 'string'
+          ? sanitizeHeaderValue(req.headers['user-agent']).slice(0, 220)
+          : 'Unknown';
+
+      const ipIntel = await lookupIpIntelligence(clientIp);
+      const risk = assessVisitorRisk(ipIntel, {
+        clientTimezone,
+        hasEmail: true,
+        phoneCountry: contactPhoneCheck.countryCode || undefined,
+      });
+      const cleanTheme = parseEmailTheme(body.theme);
+
+      const challenge = createOtpChallenge(
+        contactOtpChallengeStore,
+        {
+          name: cleanName,
+          email: cleanEmail,
+          phone: normalizedContactPhone,
+          subject: cleanSubject,
+          message: cleanMessage,
+          theme: cleanTheme,
+          clientTimezone,
+          referrer,
+          userAgent,
+          ip: ipIntel,
+          risk,
+        },
+        OTP_SECRET
+      );
+
+      await sendVisitorOtpEmail({
         email: cleanEmail,
-        phone: cleanPhone,
-        subject: cleanSubject,
-        message: cleanMessage,
-        theme: parseEmailTheme(body.theme),
+        name: cleanName,
+        code: challenge.code,
+        theme: cleanTheme,
+        purpose: 'contact',
+      });
+
+      const maskedEmail = maskEmailAddress(cleanEmail);
+      res.status(200).json({
+        ok: true,
+        status: 'otp_required',
+        challengeId: challenge.challengeId,
+        challengeToken: challenge.challengeToken,
+        maskedEmail,
+        expiresInMinutes: 10,
+        message: `Verification code sent to ${maskedEmail}. Enter the 6-digit code to transmit your message.`,
+      });
+    } catch (error) {
+      const errMsg = error instanceof Error ? error.message : 'Failed to initiate message verification.';
+      console.error('Contact OTP dispatch error:', errMsg);
+      res.status(500).json({ error: 'Unable to send your verification code right now. Please try again later.' });
+    }
+  });
+
+  app.post('/api/contact-verify-otp', async (req: Request, res: Response) => {
+    try {
+      if (!req.is('application/json')) {
+        res.status(415).json({ error: 'Content-Type must be application/json.' });
+        return;
+      }
+
+      if (rejectDisallowedOrigin(req, res)) return;
+
+      if (!runtimeOwnerPolicy.enableContactForm) {
+        res.status(503).json({
+          error: 'The contact form is temporarily paused by the portfolio owner. Please reach out directly via email.',
+        });
+        return;
+      }
+
+      const clientIp = extractClientIp(req);
+      if (isRateLimited(clientIp, contactRateLimitMap)) {
+        res.setHeader('Retry-After', String(rateLimitRetryAfterSeconds(clientIp, contactRateLimitMap)));
+        res.status(429).json({
+          error: 'Too many verification attempts. Please wait a few minutes and try again.',
+        });
+        return;
+      }
+
+      const body = (req.body && typeof req.body === 'object' && !Array.isArray(req.body)
+        ? req.body
+        : {}) as { challengeId?: unknown; challengeToken?: unknown; code?: unknown };
+
+      const challengeId = typeof body.challengeId === 'string' ? body.challengeId.trim() : '';
+      const challengeToken = typeof body.challengeToken === 'string' ? body.challengeToken.trim() : '';
+      const code = typeof body.code === 'string' ? body.code.trim() : '';
+
+      if (!challengeId || !challengeToken || !/^\d{6}$/.test(code.replace(/\s+/g, ''))) {
+        res.status(400).json({ error: 'Please enter the valid 6-digit verification code sent to your email.' });
+        return;
+      }
+
+      const verified = verifyOtpChallenge(
+        contactOtpChallengeStore,
+        { challengeId, challengeToken, code },
+        OTP_SECRET
+      );
+      if (!verified.ok) {
+        res.status(400).json({ error: verified.error });
+        return;
+      }
+
+      const p = verified.payload;
+      const accessCheck = evaluateAccessRules(runtimeOwnerPolicy.rules, {
+        email: p.email,
+        ipAddress: p.ip.ipAddress || clientIp,
+      });
+      if (accessCheck.blocked) {
+        res.status(403).json({
+          error: 'This email domain or network address is restricted from submitting inquiries.',
+        });
+        return;
+      }
+
+      const messageId = `MSG-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+      const geoSummary = [p.ip.city, p.ip.region, p.ip.country].filter(Boolean).join(', ') || 'Unknown';
+      const telemetryNote = `Ref: ${messageId} · Email OTP Verified · IP: ${p.ip.ipAddress} · Geo: ${geoSummary} · ${
+        p.risk.isVpnSuspected ? `VPN/Proxy Flagged (${p.risk.riskLevel})` : 'Clean Network'
+      }`;
+
+      const result = await sendContactEmail({
+        name: p.name,
+        email: p.email,
+        phone: p.phone,
+        subject: p.subject,
+        message: p.message,
+        theme: p.theme,
+        messageId,
+        telemetryNote,
       });
 
       res.status(200).json({
         ok: true,
         provider: result.provider,
-        message: `Email transmitted directly to ${DESTINATION_EMAIL}.`,
+        message: `Email verified & transmitted directly to ${DESTINATION_EMAIL}.`,
+        contactSummary: {
+          messageId,
+          senderName: p.name.slice(0, 120),
+          senderEmail: p.email.slice(0, 254),
+          senderPhone: p.phone.slice(0, 40),
+          subject: p.subject.slice(0, 200),
+          message: p.message.slice(0, 5000),
+          theme: p.theme,
+          ipAddress: p.ip.ipAddress.slice(0, 64),
+          country: p.ip.country.slice(0, 80),
+          region: p.ip.region.slice(0, 80),
+          city: p.ip.city.slice(0, 80),
+          isp: p.ip.isp.slice(0, 120),
+          asn: p.ip.asn.slice(0, 64),
+          timezone: p.ip.timezone.slice(0, 64),
+          clientTimezone: p.clientTimezone.slice(0, 64),
+          isVpnSuspected: p.risk.isVpnSuspected,
+          riskLevel: p.risk.riskLevel,
+          riskReasons: p.risk.riskReasons.join(', ').slice(0, 240),
+          referrer: p.referrer.slice(0, 200),
+          userAgent: p.userAgent.slice(0, 220),
+        },
       });
     } catch (error) {
-      const errMsg = error instanceof Error ? error.message : 'Failed to send message.';
-      console.error('Contact dispatch error:', errMsg);
-      res.status(500).json({ error: 'Unable to send your message right now. Please try again later.' });
+      const errMsg = error instanceof Error ? error.message : 'Unable to verify message OTP.';
+      console.error('Contact OTP verification error:', errMsg);
+      res.status(500).json({ error: 'Unable to complete verification right now. Please try again.' });
     }
   });
 
@@ -1197,6 +1665,25 @@ async function startServer() {
             : body.action === 'install'
               ? 'install'
               : 'pdf';
+
+      if (!runtimeOwnerPolicy.enableCvDownloads && cleanAction !== 'install') {
+        res.status(503).json({
+          error: 'CV exports are temporarily paused by the portfolio owner. Please check back shortly or contact directly.',
+        });
+        return;
+      }
+
+      const accessEval = evaluateAccessRules(runtimeOwnerPolicy.rules, {
+        email: cleanEmail,
+        ipAddress: clientIp,
+      });
+      if (accessEval.blocked) {
+        res.status(403).json({
+          error: 'This email domain or network address has been restricted from downloading CV exports.',
+        });
+        return;
+      }
+
       const cleanFormat =
         typeof body.formatLabel === 'string'
           ? sanitizeHeaderValue(body.formatLabel)
@@ -1205,25 +1692,32 @@ async function startServer() {
             : 'Executive Summary';
       const cleanTheme = parseEmailTheme(body.theme);
 
-      if (!cleanEmail && !cleanPhone) {
+      if (!cleanEmail) {
         res.status(400).json({
           error:
             cleanAction === 'install'
-              ? 'Please provide either your Email ID or Phone Number to install.'
-              : 'Please provide either your Email ID or Phone Number to download.',
+              ? 'Please enter your Email ID to verify and install.'
+              : 'Please enter your Email ID to verify and download.',
         });
         return;
       }
 
-      if (cleanEmail && !isValidEmailAddress(cleanEmail)) {
+      if (!isValidEmailAddress(cleanEmail)) {
         res.status(400).json({ error: 'Please enter a valid email address.' });
         return;
       }
 
-      if (cleanPhone && (!isValidPhoneNumber(cleanPhone) || !isPlausiblePhoneNumber(cleanPhone))) {
-        res.status(400).json({ error: 'Please enter a genuine phone number (dummy or sequential numbers are blocked).' });
+      const phoneCheck = validatePhoneDetails(cleanPhone);
+      if (cleanPhone && (!isValidPhoneNumber(cleanPhone) || !phoneCheck.valid)) {
+        res.status(400).json({
+          error:
+            phoneCheck.reason ||
+            'Please enter a genuine phone number with country code (dummy or sequential numbers are blocked).',
+        });
         return;
       }
+
+      const normalizedCvPhone = phoneCheck.internationalDisplay || cleanPhone;
 
       if (cleanReason.length < 3) {
         res.status(400).json({
@@ -1238,7 +1732,7 @@ async function startServer() {
       if (
         cleanName.length > MAX_FIELD_LENGTHS.name ||
         cleanEmail.length > MAX_FIELD_LENGTHS.email ||
-        cleanPhone.length > MAX_FIELD_LENGTHS.phone ||
+        normalizedCvPhone.length > MAX_FIELD_LENGTHS.phone ||
         cleanReason.length > MAX_FIELD_LENGTHS.message
       ) {
         res.status(400).json({ error: 'One or more fields exceed the allowed character limit.' });
@@ -1268,12 +1762,17 @@ async function startServer() {
       const risk = assessVisitorRisk(ipIntel, {
         clientTimezone,
         hasEmail: Boolean(cleanEmail),
+        phoneCountry: phoneCheck.countryCode || undefined,
       });
 
       const directTransportReady = isDirectEmailTransportConfigured();
       const shouldStepUpOtp =
         directTransportReady &&
-        (FORCE_CV_OTP || risk.isVpnSuspected || risk.riskLevel !== 'low');
+        !accessEval.allowlisted &&
+        (FORCE_CV_OTP ||
+          runtimeOwnerPolicy.strictOtpForAll ||
+          risk.isVpnSuspected ||
+          risk.riskLevel !== 'low');
 
       if (shouldStepUpOtp) {
         if (!cleanEmail) {
@@ -1285,12 +1784,24 @@ async function startServer() {
           return;
         }
 
+        const normalizedCvOtpEmail = `cv:${cleanEmail.toLowerCase()}`;
+        if (isRateLimited(normalizedCvOtpEmail, otpEmailRateLimitMap, { maxRequests: 5 })) {
+          res.setHeader(
+            'Retry-After',
+            String(rateLimitRetryAfterSeconds(normalizedCvOtpEmail, otpEmailRateLimitMap))
+          );
+          res.status(429).json({
+            error: 'Too many verification codes sent to this email. Please wait a few minutes before requesting another code.',
+          });
+          return;
+        }
+
         const challenge = createOtpChallenge(
           otpChallengeStore,
           {
             name: cleanName,
             email: cleanEmail,
-            phone: cleanPhone,
+            phone: normalizedCvPhone,
             reason: cleanReason,
             action: cleanAction,
             formatLabel: cleanFormat,
@@ -1311,6 +1822,7 @@ async function startServer() {
           name: cleanName,
           code: challenge.code,
           theme: cleanTheme,
+          purpose: 'cv',
         });
 
         res.status(200).json({
@@ -1345,7 +1857,7 @@ async function startServer() {
       const accessPayload: CvAccessPayload = {
         name: cleanName,
         email: cleanEmail,
-        phone: cleanPhone,
+        phone: normalizedCvPhone,
         reason: cleanReason,
         action: cleanAction,
         formatLabel: cleanFormat,
@@ -1358,7 +1870,7 @@ async function startServer() {
           sessionId,
           name: cleanName,
           email: cleanEmail,
-          phone: cleanPhone,
+          phone: normalizedCvPhone,
           reason: cleanReason.slice(0, 500),
           verificationStatus,
           issuedAt: Date.now(),
@@ -1427,6 +1939,24 @@ async function startServer() {
       }
 
       const p = verified.payload;
+      if (!runtimeOwnerPolicy.enableCvDownloads && p.action !== 'install') {
+        res.status(503).json({
+          error: 'CV exports are temporarily paused by the portfolio owner. Please check back shortly.',
+        });
+        return;
+      }
+
+      const cvVerifyAccess = evaluateAccessRules(runtimeOwnerPolicy.rules, {
+        email: p.email,
+        ipAddress: p.ip.ipAddress || clientIp,
+      });
+      if (cvVerifyAccess.blocked) {
+        res.status(403).json({
+          error: 'This email domain or network address has been restricted from downloading CV exports.',
+        });
+        return;
+      }
+
       const downloadId = generateDownloadId();
       const sessionId = generateSessionId();
       const verificationStatus: VerificationStatus = 'otp_verified';
@@ -1529,6 +2059,25 @@ async function startServer() {
             : body.action === 'install'
               ? 'install'
               : 'pdf';
+
+      if (!runtimeOwnerPolicy.enableCvDownloads && cleanAction !== 'install') {
+        res.status(503).json({
+          error: 'CV exports are temporarily paused by the portfolio owner.',
+        });
+        return;
+      }
+
+      const cvEventAccess = evaluateAccessRules(runtimeOwnerPolicy.rules, {
+        email: verifiedSession.email,
+        ipAddress: clientIp,
+      });
+      if (cvEventAccess.blocked) {
+        res.status(403).json({
+          error: 'This email domain or network address has been restricted from CV exports.',
+        });
+        return;
+      }
+
       const cleanFormat =
         typeof body.formatLabel === 'string'
           ? sanitizeHeaderValue(body.formatLabel).slice(0, 80) || 'Executive Summary'
@@ -1615,9 +2164,15 @@ async function startServer() {
 
     if (!mappedTrack && !skillParam) return html;
 
-    const baseUrl =
-      process.env.APP_URL?.replace(/\/$/, '') ||
-      `${req.headers['x-forwarded-proto'] || req.protocol || 'https'}://${req.headers['x-forwarded-host'] || req.headers.host || 'www.mohammedsufyan.com'}`;
+    const baseUrl = resolveSafeBaseUrl(
+      {
+        appUrl: process.env.APP_URL,
+        protoHeader: req.headers['x-forwarded-proto'],
+        hostHeader: req.headers['x-forwarded-host'] || req.headers.host,
+        protocol: req.protocol,
+      },
+      ALLOWED_ORIGINS
+    );
 
     const trackMeta =
       SHARE_CARD_TRACKS.find((t) => t.id === (mappedTrack ?? 'executive')) ??
@@ -1634,7 +2189,7 @@ async function startServer() {
     ogImgQuery.set('track', mappedTrack ?? 'executive');
     ogImgQuery.set('theme', themeParam);
     if (skillParam) ogImgQuery.set('skill', skillParam);
-    const dynamicImage = `${baseUrl}/api/og-card.svg?${ogImgQuery.toString()}`;
+    const dynamicImage = escapeHtml(`${baseUrl}/api/og-card.svg?${ogImgQuery.toString()}`);
 
     return html
       .replace(/<title>[^<]*<\/title>/, `<title>${dynamicTitle}</title>`)

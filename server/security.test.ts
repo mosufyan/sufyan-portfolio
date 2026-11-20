@@ -7,6 +7,8 @@ import {
   escapeHtml,
   isAiStudioPreviewHost,
   isAllowedRequestOrigin,
+  isBlockedBotUserAgent,
+  isDisallowedFetchSite,
   isFormSubmitFallbackAllowed,
   isHoneypotTriggered,
   isRateLimited,
@@ -14,6 +16,7 @@ import {
   isValidPhoneNumber,
   rateLimitRetryAfterSeconds,
   resolveAllowedOrigins,
+  resolveSafeBaseUrl,
   sanitizeDisplayName,
   sanitizeHeaderValue,
   shouldAllowPreviewIframe,
@@ -188,3 +191,62 @@ describe('field length constants', () => {
     expect(MAX_FIELD_LENGTHS.email).toBe(254);
   });
 });
+
+describe('anti-bot & fetch-metadata hardening', () => {
+  it('blocks known AI scrapers and vulnerability scanners unconditionally', () => {
+    expect(isBlockedBotUserAgent('Mozilla/5.0 (compatible; GPTBot/1.0)')).toBe(true);
+    expect(isBlockedBotUserAgent('ClaudeBot/1.0')).toBe(true);
+    expect(isBlockedBotUserAgent('CCBot/2.0')).toBe(true);
+    expect(isBlockedBotUserAgent('Bytespider')).toBe(true);
+    expect(isBlockedBotUserAgent('sqlmap/1.7')).toBe(true);
+    expect(isBlockedBotUserAgent('Scrapy/2.11')).toBe(true);
+  });
+
+  it('blocks empty UA or scripting clients on sensitive POST mutations while allowing normal browsers', () => {
+    const chrome =
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+    expect(isBlockedBotUserAgent(chrome, true)).toBe(false);
+    expect(isBlockedBotUserAgent(undefined, true)).toBe(true);
+    expect(isBlockedBotUserAgent('python-requests/2.31.0', true)).toBe(true);
+    expect(isBlockedBotUserAgent('HeadlessChrome/128.0.0.0', true)).toBe(true);
+  });
+
+  it('rejects explicit cross-site Fetch Metadata requests', () => {
+    expect(isDisallowedFetchSite('cross-site')).toBe(true);
+    expect(isDisallowedFetchSite('same-origin')).toBe(false);
+    expect(isDisallowedFetchSite('same-site')).toBe(false);
+    expect(isDisallowedFetchSite(undefined)).toBe(false);
+  });
+
+  it('prevents host header injection when resolving dynamic OG base URL', () => {
+    const allowed = resolveAllowedOrigins('https://www.mohammedsufyan.com', 3000);
+    expect(
+      resolveSafeBaseUrl(
+        {
+          hostHeader: 'evil.com" onmouseover="alert(1)',
+          protoHeader: 'https',
+        },
+        allowed
+      )
+    ).toBe('https://www.mohammedsufyan.com');
+    expect(
+      resolveSafeBaseUrl(
+        {
+          hostHeader: 'ais-dev-abc.us-west2.run.app',
+          protoHeader: 'https',
+        },
+        allowed
+      )
+    ).toBe('https://ais-dev-abc.us-west2.run.app');
+    expect(
+      resolveSafeBaseUrl(
+        {
+          hostHeader: 'localhost:3000',
+          protoHeader: 'http',
+        },
+        allowed
+      )
+    ).toBe('http://localhost:3000');
+  });
+});
+

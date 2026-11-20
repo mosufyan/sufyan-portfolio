@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import dns from 'dns/promises';
 import type { Request } from 'express';
 import { sanitizeHeaderValue } from './security.ts';
+import { validateAndNormalizePhone, type PhoneValidationResult } from '../src/utils/phoneValidation.ts';
 
 export type RiskLevel = 'low' | 'medium' | 'high';
 export type VerificationStatus = 'otp_verified' | 'mx_verified' | 'phone_only' | 'repeat_session';
@@ -204,23 +205,13 @@ export function isDisposableEmailDomain(email: string): boolean {
   return false;
 }
 
+export function validatePhoneDetails(phone: string): PhoneValidationResult {
+  return validateAndNormalizePhone(phone, 'US');
+}
+
 export function isPlausiblePhoneNumber(phone: string): boolean {
   if (!phone) return true;
-  const digits = phone.replace(/\D/g, '');
-  if (digits.length < 7 || digits.length > 15) return false;
-  // Reject repeated identical digits (e.g. 00000000, 1111111111, 9999999)
-  if (/^(\d)\1+$/.test(digits)) return false;
-  // Reject trivial ascending/descending sequences of 7+ digits
-  const ascending = '0123456789012345';
-  const descending = '9876543210987654';
-  if (digits.length >= 7 && (ascending.includes(digits) || descending.includes(digits))) {
-    return false;
-  }
-  // Reject US North American 555-01xx fictional range
-  if (/^(?:1)?\d{3}55501\d{2}$/.test(digits) || /^55501\d{2}$/.test(digits)) {
-    return false;
-  }
-  return true;
+  return validateAndNormalizePhone(phone, 'US').valid;
 }
 
 export async function verifyEmailMxRecord(
@@ -476,6 +467,7 @@ export function assessVisitorRisk(
   context: {
     clientTimezone?: string;
     hasEmail: boolean;
+    phoneCountry?: string;
   }
 ): RiskAssessment {
   let score = 0;
@@ -483,6 +475,11 @@ export function assessVisitorRisk(
   const clientTz = sanitizeHeaderValue(context.clientTimezone || '').slice(0, 64);
   const asnVpnMatch = !intel.isPrivate && isHostingOrVpnAsn(intel.isp, intel.org, intel.asn);
   const timezoneMismatch = !intel.isPrivate && hasTimezoneMismatch(intel.timezone, clientTz);
+  const phoneGeoMismatch =
+    Boolean(context.phoneCountry) &&
+    !intel.isPrivate &&
+    Boolean(intel.countryCode) &&
+    context.phoneCountry !== intel.countryCode;
 
   if (intel.isProxy) {
     score += 60;
@@ -499,6 +496,10 @@ export function assessVisitorRisk(
   if (!context.hasEmail) {
     score += 20;
     riskReasons.push('Phone-only contact (no email)');
+  }
+  if (phoneGeoMismatch) {
+    score += 15;
+    riskReasons.push(`Phone region (${context.phoneCountry}) differs from IP (${intel.countryCode})`);
   }
 
   const riskLevel: RiskLevel = score >= 60 ? 'high' : score >= 30 ? 'medium' : 'low';
@@ -596,22 +597,36 @@ export interface OtpPendingPayload {
   risk: RiskAssessment;
 }
 
-export interface OtpChallengeRecord {
+export interface ContactOtpPendingPayload {
+  name: string;
+  email: string;
+  phone: string;
+  subject: string;
+  message: string;
+  theme: 'dark' | 'light';
+  clientTimezone: string;
+  referrer: string;
+  userAgent: string;
+  ip: IpIntelligence;
+  risk: RiskAssessment;
+}
+
+export interface OtpChallengeRecord<T = OtpPendingPayload> {
   challengeId: string;
   codeHash: string;
   tokenHash: string;
   expiresAt: number;
   attempts: number;
-  payload: OtpPendingPayload;
+  payload: T;
 }
 
 export function hashOtpValue(challengeId: string, value: string, secret: string): string {
   return crypto.createHmac('sha256', secret).update(`${challengeId}:${value}`).digest('hex');
 }
 
-export function createOtpChallenge(
-  store: Map<string, OtpChallengeRecord>,
-  payload: OtpPendingPayload,
+export function createOtpChallenge<T = OtpPendingPayload>(
+  store: Map<string, OtpChallengeRecord<T>>,
+  payload: T,
   secret: string,
   options: { now?: number; ttlMs?: number; fixedCode?: string } = {}
 ): { challengeId: string; challengeToken: string; code: string; expiresAt: number } {
@@ -646,12 +661,12 @@ export function createOtpChallenge(
   return { challengeId, challengeToken, code, expiresAt };
 }
 
-export function verifyOtpChallenge(
-  store: Map<string, OtpChallengeRecord>,
+export function verifyOtpChallenge<T = OtpPendingPayload>(
+  store: Map<string, OtpChallengeRecord<T>>,
   input: { challengeId: string; challengeToken: string; code: string },
   secret: string,
   options: { now?: number; maxAttempts?: number } = {}
-): { ok: true; payload: OtpPendingPayload } | { ok: false; error: string } {
+): { ok: true; payload: T } | { ok: false; error: string } {
   const now = options.now ?? Date.now();
   const maxAttempts = options.maxAttempts ?? 5;
   const record = store.get(input.challengeId);

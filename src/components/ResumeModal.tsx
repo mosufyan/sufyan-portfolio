@@ -49,8 +49,7 @@ import {
   ShieldCheck,
   Radar,
   Palette,
-  Minimize2,
-  BarChart3
+  Minimize2
 } from 'lucide-react';
 import { useFirebase } from '../contexts/FirebaseContext';
 import { useTheme } from '../theme/ThemeProvider';
@@ -83,7 +82,6 @@ import AccessGateModal, {
   trackSubsequentCvEvent,
   type AccessGateAction,
 } from './AccessGateModal';
-import CvAnalyticsModal from './CvAnalyticsView';
 import IssuerMark from './IssuerMark';
 import {
   CvImpactProofStrip,
@@ -381,8 +379,7 @@ export default function ResumeModal({
 
   const [cvUnlocked, setCvUnlocked] = useState<boolean>(() => isAccessUnlocked('pdf'));
   const [pendingAction, setPendingAction] = useState<AccessGateAction | null>(null);
-  const [analyticsOpen, setAnalyticsOpen] = useState(false);
-  const { isOwner, cvDownloadLogs, recordCvDownloadLog } = useFirebase();
+  const { recordCvDownloadLog, portfolioSettings } = useFirebase();
 
   useEffect(() => {
     if (isOpen) {
@@ -1305,6 +1302,10 @@ export default function ResumeModal({
 
   const handleRequestPdf = () => {
     if (isGeneratingPdf || selectedSectionCount === 0) return;
+    if (!portfolioSettings.enableCvDownloads) {
+      setPdfError('CV exports are temporarily paused by the portfolio owner.');
+      return;
+    }
     if (cvUnlocked || isAccessUnlocked('pdf')) {
       setCvUnlocked(true);
       void handleDownloadPdf(undefined, true);
@@ -1315,6 +1316,10 @@ export default function ResumeModal({
 
   const handleRequestPrint = () => {
     if (selectedSectionCount === 0) return;
+    if (!portfolioSettings.enableCvDownloads) {
+      setPdfError('CV exports are temporarily paused by the portfolio owner.');
+      return;
+    }
     if (cvUnlocked || isAccessUnlocked('print')) {
       setCvUnlocked(true);
       void trackSubsequentCvEvent({
@@ -1331,6 +1336,10 @@ export default function ResumeModal({
 
   const handleRequestAtsCopy = () => {
     if (selectedSectionCount === 0) return;
+    if (!portfolioSettings.enableCvDownloads) {
+      setPdfError('CV exports are temporarily paused by the portfolio owner.');
+      return;
+    }
     if (cvUnlocked || isAccessUnlocked('ats')) {
       setCvUnlocked(true);
       void trackSubsequentCvEvent({
@@ -1749,21 +1758,6 @@ export default function ResumeModal({
             </div>
 
             <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-              {isOwner && (
-                <button
-                  type="button"
-                  onClick={() => setAnalyticsOpen(true)}
-                  title="View CV download & VPN security analytics"
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-cyan-500/40 bg-cyan-950/40 hover:bg-cyan-900/50 text-[11px] sm:text-xs font-mono text-cyan-300 transition-colors cursor-pointer"
-                >
-                  <BarChart3 className="w-3.5 h-3.5 text-cyan-400" />
-                  <span className="hidden sm:inline">Analytics</span>
-                  <span className="px-1 rounded bg-cyan-500/20 text-cyan-200 text-[10px]">
-                    {cvDownloadLogs.length}
-                  </span>
-                </button>
-              )}
-
               <button
                 type="button"
                 onClick={() => {
@@ -3324,11 +3318,6 @@ export default function ResumeModal({
         isLight={isLight}
         onClose={() => setPendingAction(null)}
         onVerified={handleAccessVerified}
-      />
-
-      <CvAnalyticsModal
-        isOpen={analyticsOpen}
-        onClose={() => setAnalyticsOpen(false)}
       />
     </AnimatePresence>
   );

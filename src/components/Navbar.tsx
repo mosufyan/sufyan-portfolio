@@ -1,5 +1,17 @@
 import { type MouseEvent as ReactMouseEvent, useEffect, useState } from 'react';
-import { Download, Menu, X, Mail, Search, Terminal } from 'lucide-react';
+import {
+  ArrowLeft,
+  Download,
+  Loader2,
+  Lock,
+  LogOut,
+  Mail,
+  Menu,
+  Search,
+  ShieldCheck,
+  Terminal,
+  X,
+} from 'lucide-react';
 import {
   AnimatePresence,
   MotionValue,
@@ -10,6 +22,8 @@ import {
   useTransform,
 } from 'motion/react';
 import { useTheme } from '../theme/ThemeProvider';
+import { useFirebase } from '../contexts/FirebaseContext';
+import { OWNER_EMAIL } from '../utils/announcementValidation';
 import { EASE_OUT_EXPO } from './MotionPrimitives';
 import ThemeSymbol from './ThemeSymbol';
 
@@ -47,6 +61,9 @@ interface NavbarProps {
   onOpenAnnouncements: () => void;
   onOpenCommandPalette: () => void;
   onOpenTerminal: () => void;
+  ownerViewActive: boolean;
+  onEnterOwnerConsole: () => void;
+  onExitOwnerConsole: () => void;
 }
 
 const NAV_LINKS = [
@@ -65,11 +82,27 @@ export default function Navbar({
   onOpenAnnouncements,
   onOpenCommandPalette,
   onOpenTerminal,
+  ownerViewActive,
+  onEnterOwnerConsole,
+  onExitOwnerConsole,
 }: NavbarProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeSection, setActiveSection] = useState<string>('overview');
   const [themeWash, setThemeWash] = useState<'light' | 'dark' | null>(null);
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
   const { isLight, toggleTheme } = useTheme();
+  const {
+    user,
+    authReady,
+    isOwner,
+    signInAsOwner,
+    signOutOwner,
+    portfolioSettings,
+    announcements,
+    cvDownloadLogs,
+    contactMessageLogs,
+  } = useFirebase();
   const shouldReduceMotion = useReducedMotion();
   const { scrollYProgress } = useScroll();
   const scaleX = useSpring(scrollYProgress, {
@@ -87,6 +120,61 @@ export default function Navbar({
     toggleTheme();
   };
 
+  const handleOwnerLogin = async () => {
+    if (authBusy) return;
+    setAuthBusy(true);
+    setAuthError(null);
+    try {
+      await signInAsOwner();
+      setMobileMenuOpen(false);
+      onEnterOwnerConsole();
+    } catch (err) {
+      console.error('Owner sign-in failed:', err);
+      const code =
+        typeof err === 'object' &&
+        err !== null &&
+        'code' in err &&
+        typeof (err as { code?: unknown }).code === 'string'
+          ? (err as { code: string }).code
+          : '';
+      const msg = err instanceof Error ? err.message : String(err);
+      const combined = `${code} ${msg}`;
+      const currentHost =
+        typeof window !== 'undefined' ? window.location.hostname : 'this domain';
+
+      if (combined.includes('unauthorized-domain')) {
+        setAuthError(
+          `Domain "${currentHost}" is not authorized for Firebase sign-in. Add "${currentHost}" in Firebase Console → Authentication → Settings → Authorized domains.`
+        );
+      } else if (
+        combined.includes('popup-closed-by-user') ||
+        combined.includes('cancelled-popup-request')
+      ) {
+        setAuthError('Sign-in popup was closed before completing.');
+      } else if (combined.includes('popup-blocked')) {
+        setAuthError(
+          'Sign-in popup was blocked by your browser. Allow popups for this site and retry.'
+        );
+      } else if (combined.includes('operation-not-allowed')) {
+        setAuthError(
+          'Google Sign-In is not enabled in Firebase Authentication → Sign-in method.'
+        );
+      } else if (combined.includes('operation-not-supported-in-this-environment')) {
+        setAuthError(
+          'This browser blocked popup storage. Open the site in Chrome/Safari with cookies enabled and retry.'
+        );
+      } else if (combined.includes('network-request-failed')) {
+        setAuthError(
+          'Network error contacting Google Sign-In. Check your connection or ad-blocker and retry.'
+        );
+      } else {
+        setAuthError(`Unable to complete Google sign-in${code ? ` (${code})` : ''}.`);
+      }
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
   const scrollToSection = (
     e: ReactMouseEvent<HTMLAnchorElement>,
     sectionId: string,
@@ -95,6 +183,16 @@ export default function Navbar({
     e.preventDefault();
     if (closeDrawer) {
       setMobileMenuOpen(false);
+    }
+    if (ownerViewActive) {
+      onExitOwnerConsole();
+      window.requestAnimationFrame(() => {
+        const target = document.getElementById(sectionId);
+        if (target) {
+          target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      });
+      return;
     }
 
     const target = document.getElementById(sectionId);
@@ -105,7 +203,11 @@ export default function Navbar({
     try {
       const nextHash = `#${sectionId}`;
       if (window.location.hash !== nextHash) {
-        window.history.replaceState({}, '', `${window.location.pathname}${window.location.search}${nextHash}`);
+        window.history.replaceState(
+          {},
+          '',
+          `${window.location.pathname}${window.location.search}${nextHash}`
+        );
       }
     } catch {
       /* ignore */
@@ -113,6 +215,7 @@ export default function Navbar({
   };
 
   useEffect(() => {
+    if (ownerViewActive) return;
     const sections = NAV_LINKS.map((link) => document.getElementById(link.id)).filter(
       (el): el is HTMLElement => el !== null
     );
@@ -139,7 +242,7 @@ export default function Navbar({
     updateActiveOnScroll();
     window.addEventListener('scroll', updateActiveOnScroll, { passive: true });
     return () => window.removeEventListener('scroll', updateActiveOnScroll);
-  }, []);
+  }, [ownerViewActive]);
 
   // Close drawer when resizing up to desktop nav
   useEffect(() => {
@@ -152,22 +255,31 @@ export default function Navbar({
     return () => mq.removeEventListener('change', onChange);
   }, []);
 
+  const consoleTotalCount = cvDownloadLogs.length + contactMessageLogs.length;
+
   return (
     <header className="navbar-chrome sticky top-0 z-40 w-full border-b border-slate-800/80 bg-[#07090e]/90 backdrop-blur-md transition-all print:hidden">
-      <div className="page-shell flex items-center gap-3 sm:gap-4 xl:gap-6 h-14 sm:h-16 min-w-0">
+      <div className="page-shell flex items-center gap-2.5 sm:gap-3.5 xl:gap-5 h-14 sm:h-16 min-w-0">
         <a
           href="#overview"
           onClick={(e) => {
             e.preventDefault();
             setMobileMenuOpen(false);
+            if (ownerViewActive) {
+              onExitOwnerConsole();
+            }
             if (window.location.hash) {
-              window.history.replaceState({}, '', `${window.location.pathname}${window.location.search}`);
+              window.history.replaceState(
+                {},
+                '',
+                `${window.location.pathname}${window.location.search}`
+              );
             }
             window.scrollTo({ top: 0, behavior: 'smooth' });
           }}
           className="group flex items-center shrink-0 text-slate-100 focus:outline-none"
-          aria-label="Scroll to top"
-          title="Back to top"
+          aria-label="Scroll to top / Return to portfolio"
+          title="Back to Portfolio Top"
         >
           <motion.div
             whileHover={{ scale: 1.06 }}
@@ -180,9 +292,9 @@ export default function Navbar({
         </a>
 
         {/* Full desktop nav — xl+ only to avoid crush on tablets / small laptops */}
-        <nav className="hidden xl:flex flex-1 items-center justify-center gap-5 2xl:gap-6 min-w-0 text-sm font-medium text-slate-400 px-2">
+        <nav className="hidden xl:flex flex-1 items-center justify-center gap-4 2xl:gap-6 min-w-0 text-sm font-medium text-slate-400 px-1">
           {NAV_LINKS.map((link) => {
-            const isActive = activeSection === link.id;
+            const isActive = !ownerViewActive && activeSection === link.id;
             return (
               <a
                 key={link.label}
@@ -211,7 +323,7 @@ export default function Navbar({
           <button
             type="button"
             onClick={handleThemeToggle}
-            className={`hidden sm:inline-flex items-center justify-center gap-1.5 h-9 px-2.5 rounded-lg border text-xs font-medium transition-colors whitespace-nowrap overflow-hidden ${
+            className={`hidden sm:inline-flex items-center justify-center gap-1.5 h-9 px-2.5 rounded-lg border text-xs font-medium transition-colors whitespace-nowrap shrink-0 overflow-hidden ${
               isLight
                 ? 'border-amber-400/70 bg-amber-50 text-amber-800 hover:bg-amber-100'
                 : 'border-slate-700/90 bg-slate-900/70 text-slate-300 hover:text-cyan-300 hover:border-cyan-500/40'
@@ -233,7 +345,7 @@ export default function Navbar({
           <button
             type="button"
             onClick={onOpenCommandPalette}
-            className="hidden sm:inline-flex items-center justify-center gap-1.5 h-9 px-2.5 rounded-lg border border-slate-700/90 bg-slate-900/70 text-xs font-mono text-slate-300 hover:text-cyan-300 hover:border-cyan-500/40 transition-colors whitespace-nowrap"
+            className="hidden sm:inline-flex items-center justify-center gap-1.5 h-9 px-2.5 rounded-lg border border-slate-700/90 bg-slate-900/70 text-xs font-mono text-slate-300 hover:text-cyan-300 hover:border-cyan-500/40 transition-colors whitespace-nowrap shrink-0"
             title="Quick Jump & Search (⌘K / Ctrl+K)"
             aria-label="Open quick navigation palette"
           >
@@ -244,7 +356,7 @@ export default function Navbar({
           <button
             type="button"
             onClick={onOpenTerminal}
-            className="hidden sm:inline-flex items-center justify-center gap-1.5 h-9 px-2.5 rounded-lg border border-slate-700/90 bg-slate-900/70 text-xs font-mono text-slate-300 hover:text-cyan-300 hover:border-cyan-500/40 transition-colors whitespace-nowrap"
+            className="hidden sm:inline-flex items-center justify-center gap-1.5 h-9 px-2.5 rounded-lg border border-slate-700/90 bg-slate-900/70 text-xs font-mono text-slate-300 hover:text-cyan-300 hover:border-cyan-500/40 transition-colors whitespace-nowrap shrink-0"
             title="Open Interactive Terminal (sufyanctl)"
             aria-label="Open interactive portfolio terminal"
           >
@@ -255,35 +367,90 @@ export default function Navbar({
           <button
             type="button"
             onClick={onOpenAnnouncements}
-            className="hidden md:inline-flex items-center justify-center gap-1.5 h-9 px-2.5 rounded-lg border border-slate-700 bg-slate-900/60 text-xs font-medium text-slate-300 hover:text-white hover:border-slate-600 transition-colors whitespace-nowrap"
+            className="hidden md:inline-flex items-center justify-center gap-1.5 h-9 px-2.5 rounded-lg border border-slate-700 bg-slate-900/60 text-xs font-medium text-slate-300 hover:text-white hover:border-slate-600 transition-colors whitespace-nowrap shrink-0"
             title="View Announcements"
           >
-            <span className="hidden xl:inline">Announcements</span>
-            <span className="xl:hidden">News</span>
+            <span className="hidden 2xl:inline">Announcements</span>
+            <span className="2xl:hidden">News</span>
+            {portfolioSettings.showAnnouncementsBadge && announcements.length > 0 && (
+              <span className="px-1.5 py-0.5 rounded bg-cyan-500/20 border border-cyan-400/40 text-[10px] font-mono tabular-nums text-cyan-300">
+                {announcements.length}
+              </span>
+            )}
           </button>
+
+          {/* Owner Auth / Full-Page Console Toggle */}
+          {isOwner ? (
+            <button
+              type="button"
+              onClick={ownerViewActive ? onExitOwnerConsole : onEnterOwnerConsole}
+              className={`hidden sm:inline-flex items-center justify-center gap-1.5 h-9 px-2.5 rounded-lg border text-xs font-mono font-semibold transition-colors whitespace-nowrap shrink-0 ${
+                ownerViewActive
+                  ? 'border-cyan-400 bg-cyan-500 text-slate-950 hover:bg-cyan-400'
+                  : 'border-emerald-500/45 bg-emerald-950/35 text-emerald-300 hover:bg-emerald-900/50'
+              }`}
+              title={
+                ownerViewActive
+                  ? 'Return to Public Portfolio'
+                  : 'Open Full-Page Owner Console'
+              }
+            >
+              {ownerViewActive ? (
+                <>
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>Portfolio</span>
+                </>
+              ) : (
+                <>
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>Console</span>
+                  {consoleTotalCount > 0 && (
+                    <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 border border-emerald-400/35 text-[10px] tabular-nums">
+                      {consoleTotalCount}
+                    </span>
+                  )}
+                </>
+              )}
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={authBusy}
+              onClick={() => void handleOwnerLogin()}
+              className="hidden md:inline-flex items-center justify-center gap-1.5 h-9 px-2.5 rounded-lg border border-slate-700/90 bg-slate-900/60 text-xs font-mono text-slate-300 hover:text-cyan-300 hover:border-cyan-500/40 transition-colors whitespace-nowrap shrink-0 disabled:opacity-60"
+              title="Owner Console Sign In"
+            >
+              {authBusy ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-cyan-400" />
+              ) : (
+                <Lock className="w-3.5 h-3.5 text-cyan-400" />
+              )}
+              <span>Owner</span>
+            </button>
+          )}
 
           <button
             type="button"
             onClick={onOpenResume}
-            className="hidden sm:inline-flex items-center justify-center gap-1.5 h-9 px-3 rounded-lg border border-cyan-500/40 bg-cyan-950/30 hover:bg-cyan-900/50 text-xs font-semibold text-cyan-300 transition-colors whitespace-nowrap"
+            className="hidden sm:inline-flex items-center justify-center gap-1.5 h-9 px-3 rounded-lg border border-cyan-500/40 bg-cyan-950/30 hover:bg-cyan-900/50 text-xs font-semibold text-cyan-300 transition-colors whitespace-nowrap shrink-0"
           >
             <Download className="w-3.5 h-3.5" />
-            <span className="hidden md:inline">Download CV</span>
-            <span className="md:hidden">CV</span>
+            <span className="hidden 2xl:inline">Download CV</span>
+            <span className="2xl:hidden">CV</span>
           </button>
 
           <a
             href="#contact"
             onClick={(e) => scrollToSection(e, 'contact')}
-            className="hidden sm:inline-flex items-center justify-center gap-1.5 h-9 px-3 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-xs font-semibold text-slate-950 transition-colors whitespace-nowrap"
+            className="hidden sm:inline-flex items-center justify-center gap-1.5 h-9 px-3 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-xs font-semibold text-slate-950 transition-colors whitespace-nowrap shrink-0"
           >
             <Mail className="w-3.5 h-3.5" />
-            <span className="hidden xl:inline">Get in Touch</span>
-            <span className="xl:hidden">Contact</span>
+            <span className="hidden 2xl:inline">Get in Touch</span>
+            <span className="2xl:hidden">Contact</span>
           </a>
 
           {/* Phone / tablet / laptop-below-xl controls */}
-          <div className="flex xl:hidden items-center gap-1.5 sm:gap-2">
+          <div className="flex xl:hidden items-center gap-1.5 sm:gap-2 shrink-0">
             <button
               type="button"
               onClick={handleThemeToggle}
@@ -331,6 +498,56 @@ export default function Navbar({
         </div>
       </div>
 
+      {/* Non-owner or Firebase Auth diagnostic banner */}
+      <AnimatePresence>
+        {(authError || (authReady && user && !isOwner)) && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="border-t border-amber-500/35 bg-amber-950/40 text-amber-200 overflow-hidden"
+          >
+            <div className="page-shell py-2 flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
+              <span className="leading-snug">
+                {authError
+                  ? authError
+                  : `Signed in as ${user?.email}. Owner Console access is restricted to ${OWNER_EMAIL}.`}
+              </span>
+              <div className="flex items-center gap-2 shrink-0">
+                {authReady && user && !isOwner && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => void handleOwnerLogin()}
+                      className="px-2.5 py-1 rounded border border-current/35 hover:opacity-80 cursor-pointer"
+                    >
+                      Switch Account
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void signOutOwner()}
+                      className="px-2.5 py-1 rounded border border-current/35 hover:opacity-80 cursor-pointer"
+                    >
+                      Sign Out
+                    </button>
+                  </>
+                )}
+                {authError && (
+                  <button
+                    type="button"
+                    onClick={() => setAuthError(null)}
+                    aria-label="Dismiss auth notice"
+                    className="p-1 rounded hover:bg-amber-900/40 cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <AnimatePresence>
         {mobileMenuOpen && (
           <motion.div
@@ -343,7 +560,7 @@ export default function Navbar({
             <div className="page-shell pt-2 pb-4 space-y-2 max-h-[calc(100dvh-4rem)] overflow-y-auto overscroll-contain">
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 py-2">
                 {NAV_LINKS.map((link) => {
-                  const isActive = activeSection === link.id;
+                  const isActive = !ownerViewActive && activeSection === link.id;
                   return (
                     <a
                       key={link.label}
@@ -360,43 +577,101 @@ export default function Navbar({
                   );
                 })}
               </div>
-              <div className="sm:hidden pt-2 border-t border-slate-800 flex flex-col gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMobileMenuOpen(false);
-                    onOpenTerminal();
-                  }}
-                  className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-md border border-slate-700 bg-slate-900/60 text-xs font-mono text-cyan-300"
-                >
-                  <Terminal className="w-3.5 h-3.5 text-cyan-400" />
-                  Terminal (sufyanctl)
-                </button>
-                <button
-                  onClick={() => {
-                    setMobileMenuOpen(false);
-                    onOpenAnnouncements();
-                  }}
-                  className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-md border border-slate-700 bg-slate-900/60 text-xs font-medium text-slate-300"
-                >
-                  Announcements
-                </button>
-                <button
-                  onClick={() => {
-                    setMobileMenuOpen(false);
-                    onOpenResume();
-                  }}
-                  className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-md bg-cyan-950/50 border border-cyan-500/40 text-xs font-semibold text-cyan-300"
-                >
-                  <Download className="w-4 h-4" /> Download Executive CV
-                </button>
-                <a
-                  href="#contact"
-                  onClick={(e) => scrollToSection(e, 'contact', true)}
-                  className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-md bg-cyan-500 text-xs font-semibold text-slate-950"
-                >
-                  <Mail className="w-4 h-4" /> Contact Mohammed
-                </a>
+
+              <div className="pt-2 border-t border-slate-800 flex flex-col gap-2">
+                {isOwner ? (
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMobileMenuOpen(false);
+                        if (ownerViewActive) {
+                          onExitOwnerConsole();
+                        } else {
+                          onEnterOwnerConsole();
+                        }
+                      }}
+                      className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-md border border-emerald-500/45 bg-emerald-950/35 text-xs font-mono font-semibold text-emerald-300"
+                    >
+                      <ShieldCheck className="w-4 h-4" />
+                      <span>
+                        {ownerViewActive
+                          ? 'Return to Public Portfolio'
+                          : `Open Owner Console (${consoleTotalCount})`}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMobileMenuOpen(false);
+                        onExitOwnerConsole();
+                        void signOutOwner();
+                      }}
+                      className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-md border border-rose-500/35 bg-rose-950/30 text-xs font-mono text-rose-300"
+                    >
+                      <LogOut className="w-3.5 h-3.5" />
+                      <span>Sign Out</span>
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={authBusy}
+                    onClick={() => void handleOwnerLogin()}
+                    className="md:hidden w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-md border border-slate-700 bg-slate-900/60 text-xs font-mono text-slate-200 disabled:opacity-60"
+                  >
+                    {authBusy ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-cyan-400" />
+                    ) : (
+                      <Lock className="w-3.5 h-3.5 text-cyan-400" />
+                    )}
+                    <span>Owner Console Login</span>
+                  </button>
+                )}
+
+                <div className="sm:hidden flex flex-col gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      onOpenTerminal();
+                    }}
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-md border border-slate-700 bg-slate-900/60 text-xs font-mono text-cyan-300"
+                  >
+                    <Terminal className="w-3.5 h-3.5 text-cyan-400" />
+                    Terminal (sufyanctl)
+                  </button>
+                  <button
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      onOpenAnnouncements();
+                    }}
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-md border border-slate-700 bg-slate-900/60 text-xs font-medium text-slate-300"
+                  >
+                    <span>Announcements</span>
+                    {portfolioSettings.showAnnouncementsBadge && announcements.length > 0 && (
+                      <span className="px-1.5 py-0.5 rounded bg-cyan-500/20 border border-cyan-400/40 text-[10px] font-mono tabular-nums text-cyan-300">
+                        {announcements.length}
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      onOpenResume();
+                    }}
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-md bg-cyan-950/50 border border-cyan-500/40 text-xs font-semibold text-cyan-300"
+                  >
+                    <Download className="w-4 h-4" /> Download Executive CV
+                  </button>
+                  <a
+                    href="#contact"
+                    onClick={(e) => scrollToSection(e, 'contact', true)}
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-md bg-cyan-500 text-xs font-semibold text-slate-950"
+                  >
+                    <Mail className="w-4 h-4" /> Contact Mohammed
+                  </a>
+                </div>
               </div>
             </div>
           </motion.div>

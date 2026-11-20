@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { MotionConfig } from 'motion/react';
+import { Wrench } from 'lucide-react';
+import { useFirebase } from './contexts/FirebaseContext';
 import Navbar from './components/Navbar';
 import Hero from './components/Hero';
 import Philosophy from './components/Philosophy';
@@ -18,6 +20,7 @@ import DesktopScrollRail from './components/DesktopScrollRail';
 import EngineeringTerminal from './components/EngineeringTerminal';
 import UnifiedScrollHud, { type PortfolioReadingMode } from './components/UnifiedScrollHud';
 import DigitalCardModal from './components/DigitalCardModal';
+import OwnerConsolePage from './components/OwnerConsolePage';
 import { Certification } from './data/portfolioData';
 import { normalizeSelectedSkills, toggleSelectedSkill } from './utils/skillMatcher';
 import {
@@ -48,9 +51,11 @@ function writeSkillsToUrl(skills: string[]) {
 }
 
 export default function App() {
+  const { portfolioSettings, isOwner } = useFirebase();
   const [initialCvShare] = useState<ParsedCvShareConfig>(() =>
     typeof window !== 'undefined' ? parseCvShareSearch(window.location.search) : { shouldOpen: false }
   );
+  const [ownerViewRequested, setOwnerViewRequested] = useState(false);
   const [resumeOpen, setResumeOpen] = useState(() => initialCvShare.shouldOpen);
   const [announcementsOpen, setAnnouncementsOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
@@ -63,6 +68,23 @@ export default function App() {
     if (typeof window === 'undefined') return 'deep';
     return new URLSearchParams(window.location.search).get('mode') === 'brief' ? 'brief' : 'deep';
   });
+
+  const ownerViewActive = isOwner && ownerViewRequested;
+
+  useEffect(() => {
+    if (!isOwner && ownerViewRequested) {
+      setOwnerViewRequested(false);
+    }
+  }, [isOwner, ownerViewRequested]);
+
+  const handleEnterOwnerConsole = useCallback(() => {
+    setOwnerViewRequested(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
+
+  const handleExitOwnerConsole = useCallback(() => {
+    setOwnerViewRequested(false);
+  }, []);
 
   const setSelectedSkill = useCallback((skill: string | null) => {
     setSelectedSkillsState((prev) => {
@@ -126,53 +148,86 @@ export default function App() {
               onOpenAnnouncements={() => setAnnouncementsOpen(true)}
               onOpenCommandPalette={() => setCommandPaletteOpen(true)}
               onOpenTerminal={() => setTerminalOpen(true)}
+              ownerViewActive={ownerViewActive}
+              onEnterOwnerConsole={handleEnterOwnerConsole}
+              onExitOwnerConsole={handleExitOwnerConsole}
             />
 
-            <main>
-              <Hero
+            {ownerViewActive ? (
+              <OwnerConsolePage
+                onBackToPortfolio={handleExitOwnerConsole}
                 onOpenResume={() => setResumeOpen(true)}
-                onOpenDigitalCard={() => setDigitalCardOpen(true)}
-                onApplySkills={applySelectedSkills}
-                readingMode={readingMode}
-                onChangeReadingMode={setReadingMode}
               />
-              <Philosophy readingMode={readingMode} />
-              <Experience
-                selectedSkills={selectedSkills}
-                onSelectSkill={setSelectedSkill}
-                onApplySkills={applySelectedSkills}
-                focusedCompany={focusedCompany}
-                readingMode={readingMode}
-              />
-              <Skills
-                selectedSkills={selectedSkills}
-                onSelectSkill={setSelectedSkill}
-                onApplySkills={applySelectedSkills}
-                readingMode={readingMode}
-              />
-              <Certifications
-                selectedSkills={selectedSkills}
-                onSelectSkill={setSelectedSkill}
-                onSelectCertification={(cert) => setSelectedCert(cert)}
-                readingMode={readingMode}
-              />
-              <Awards readingMode={readingMode} />
-              <Education readingMode={readingMode} />
-              <Contact onOpenDigitalCard={() => setDigitalCardOpen(true)} />
-            </main>
+            ) : (
+              <>
+                {portfolioSettings.maintenanceMode && (
+                  <div
+                    role="status"
+                    className="border-b border-amber-500/35 bg-amber-950/35 text-amber-200 print:hidden"
+                  >
+                    <div className="page-shell py-2.5 flex flex-wrap items-center justify-center sm:justify-between gap-2 text-xs font-mono">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Wrench className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                        <span className="leading-snug">{portfolioSettings.maintenanceMessage}</span>
+                      </div>
+                      <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded border border-amber-500/40 bg-amber-950/60 text-amber-300 shrink-0">
+                        Maintenance Notice
+                      </span>
+                    </div>
+                  </div>
+                )}
 
-            <Footer
-              onOpenDigitalCard={() => setDigitalCardOpen(true)}
-              onOpenTerminal={() => setTerminalOpen(true)}
-            />
+                <main>
+                  <Hero
+                    onOpenResume={() => setResumeOpen(true)}
+                    onOpenDigitalCard={() => setDigitalCardOpen(true)}
+                    onApplySkills={applySelectedSkills}
+                    readingMode={readingMode}
+                    onChangeReadingMode={setReadingMode}
+                  />
+                  <Philosophy readingMode={readingMode} />
+                  <Experience
+                    selectedSkills={selectedSkills}
+                    onSelectSkill={setSelectedSkill}
+                    onApplySkills={applySelectedSkills}
+                    focusedCompany={focusedCompany}
+                    readingMode={readingMode}
+                  />
+                  <Skills
+                    selectedSkills={selectedSkills}
+                    onSelectSkill={setSelectedSkill}
+                    onApplySkills={applySelectedSkills}
+                    readingMode={readingMode}
+                  />
+                  <Certifications
+                    selectedSkills={selectedSkills}
+                    onSelectSkill={setSelectedSkill}
+                    onSelectCertification={(cert) => setSelectedCert(cert)}
+                    readingMode={readingMode}
+                  />
+                  <Awards readingMode={readingMode} />
+                  <Education readingMode={readingMode} />
+                  <Contact onOpenDigitalCard={() => setDigitalCardOpen(true)} />
+                </main>
+
+                <Footer
+                  onOpenDigitalCard={() => setDigitalCardOpen(true)}
+                  onOpenTerminal={() => setTerminalOpen(true)}
+                />
+              </>
+            )}
           </div>
 
-          <DesktopScrollRail />
-          <UnifiedScrollHud
-            readingMode={readingMode}
-            onChangeReadingMode={setReadingMode}
-            onOpenCommandPalette={() => setCommandPaletteOpen(true)}
-          />
+          {!ownerViewActive && (
+            <>
+              <DesktopScrollRail />
+              <UnifiedScrollHud
+                readingMode={readingMode}
+                onChangeReadingMode={setReadingMode}
+                onOpenCommandPalette={() => setCommandPaletteOpen(true)}
+              />
+            </>
+          )}
         </div>
 
         {/* Outside site-theme so light remapping cannot wash out dark chrome */}
@@ -184,6 +239,7 @@ export default function App() {
         <AnnouncementsModal
           isOpen={announcementsOpen}
           onClose={() => setAnnouncementsOpen(false)}
+          onOpenOwnerConsole={handleEnterOwnerConsole}
         />
 
         <CommandPalette
@@ -196,6 +252,7 @@ export default function App() {
           onOpenAnnouncements={() => setAnnouncementsOpen(true)}
           onOpenDigitalCard={() => setDigitalCardOpen(true)}
           onOpenTerminal={() => setTerminalOpen(true)}
+          onOpenOwnerConsole={handleEnterOwnerConsole}
         />
 
         <EngineeringTerminal

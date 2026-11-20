@@ -145,15 +145,15 @@ export function buildContentSecurityPolicy(
   return [
     "default-src 'self'",
     isDev
-      ? "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com https://www.gstatic.com https://challenges.cloudflare.com"
-      : "script-src 'self' 'unsafe-inline' https://apis.google.com https://www.gstatic.com https://challenges.cloudflare.com",
+      ? "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com https://www.gstatic.com https://www.google.com https://challenges.cloudflare.com"
+      : "script-src 'self' 'unsafe-inline' https://apis.google.com https://www.gstatic.com https://www.google.com https://challenges.cloudflare.com",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "img-src 'self' data: blob: https://*.googleusercontent.com",
     "font-src 'self' data: https://fonts.gstatic.com",
     isDev
-      ? "connect-src 'self' ws: wss: https://challenges.cloudflare.com https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com"
-      : "connect-src 'self' https://challenges.cloudflare.com https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com",
-    "frame-src 'self' https://challenges.cloudflare.com https://*.firebaseapp.com https://accounts.google.com",
+      ? "connect-src 'self' ws: wss: https://challenges.cloudflare.com https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com https://accounts.google.com"
+      : "connect-src 'self' https://challenges.cloudflare.com https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com https://accounts.google.com",
+    "frame-src 'self' https://challenges.cloudflare.com https://*.firebaseapp.com https://accounts.google.com https://www.google.com",
     "worker-src 'self' blob:",
     "manifest-src 'self'",
     "base-uri 'self'",
@@ -260,3 +260,93 @@ export async function verifyTurnstileToken(
     return { ok: false, skipped: false, error: 'Bot verification unavailable. Please try again shortly.' };
   }
 }
+
+const BLOCKED_CRAWLER_AND_SCANNER_UA_REGEX =
+  /\b(gptbot|chatgpt-user|oai-searchbot|google-extended|ccbot|claudebot|claude-web|anthropic-ai|bytespider|perplexitybot|applebot-extended|amazonbot|meta-externalagent|facebookbot|diffbot|cohere-ai|omgilibot|omgili|youbot|imagesiftbot|timpibot|scrapy|sqlmap|nikto|gobuster|dirbuster|masscan|nuclei|semrushbot|ahrefsbot|mj12bot|dotbot)\b/i;
+
+const BLOCKED_POST_SCRIPT_UA_REGEX =
+  /\b(headlesschrome|phantomjs|python-urllib|python-requests|go-http-client|java\/|httpclient|aiohttp|httpx)\b/i;
+
+/** Reject blatant AI scrapers, vulnerability scanners, and automated form-submission scripts. */
+export function isBlockedBotUserAgent(
+  userAgent: string | undefined,
+  isPostMutation = false
+): boolean {
+  if (!userAgent || typeof userAgent !== 'string') {
+    return isPostMutation;
+  }
+  const clean = userAgent.trim();
+  if (!clean) return isPostMutation;
+  if (BLOCKED_CRAWLER_AND_SCANNER_UA_REGEX.test(clean)) return true;
+  if (isPostMutation && BLOCKED_POST_SCRIPT_UA_REGEX.test(clean)) return true;
+  return false;
+}
+
+/** Reject browser requests explicitly marked as cross-site via Fetch Metadata. */
+export function isDisallowedFetchSite(
+  secFetchSiteHeader: string | string[] | undefined
+): boolean {
+  if (!secFetchSiteHeader) return false;
+  const raw = Array.isArray(secFetchSiteHeader)
+    ? secFetchSiteHeader[0]
+    : secFetchSiteHeader;
+  if (typeof raw !== 'string') return false;
+  return raw.trim().toLowerCase() === 'cross-site';
+}
+
+const SAFE_HOSTNAME_REGEX = /^[a-z0-9.-]+(?::\d{1,5})?$/i;
+
+/**
+ * Resolve a safe canonical origin for dynamic OG tags without trusting arbitrary Host headers.
+ */
+export function resolveSafeBaseUrl(
+  options: {
+    appUrl?: string;
+    protoHeader?: string | string[];
+    hostHeader?: string | string[];
+    protocol?: string;
+  },
+  allowedOrigins: string[]
+): string {
+  const defaultOrigin = 'https://www.mohammedsufyan.com';
+  if (options.appUrl) {
+    try {
+      const parsed = new URL(options.appUrl);
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+        return `${parsed.protocol}//${parsed.host}`;
+      }
+    } catch {
+      /* ignore invalid APP_URL */
+    }
+  }
+
+  const rawHost = Array.isArray(options.hostHeader)
+    ? options.hostHeader[0]
+    : options.hostHeader;
+  const candidateHost = rawHost ? rawHost.split(',')[0].trim() : '';
+  if (!candidateHost || !SAFE_HOSTNAME_REGEX.test(candidateHost)) {
+    return defaultOrigin;
+  }
+
+  const rawProto = Array.isArray(options.protoHeader)
+    ? options.protoHeader[0]
+    : options.protoHeader;
+  const protoCandidate = (rawProto || options.protocol || 'https')
+    .split(',')[0]
+    .trim()
+    .toLowerCase();
+  const safeProto = protoCandidate === 'http' ? 'http' : 'https';
+  const candidateOrigin = `${safeProto}://${candidateHost}`.toLowerCase();
+
+  if (
+    isAiStudioPreviewHost(candidateHost) ||
+    candidateHost.startsWith('localhost:') ||
+    candidateHost.startsWith('127.0.0.1:') ||
+    allowedOrigins.some((origin) => origin.toLowerCase() === candidateOrigin)
+  ) {
+    return `${safeProto}://${candidateHost}`;
+  }
+
+  return defaultOrigin;
+}
+

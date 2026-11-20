@@ -1,0 +1,398 @@
+import { useState } from 'react';
+import {
+  ArrowLeft,
+  Download,
+  ExternalLink,
+  History,
+  LogOut,
+  Megaphone,
+  MessageSquare,
+  Shield,
+  ShieldCheck,
+  SlidersHorizontal,
+  Wrench,
+} from 'lucide-react';
+import { useFirebase } from '../contexts/FirebaseContext';
+import { useTheme } from '../theme/ThemeProvider';
+import { OWNER_EMAIL } from '../utils/announcementValidation';
+import { CvAnalyticsPanel, type WorkspaceTab } from './CvAnalyticsView';
+import OwnerAnnouncementsPanel from './OwnerAnnouncementsPanel';
+
+export type OwnerConsoleSection = WorkspaceTab | 'announcements';
+
+interface OwnerConsolePageProps {
+  onBackToPortfolio: () => void;
+  onOpenResume: () => void;
+}
+
+export default function OwnerConsolePage({
+  onBackToPortfolio,
+  onOpenResume,
+}: OwnerConsolePageProps) {
+  const { isLight } = useTheme();
+  const {
+    user,
+    cvDownloadLogs,
+    contactMessageLogs,
+    announcements,
+    accessRules,
+    adminAuditLogs,
+    portfolioSettings,
+    signOutOwner,
+  } = useFirebase();
+
+  const [section, setSection] = useState<OwnerConsoleSection>('downloads');
+
+  const newInquiryCount = contactMessageLogs.filter((m) => m.triageStatus === 'new').length;
+
+  const navGroups: Array<{
+    groupLabel: string;
+    items: Array<{
+      id: OwnerConsoleSection;
+      label: string;
+      badge?: string;
+      icon: typeof Download;
+    }>;
+  }> = [
+    {
+      groupLabel: 'Telemetry & Outreach',
+      items: [
+        {
+          id: 'downloads',
+          label: 'CV Analytics',
+          badge: String(cvDownloadLogs.length),
+          icon: Download,
+        },
+        {
+          id: 'messages',
+          label: 'Messages & Triage',
+          badge:
+            newInquiryCount > 0
+              ? `${newInquiryCount} new`
+              : String(contactMessageLogs.length),
+          icon: MessageSquare,
+        },
+      ],
+    },
+    {
+      groupLabel: 'Content & Governance',
+      items: [
+        {
+          id: 'announcements',
+          label: 'Announcements',
+          badge: String(announcements.length),
+          icon: Megaphone,
+        },
+        {
+          id: 'rules',
+          label: 'Allow / Block Rules',
+          badge: String(accessRules.length),
+          icon: Shield,
+        },
+        {
+          id: 'settings',
+          label: 'Site Controls',
+          icon: SlidersHorizontal,
+        },
+        {
+          id: 'audit',
+          label: 'Admin Audit Log',
+          badge: String(adminAuditLogs.length),
+          icon: History,
+        },
+      ],
+    },
+  ];
+
+  const handleSignOut = async () => {
+    await signOutOwner();
+    onBackToPortfolio();
+  };
+
+  const pageBg = isLight ? 'bg-slate-50 text-slate-900' : 'bg-[#06080d] text-slate-200';
+  const surface = isLight
+    ? 'border-slate-200 bg-white'
+    : 'border-slate-800/90 bg-[#0b101b]';
+  const subSurface = isLight
+    ? 'border-slate-200 bg-slate-50'
+    : 'border-slate-800 bg-[#080c15]';
+  const titleCls = isLight ? 'text-slate-900' : 'text-white';
+  const mutedCls = isLight ? 'text-slate-500' : 'text-slate-400';
+  const accentCls = isLight ? 'text-sky-700' : 'text-cyan-400';
+
+  const activeTitleMap: Record<OwnerConsoleSection, { title: string; subtitle: string }> = {
+    downloads: {
+      title: 'CV Downloads & Visitor Intelligence',
+      subtitle:
+        'Interactive analytics charts, exact Light/Dark PDF export, OTP tracking, and network inspection.',
+    },
+    messages: {
+      title: 'Transmitted Messages & Inquiry Triage',
+      subtitle:
+        'Review OTP-verified submissions, classify status (New / Replied / Shortlisted / Archived), and add private notes.',
+    },
+    announcements: {
+      title: 'Announcements & Publications Manager',
+      subtitle:
+        'Create, update, and curate public career milestones and architecture announcements.',
+    },
+    rules: {
+      title: 'Allowlist & Blocklist Access Rules',
+      subtitle:
+        'Manage real-time email, domain, and IP policies enforced by server endpoints before dispatch.',
+    },
+    settings: {
+      title: 'Portfolio Feature & Maintenance Toggles',
+      subtitle:
+        'Control public availability posture, maintenance banner messaging, form pauses, and global strict OTP.',
+    },
+    audit: {
+      title: 'Admin Audit & Login History',
+      subtitle:
+        'Immutable owner authentication and governance audit trail across sessions and rules.',
+    },
+  };
+
+  const meta = activeTitleMap[section];
+
+  return (
+    <div className={`min-h-[calc(100vh-4rem)] w-full transition-colors duration-300 ${pageBg}`}>
+      <div className="page-shell py-6 sm:py-8 space-y-6">
+        {/* Top Workspace Header */}
+        <div
+          className={`rounded-2xl border p-4 sm:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4 shadow-sm ${surface}`}
+        >
+          <div className="space-y-1.5 min-w-0">
+            <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono">
+              <span
+                className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md border font-semibold ${
+                  isLight
+                    ? 'border-sky-300 bg-sky-50 text-sky-800'
+                    : 'border-cyan-500/40 bg-cyan-950/40 text-cyan-300'
+                }`}
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>OWNER CONSOLE</span>
+              </span>
+              <span className={mutedCls}>{user?.email || OWNER_EMAIL}</span>
+              {portfolioSettings.maintenanceMode && (
+                <span
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[10px] font-semibold ${
+                    isLight
+                      ? 'border-amber-300 bg-amber-50 text-amber-800'
+                      : 'border-amber-500/40 bg-amber-950/40 text-amber-300'
+                  }`}
+                >
+                  <Wrench className="w-3 h-3" />
+                  <span>Maintenance Active</span>
+                </span>
+              )}
+              {portfolioSettings.strictOtpForAll && (
+                <span
+                  className={`px-2 py-0.5 rounded border text-[10px] font-semibold ${
+                    isLight
+                      ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
+                      : 'border-emerald-500/40 bg-emerald-950/40 text-emerald-300'
+                  }`}
+                >
+                  Strict OTP Global
+                </span>
+              )}
+            </div>
+
+            <h1 className={`text-xl sm:text-2xl font-display font-bold tracking-tight ${titleCls}`}>
+              {meta.title}
+            </h1>
+            <p className={`text-xs sm:text-sm ${mutedCls}`}>{meta.subtitle}</p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={onBackToPortfolio}
+              className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border text-xs font-medium transition-colors cursor-pointer whitespace-nowrap ${
+                isLight
+                  ? 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
+                  : 'border-slate-700 bg-slate-900/70 text-slate-200 hover:border-cyan-500/40 hover:text-white'
+              }`}
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Public Portfolio</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={onOpenResume}
+              className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border text-xs font-medium transition-colors cursor-pointer whitespace-nowrap ${
+                isLight
+                  ? 'border-sky-300 bg-sky-50 text-sky-800 hover:bg-sky-100'
+                  : 'border-cyan-500/40 bg-cyan-950/40 text-cyan-300 hover:bg-cyan-900/50'
+              }`}
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span>CV Studio</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => void handleSignOut()}
+              className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border text-xs font-mono transition-colors cursor-pointer whitespace-nowrap ${
+                isLight
+                  ? 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100'
+                  : 'border-rose-500/35 bg-rose-950/30 text-rose-300 hover:bg-rose-950/50'
+              }`}
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span>Sign Out</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Mobile / Tablet Section Switcher (< lg) */}
+        <div
+          className={`lg:hidden flex items-center gap-1.5 overflow-x-auto rounded-xl border p-1.5 ${surface}`}
+        >
+          {navGroups.flatMap((g) => g.items).map((item) => {
+            const Icon = item.icon;
+            const active = section === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setSection(item.id)}
+                className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-mono transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                  active
+                    ? item.id === 'messages'
+                      ? 'bg-[#34d399] text-slate-950 font-semibold'
+                      : 'bg-[#38bdf8] text-slate-950 font-semibold'
+                    : isLight
+                      ? 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                      : 'text-slate-400 hover:bg-slate-800/70 hover:text-white'
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                <span>{item.label}</span>
+                {item.badge !== undefined && (
+                  <span
+                    className={`px-1.5 py-0.5 rounded text-[10px] tabular-nums ${
+                      active
+                        ? 'bg-slate-950/15 text-slate-950 font-bold'
+                        : isLight
+                          ? 'bg-slate-100 text-slate-600'
+                          : 'bg-slate-900 text-slate-300'
+                    }`}
+                  >
+                    {item.badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Desktop SaaS Workspace Grid: Left Sidebar + Main Workspace Canvas */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          {/* Desktop Left Rail */}
+          <aside className="hidden lg:block lg:col-span-3 sticky top-24 space-y-4">
+            <div className={`rounded-2xl border p-3.5 space-y-5 shadow-sm ${surface}`}>
+              {navGroups.map((group) => (
+                <div key={group.groupLabel} className="space-y-1.5">
+                  <div className={`px-2.5 text-[10px] font-mono uppercase tracking-wider ${mutedCls}`}>
+                    {group.groupLabel}
+                  </div>
+                  <div className="space-y-1">
+                    {group.items.map((item) => {
+                      const Icon = item.icon;
+                      const active = section === item.id;
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => setSection(item.id)}
+                          className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-xs font-mono transition-colors cursor-pointer ${
+                            active
+                              ? item.id === 'messages'
+                                ? 'bg-[#34d399] text-slate-950 font-semibold shadow-xs'
+                                : 'bg-[#38bdf8] text-slate-950 font-semibold shadow-xs'
+                              : isLight
+                                ? 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                                : 'text-slate-300 hover:bg-slate-800/70 hover:text-white'
+                          }`}
+                        >
+                          <span className="flex items-center gap-2.5 min-w-0 truncate">
+                            <Icon className="w-4 h-4 shrink-0" />
+                            <span className="truncate">{item.label}</span>
+                          </span>
+                          {item.badge !== undefined && (
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[10px] tabular-nums shrink-0 ${
+                                active
+                                  ? 'bg-slate-950/15 text-slate-950 font-bold'
+                                  : isLight
+                                    ? 'bg-slate-100 text-slate-600'
+                                    : 'bg-slate-900 text-slate-300'
+                              }`}
+                            >
+                              {item.badge}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+
+              {/* Posture Snapshot */}
+              <div className={`rounded-xl border p-3 space-y-2 text-[11px] font-mono ${subSurface}`}>
+                <div className={`text-[10px] uppercase tracking-wider ${accentCls}`}>
+                  Live Enforcement Posture
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className={mutedCls}>Contact Form</span>
+                  <span
+                    className={
+                      portfolioSettings.enableContactForm ? 'text-emerald-500 font-semibold' : 'text-amber-500 font-semibold'
+                    }
+                  >
+                    {portfolioSettings.enableContactForm ? 'Active' : 'Paused'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className={mutedCls}>CV Exports</span>
+                  <span
+                    className={
+                      portfolioSettings.enableCvDownloads ? 'text-emerald-500 font-semibold' : 'text-amber-500 font-semibold'
+                    }
+                  >
+                    {portfolioSettings.enableCvDownloads ? 'Active' : 'Paused'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className={mutedCls}>Availability</span>
+                  <span className={titleCls}>{portfolioSettings.availabilityStatus.toUpperCase()}</span>
+                </div>
+              </div>
+            </div>
+          </aside>
+
+          {/* Primary Console Panel */}
+          <main className="lg:col-span-9 min-w-0">
+            <div className={`rounded-2xl border p-4 sm:p-6 shadow-sm ${surface}`}>
+              {section === 'announcements' ? (
+                <OwnerAnnouncementsPanel isLight={isLight} />
+              ) : (
+                <CvAnalyticsPanel
+                  isLight={isLight}
+                  activeTab={section}
+                  onTabChange={(tab) => setSection(tab)}
+                  hideTabBar
+                />
+              )}
+            </div>
+          </main>
+        </div>
+      </div>
+    </div>
+  );
+}

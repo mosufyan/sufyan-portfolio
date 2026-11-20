@@ -262,6 +262,370 @@
         "isSubsequent",
         "createdAt"
       ]
+    },
+    "ContactMessageLog": {
+      "title": "ContactMessageLog",
+      "description": "Immutable Contact / Transmit Message inquiry log with sender contact details and network/geo/VPN telemetry.",
+      "type": "object",
+      "properties": {
+        "messageId": {
+          "type": "string",
+          "description": "Unique traceable inquiry ID (e.g., MSG-A1B2C3D4).",
+          "minLength": 4,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "senderName": {
+          "type": "string",
+          "description": "Sender full name.",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "senderEmail": {
+          "type": "string",
+          "description": "Validated sender email address.",
+          "minLength": 3,
+          "maxLength": 254
+        },
+        "senderPhone": {
+          "type": "string",
+          "description": "Optional E.164 normalized phone number (empty string when omitted).",
+          "maxLength": 40
+        },
+        "subject": {
+          "type": "string",
+          "description": "Optional inquiry subject line.",
+          "maxLength": 200
+        },
+        "message": {
+          "type": "string",
+          "description": "Submitted contact message body.",
+          "minLength": 1,
+          "maxLength": 5000
+        },
+        "theme": {
+          "type": "string",
+          "description": "Visual theme active during submission.",
+          "enum": ["dark", "light"],
+          "minLength": 4,
+          "maxLength": 8
+        },
+        "ipAddress": {
+          "type": "string",
+          "description": "Server-resolved client IP address.",
+          "maxLength": 64
+        },
+        "country": {
+          "type": "string",
+          "description": "Resolved country name.",
+          "maxLength": 80
+        },
+        "region": {
+          "type": "string",
+          "description": "Resolved region or state.",
+          "maxLength": 80
+        },
+        "city": {
+          "type": "string",
+          "description": "Resolved city.",
+          "maxLength": 80
+        },
+        "isp": {
+          "type": "string",
+          "description": "Resolved ISP or hosting organization.",
+          "maxLength": 120
+        },
+        "asn": {
+          "type": "string",
+          "description": "Autonomous System Number.",
+          "maxLength": 64
+        },
+        "timezone": {
+          "type": "string",
+          "description": "IP-resolved IANA timezone.",
+          "maxLength": 64
+        },
+        "clientTimezone": {
+          "type": "string",
+          "description": "Browser-reported IANA timezone.",
+          "maxLength": 64
+        },
+        "isVpnSuspected": {
+          "type": "boolean",
+          "description": "True when proxy, hosting ASN, or timezone mismatch indicates VPN/proxy usage."
+        },
+        "riskLevel": {
+          "type": "string",
+          "description": "Server-evaluated risk tier.",
+          "enum": ["low", "medium", "high"],
+          "minLength": 3,
+          "maxLength": 10
+        },
+        "riskReasons": {
+          "type": "string",
+          "description": "Comma-separated summary of risk triggers.",
+          "maxLength": 240
+        },
+        "referrer": {
+          "type": "string",
+          "description": "Landing referrer or source tag.",
+          "maxLength": 200
+        },
+        "userAgent": {
+          "type": "string",
+          "description": "Truncated HTTP User-Agent string.",
+          "maxLength": 220
+        },
+        "triageStatus": {
+          "type": "string",
+          "description": "Owner-only inquiry triage stage.",
+          "enum": ["new", "replied", "shortlisted", "archived"],
+          "minLength": 3,
+          "maxLength": 16
+        },
+        "ownerNote": {
+          "type": "string",
+          "description": "Private owner-only triage note.",
+          "maxLength": 1000
+        },
+        "triagedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server-assigned timestamp of the latest owner triage update."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server-assigned log creation timestamp."
+        }
+      },
+      "required": [
+        "messageId",
+        "senderName",
+        "senderEmail",
+        "senderPhone",
+        "subject",
+        "message",
+        "theme",
+        "ipAddress",
+        "country",
+        "region",
+        "city",
+        "isp",
+        "asn",
+        "timezone",
+        "clientTimezone",
+        "isVpnSuspected",
+        "riskLevel",
+        "riskReasons",
+        "referrer",
+        "userAgent",
+        "createdAt"
+      ]
+    },
+    "AdminAuditLog": {
+      "title": "AdminAuditLog",
+      "description": "Owner-only immutable audit trail for sign-ins, sign-outs, settings changes, access rule updates, and triage actions.",
+      "type": "object",
+      "properties": {
+        "auditId": {
+          "type": "string",
+          "description": "Unique audit log identifier matching the document ID.",
+          "minLength": 4,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "eventType": {
+          "type": "string",
+          "description": "Type of owner security or governance event.",
+          "enum": [
+            "owner_login",
+            "owner_logout",
+            "settings_updated",
+            "rule_created",
+            "rule_deleted",
+            "triage_updated",
+            "announcement_mutated"
+          ],
+          "minLength": 4,
+          "maxLength": 32
+        },
+        "actorEmail": {
+          "type": "string",
+          "description": "Verified owner email address.",
+          "minLength": 3,
+          "maxLength": 254
+        },
+        "actorUid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the acting owner.",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "summary": {
+          "type": "string",
+          "description": "Human-readable audit event summary.",
+          "minLength": 3,
+          "maxLength": 240
+        },
+        "userAgent": {
+          "type": "string",
+          "description": "Truncated browser User-Agent string.",
+          "maxLength": 220
+        },
+        "timezone": {
+          "type": "string",
+          "description": "Actor browser IANA timezone.",
+          "maxLength": 64
+        },
+        "hostname": {
+          "type": "string",
+          "description": "Hostname where the owner action occurred.",
+          "maxLength": 120
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server-assigned creation timestamp."
+        }
+      },
+      "required": [
+        "auditId",
+        "eventType",
+        "actorEmail",
+        "actorUid",
+        "summary",
+        "userAgent",
+        "timezone",
+        "hostname",
+        "createdAt"
+      ]
+    },
+    "PortfolioSettings": {
+      "title": "PortfolioSettings",
+      "description": "Public non-PII portfolio feature flags, availability state, and maintenance mode controls managed exclusively by the portfolio owner.",
+      "type": "object",
+      "properties": {
+        "availabilityStatus": {
+          "type": "string",
+          "description": "Current hiring or consulting availability posture.",
+          "enum": ["open", "advisory", "unavailable"],
+          "minLength": 4,
+          "maxLength": 16
+        },
+        "availabilityText": {
+          "type": "string",
+          "description": "Optional custom availability message displayed on Contact and Hero surfaces.",
+          "maxLength": 140
+        },
+        "maintenanceMode": {
+          "type": "boolean",
+          "description": "Whether the portfolio displays a maintenance notice banner."
+        },
+        "maintenanceMessage": {
+          "type": "string",
+          "description": "Message shown when maintenance mode is enabled.",
+          "maxLength": 300
+        },
+        "enableContactForm": {
+          "type": "boolean",
+          "description": "Whether visitors can submit the Contact / Transmit Message form."
+        },
+        "enableCvDownloads": {
+          "type": "boolean",
+          "description": "Whether visitors can initiate CV exports/downloads."
+        },
+        "strictOtpForAll": {
+          "type": "boolean",
+          "description": "Owner runtime toggle requiring Email OTP verification for all CV exports."
+        },
+        "showAnnouncementsBadge": {
+          "type": "boolean",
+          "description": "Whether the navbar Announcements indicator is highlighted."
+        },
+        "updatedByUid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the owner who saved settings.",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server-assigned update timestamp."
+        }
+      },
+      "required": [
+        "availabilityStatus",
+        "availabilityText",
+        "maintenanceMode",
+        "maintenanceMessage",
+        "enableContactForm",
+        "enableCvDownloads",
+        "strictOtpForAll",
+        "showAnnouncementsBadge",
+        "updatedByUid",
+        "updatedAt"
+      ]
+    },
+    "AccessRule": {
+      "title": "AccessRule",
+      "description": "Owner-managed email, domain, or IP allowlist/blocklist rule.",
+      "type": "object",
+      "properties": {
+        "ruleId": {
+          "type": "string",
+          "description": "Unique rule identifier matching the document ID.",
+          "minLength": 4,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ruleType": {
+          "type": "string",
+          "description": "Allowlist (bypass CV OTP friction) or Blocklist (reject requests).",
+          "enum": ["allow", "block"],
+          "minLength": 4,
+          "maxLength": 8
+        },
+        "matchType": {
+          "type": "string",
+          "description": "Entity type matched by this rule.",
+          "enum": ["email", "domain", "ip"],
+          "minLength": 2,
+          "maxLength": 10
+        },
+        "value": {
+          "type": "string",
+          "description": "Lowercase email, domain, or IP address.",
+          "minLength": 2,
+          "maxLength": 254
+        },
+        "note": {
+          "type": "string",
+          "description": "Optional reason for allowlisting or blocking.",
+          "maxLength": 200
+        },
+        "createdByUid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the owner who created this rule.",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server-assigned creation timestamp."
+        }
+      },
+      "required": [
+        "ruleId",
+        "ruleType",
+        "matchType",
+        "value",
+        "note",
+        "createdByUid",
+        "createdAt"
+      ]
     }
   },
   "firestore": {
@@ -282,6 +646,30 @@
         "$ref": "#/entities/CvDownloadLog"
       },
       "description": "PII-isolated CV download and export audit logs; strictly owner-only read/list/delete and schema-validated immutable creation."
+    },
+    "/contact_messages/{messageId}": {
+      "schema": {
+        "$ref": "#/entities/ContactMessageLog"
+      },
+      "description": "PII-isolated Contact / Transmit Message inquiry logs; public create, strictly owner-only read/list/delete and triage status/note updates."
+    },
+    "/admin_audit_logs/{auditId}": {
+      "schema": {
+        "$ref": "#/entities/AdminAuditLog"
+      },
+      "description": "Owner-only login/logout and governance action audit history."
+    },
+    "/portfolio_settings/{settingsId}": {
+      "schema": {
+        "$ref": "#/entities/PortfolioSettings"
+      },
+      "description": "Singleton public configuration document (`global`) for feature and maintenance toggles; owner-only mutations."
+    },
+    "/access_rules/{ruleId}": {
+      "schema": {
+        "$ref": "#/entities/AccessRule"
+      },
+      "description": "PII-isolated owner allowlist and blocklist rules; strictly owner-only read/list/create/delete."
     }
   }
 }
