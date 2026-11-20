@@ -20,3 +20,16 @@
 10. Owner injects invalid `badge` value (`"HACKED"`) -> **DENIED** (`badge in [...]`).
 11. Oversized `summary` (> 600 chars) or `title` (> 180 chars) or document ID (> 128 chars / invalid chars) -> **DENIED**.
 12. Authenticated user attempts `create` or `list` on `/admins/{uid}` -> **DENIED** (`allow list, create, update, delete: if false`).
+
+## CV Download Audit Logs (`/cv_downloads/{downloadId}`) Invariants
+6. **Strict PII Isolation**: `/cv_downloads` contains `visitorEmail`, `visitorPhone`, and `ipAddress`. Public visitors and non-owner signed-in users are strictly forbidden from reading (`get` or `list`) any document. Only verified owner `sufyan.net@gmail.com` (or trusted `/admins/{uid}`) may read/list/delete.
+7. **Immutable Append-Only Audit Trail**: Updates to `/cv_downloads/{downloadId}` are globally denied (`allow update: if false`).
+8. **Strict Schema & Size Bounds on Create**: Every create must provide exact allowlisted keys, valid `downloadId`/`sessionId` IDs matching path, `createdAt == request.time`, valid enum values (`action`, `theme`, `verificationStatus`, `riskLevel`), boolean type checks on risk flags, and capped string lengths.
+
+## Additional Dirty Dozen Checks for `/cv_downloads/{downloadId}`
+- Unauthenticated or non-owner signed-in `get` / `list` on `/cv_downloads` -> **DENIED**.
+- Spoofed `sufyan.net@gmail.com` with `email_verified: false` attempting `list` or `delete` on `/cv_downloads` -> **DENIED**.
+- Public visitor attempting `update` on `/cv_downloads/{id}` -> **DENIED**.
+- Public visitor attempting `create` with ghost field (`isVerifiedAdmin: true`) or `downloadId != pathId` or forged `createdAt` -> **DENIED**.
+- Public visitor injecting 50KB `reason` or `userAgent` string (Denial-of-Wallet) -> **DENIED**.
+

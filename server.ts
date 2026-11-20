@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import 'dotenv/config';
 import express from 'express';
 import type { NextFunction, Request, Response } from 'express';
@@ -25,6 +26,23 @@ import {
   verifyTurnstileToken,
 } from './server/security.ts';
 import { getEmailPalette, parseEmailTheme, type EmailTheme } from './server/emailTheme.ts';
+import {
+  assessVisitorRisk,
+  createOtpChallenge,
+  extractClientIp,
+  generateDownloadId,
+  generateSessionId,
+  isPlausiblePhoneNumber,
+  lookupIpIntelligence,
+  maskEmailAddress,
+  signSessionReceipt,
+  verifyEmailMxRecord,
+  verifyOtpChallenge,
+  verifySessionReceipt,
+  type OtpChallengeRecord,
+  type VerificationStatus,
+  type VisitorTelemetryReport,
+} from './server/telemetry.ts';
 import { buildDynamicSocialSvg, SHARE_CARD_TRACKS, type ShareTrackId } from './src/utils/ogShare.ts';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -33,9 +51,18 @@ const __dirname = path.dirname(__filename);
 const PORT = Number(process.env.PORT) || 3000;
 const DESTINATION_EMAIL = process.env.CONTACT_TO_EMAIL || 'sufyan.net@gmail.com';
 const TURNSTILE_SECRET = process.env.TURNSTILE_SECRET_KEY?.trim() || '';
+const TURNSTILE_SITE_KEY =
+  process.env.VITE_TURNSTILE_SITE_KEY?.trim() || process.env.TURNSTILE_SITE_KEY?.trim() || '';
+const OTP_SECRET =
+  process.env.SESSION_SECRET?.trim() ||
+  TURNSTILE_SECRET ||
+  crypto.randomBytes(32).toString('hex');
+const FORCE_CV_OTP = (process.env.FORCE_CV_OTP || '').toLowerCase() === 'true';
 const ALLOWED_ORIGINS = resolveAllowedOrigins(process.env.APP_URL, PORT);
 const contactRateLimitMap = createRateLimitBucket();
 const cvAccessRateLimitMap = createRateLimitBucket();
+const cvEventRateLimitMap = createRateLimitBucket();
+const otpChallengeStore = new Map<string, OtpChallengeRecord>();
 
 interface ContactPayload {
   name: string;
@@ -240,7 +267,26 @@ function formatCvActionLabel(action: CvAccessPayload['action']): string {
   return 'PDF Download';
 }
 
-function buildCvAccessEmailHtml(payload: CvAccessPayload, timestamp: string, userAgent: string): string {
+function formatVerificationLabel(status: VerificationStatus): string {
+  if (status === 'otp_verified') return 'OTP VERIFIED EMAIL';
+  if (status === 'mx_verified') return 'MX VERIFIED EMAIL';
+  if (status === 'repeat_session') return 'VERIFIED SESSION EXPORT';
+  return 'PHONE ONLY (UNVERIFIED EMAIL)';
+}
+
+function buildLocationDisplay(telemetry: VisitorTelemetryReport): string {
+  const parts = [telemetry.ip.city, telemetry.ip.region, telemetry.ip.country].filter(
+    (part) => Boolean(part) && part !== 'Unknown'
+  );
+  return parts.length > 0 ? parts.join(', ') : 'Unknown Location';
+}
+
+function buildCvAccessEmailHtml(
+  payload: CvAccessPayload,
+  timestamp: string,
+  telemetry: VisitorTelemetryReport,
+  isSubsequent: boolean
+): string {
   const p = getEmailPalette(parseEmailTheme(payload.theme));
   const safeName = escapeHtml(payload.name?.trim() || 'Not provided');
   const safeEmail = payload.email?.trim() ? escapeHtml(payload.email.trim()) : '';
@@ -249,7 +295,36 @@ function buildCvAccessEmailHtml(payload: CvAccessPayload, timestamp: string, use
   const safeAction = formatCvActionLabel(payload.action);
   const safeReason = escapeHtml(payload.reason).replace(/\r?\n/g, '<br />');
   const safeTime = escapeHtml(timestamp);
-  const safeUa = escapeHtml(userAgent.slice(0, 180) || 'Unknown client');
+  const safeUa = escapeHtml(telemetry.userAgent.slice(0, 180) || 'Unknown client');
+
+  const safeDownloadId = escapeHtml(telemetry.downloadId);
+  const safeSessionId = escapeHtml(telemetry.sessionId);
+  const safeVerifyLabel = escapeHtml(formatVerificationLabel(telemetry.verificationStatus));
+  const safeIp = escapeHtml(telemetry.ip.ipAddress || 'Unknown');
+  const safeLocation = escapeHtml(buildLocationDisplay(telemetry));
+  const safeIsp = escapeHtml(
+    telemetry.ip.asn ? `${telemetry.ip.isp} (${telemetry.ip.asn})` : telemetry.ip.isp
+  );
+  const safeIpTz = escapeHtml(telemetry.ip.timezone || 'Unknown');
+  const safeClientTz = escapeHtml(telemetry.clientTimezone || 'Not reported');
+  const safeReferrer = escapeHtml(telemetry.referrer || 'Direct / Portfolio');
+  const safeDeviceContext = escapeHtml(
+    [telemetry.clientLanguage || '', telemetry.clientScreen || ''].filter(Boolean).join(' · ') || 'Standard browser'
+  );
+
+  const riskBadgeText = telemetry.risk.isVpnSuspected
+    ? `VPN / PROXY SUSPECTED (${telemetry.risk.riskLevel.toUpperCase()})`
+    : `LOW RISK (${telemetry.risk.riskLevel.toUpperCase()})`;
+  const riskColors = telemetry.risk.isVpnSuspected
+    ? p.theme === 'light'
+      ? { bg: '#fff1f2', border: '#fda4af', text: '#be123c' }
+      : { bg: '#4c0519', border: '#f43f5e', text: '#fda4af' }
+    : { bg: p.badgeSuccessBg, border: p.badgeSuccessBorder, text: p.badgeSuccessText };
+
+  const riskReasonsText =
+    telemetry.risk.riskReasons.length > 0
+      ? escapeHtml(telemetry.risk.riskReasons.join(' · '))
+      : 'No VPN, proxy, or timezone anomalies detected';
 
   return `<!DOCTYPE html>
 <html lang="en" data-theme="${p.theme}">
@@ -281,7 +356,7 @@ function buildCvAccessEmailHtml(payload: CvAccessPayload, timestamp: string, use
                             MOHAMMED SUFYAN
                           </div>
                           <div style="font-size:11px;font-family:monospace;color:${p.accent};text-transform:uppercase;letter-spacing:0.08em;margin-top:2px;">
-                            CV Export &amp; Access Alert
+                            ${isSubsequent ? 'Subsequent CV Export Telemetry' : 'CV Export &amp; Verification Alert'}
                           </div>
                         </td>
                       </tr>
@@ -301,14 +376,19 @@ function buildCvAccessEmailHtml(payload: CvAccessPayload, timestamp: string, use
           <tr>
             <td style="padding:24px 28px 16px 28px;">
               <div style="font-size:11px;font-family:monospace;color:${p.accent};text-transform:uppercase;letter-spacing:0.1em;margin-bottom:6px;">
-                RESUME / PORTFOLIO ACCESSED
+                ${safeVerifyLabel} · REF ${safeDownloadId}
               </div>
               <h1 style="margin:0;font-size:21px;font-weight:700;color:${p.textStrong};line-height:1.3;">
                 ${safeFormat} (${safeAction})
               </h1>
               <p style="margin:8px 0 0 0;font-size:12px;font-family:monospace;color:${p.textMuted};">
-                Exported ${safeTime} · Theme ${p.theme}
+                Exported ${safeTime} · Session ${safeSessionId} · Theme ${p.theme}
               </p>
+              <div style="margin-top:12px;">
+                <span style="display:inline-block;padding:4px 10px;border-radius:6px;background-color:${riskColors.bg};border:1px solid ${riskColors.border};color:${riskColors.text};font-size:10px;font-family:monospace;font-weight:700;letter-spacing:0.06em;">
+                  ${escapeHtml(riskBadgeText)}
+                </span>
+              </div>
             </td>
           </tr>
 
@@ -356,6 +436,78 @@ function buildCvAccessEmailHtml(payload: CvAccessPayload, timestamp: string, use
             </td>
           </tr>
 
+          <!-- Network, Geo & VPN Security Telemetry -->
+          <tr>
+            <td style="padding:0 28px 16px 28px;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:${p.panelBg};border:1px solid ${p.border};border-radius:12px;">
+                <tr>
+                  <td colspan="2" style="padding:12px 18px;border-bottom:1px solid ${p.border};">
+                    <div style="font-size:10px;font-family:monospace;color:${p.accent};text-transform:uppercase;letter-spacing:0.08em;font-weight:700;">
+                      Network, Geo &amp; VPN Telemetry
+                    </div>
+                    <div style="font-size:12px;color:${p.textMuted};margin-top:4px;">
+                      ${riskReasonsText}
+                    </div>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:12px 18px;border-bottom:1px solid ${p.border};width:50%;">
+                    <div style="font-size:10px;font-family:monospace;color:${p.textSoft};text-transform:uppercase;">
+                      IP Address
+                    </div>
+                    <div style="font-size:13px;font-family:monospace;color:${p.textStrong};margin-top:4px;">
+                      ${safeIp}
+                    </div>
+                  </td>
+                  <td style="padding:12px 18px;border-bottom:1px solid ${p.border};border-left:1px solid ${p.border};width:50%;">
+                    <div style="font-size:10px;font-family:monospace;color:${p.textSoft};text-transform:uppercase;">
+                      Geo Location
+                    </div>
+                    <div style="font-size:13px;color:${p.textStrong};margin-top:4px;">
+                      ${safeLocation}
+                    </div>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:12px 18px;border-bottom:1px solid ${p.border};width:50%;">
+                    <div style="font-size:10px;font-family:monospace;color:${p.textSoft};text-transform:uppercase;">
+                      ISP / ASN
+                    </div>
+                    <div style="font-size:12px;font-family:monospace;color:${p.text};margin-top:4px;">
+                      ${safeIsp}
+                    </div>
+                  </td>
+                  <td style="padding:12px 18px;border-bottom:1px solid ${p.border};border-left:1px solid ${p.border};width:50%;">
+                    <div style="font-size:10px;font-family:monospace;color:${p.textSoft};text-transform:uppercase;">
+                      Timezone Check (IP vs Browser)
+                    </div>
+                    <div style="font-size:12px;font-family:monospace;color:${p.text};margin-top:4px;">
+                      ${safeIpTz} vs ${safeClientTz}
+                    </div>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:12px 18px;width:50%;">
+                    <div style="font-size:10px;font-family:monospace;color:${p.textSoft};text-transform:uppercase;">
+                      Referrer / Source
+                    </div>
+                    <div style="font-size:12px;font-family:monospace;color:${p.text};margin-top:4px;">
+                      ${safeReferrer}
+                    </div>
+                  </td>
+                  <td style="padding:12px 18px;border-left:1px solid ${p.border};width:50%;">
+                    <div style="font-size:10px;font-family:monospace;color:${p.textSoft};text-transform:uppercase;">
+                      Locale &amp; Viewport
+                    </div>
+                    <div style="font-size:12px;font-family:monospace;color:${p.text};margin-top:4px;">
+                      ${safeDeviceContext}
+                    </div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
           <!-- Reason / Purpose -->
           <tr>
             <td style="padding:8px 28px 20px 28px;">
@@ -384,7 +536,7 @@ function buildCvAccessEmailHtml(payload: CvAccessPayload, timestamp: string, use
           <tr>
             <td style="padding:14px 28px;background-color:${p.footerBg};border-top:1px solid ${p.border};font-size:11px;font-family:monospace;color:${p.textSoft};line-height:1.5;">
               <div>Client: ${safeUa}</div>
-              <div style="margin-top:4px;">Mohammed Sufyan Portfolio · Automated CV Access Telemetry</div>
+              <div style="margin-top:4px;">Mohammed Sufyan Portfolio · Hardened CV Access &amp; Audit Telemetry</div>
             </td>
           </tr>
         </table>
@@ -395,37 +547,115 @@ function buildCvAccessEmailHtml(payload: CvAccessPayload, timestamp: string, use
 </html>`;
 }
 
-function buildCvAccessPlainText(payload: CvAccessPayload, timestamp: string, userAgent: string): string {
+function buildCvAccessPlainText(
+  payload: CvAccessPayload,
+  timestamp: string,
+  telemetry: VisitorTelemetryReport,
+  isSubsequent: boolean
+): string {
   return [
-    'MOHAMMED SUFYAN — CV EXPORT & ACCESS ALERT',
-    '==========================================',
-    `Exported: ${timestamp}`,
-    `Theme:    ${parseEmailTheme(payload.theme)}`,
-    `Action:   ${formatCvActionLabel(payload.action)}`,
-    `Format:   ${payload.formatLabel}`,
-    `Name:     ${payload.name?.trim() || 'Not provided'}`,
-    `Email:    ${payload.email?.trim() || 'Not provided'}`,
-    `Phone:    ${payload.phone?.trim() || 'Not provided'}`,
+    `MOHAMMED SUFYAN — ${isSubsequent ? 'SUBSEQUENT CV EXPORT ALERT' : 'CV EXPORT & ACCESS ALERT'}`,
+    '====================================================',
+    `Download Ref: ${telemetry.downloadId}`,
+    `Session ID:   ${telemetry.sessionId}`,
+    `Verification: ${formatVerificationLabel(telemetry.verificationStatus)}`,
+    `Exported:     ${timestamp}`,
+    `Theme:        ${parseEmailTheme(payload.theme)}`,
+    `Action:       ${formatCvActionLabel(payload.action)}`,
+    `Format:       ${payload.formatLabel}`,
+    `Name:         ${payload.name?.trim() || 'Not provided'}`,
+    `Email:        ${payload.email?.trim() || 'Not provided'}`,
+    `Phone:        ${payload.phone?.trim() || 'Not provided'}`,
+    '',
+    'Network, Geo & VPN Telemetry:',
+    '-----------------------------',
+    `IP Address:   ${telemetry.ip.ipAddress || 'Unknown'}`,
+    `Location:     ${buildLocationDisplay(telemetry)}`,
+    `ISP / ASN:    ${telemetry.ip.isp}${telemetry.ip.asn ? ` (${telemetry.ip.asn})` : ''}`,
+    `VPN / Proxy:  ${telemetry.risk.isVpnSuspected ? 'SUSPECTED' : 'No'} (Risk: ${telemetry.risk.riskLevel.toUpperCase()})`,
+    `Risk Signals: ${telemetry.risk.riskReasons.join(', ') || 'None'}`,
+    `Timezones:    IP=${telemetry.ip.timezone || 'Unknown'} | Browser=${telemetry.clientTimezone || 'Unknown'}`,
+    `Referrer:     ${telemetry.referrer || 'Direct / Portfolio'}`,
     '',
     'Reason for Downloading:',
     '-----------------------',
     payload.reason,
     '',
-    `Client: ${userAgent || 'Unknown'}`,
+    `Client: ${telemetry.userAgent || 'Unknown'}`,
   ].join('\n');
 }
 
+function buildOtpEmailHtml(name: string, code: string, theme: EmailTheme): string {
+  const p = getEmailPalette(theme);
+  const safeName = escapeHtml(name || 'there');
+  const safeCode = escapeHtml(code);
+
+  return `<!DOCTYPE html>
+<html lang="en" data-theme="${p.theme}">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Your Verification Code — Mohammed Sufyan Portfolio</title>
+</head>
+<body style="margin:0;padding:0;background-color:${p.pageBg};font-family:'Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:${p.text};">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:${p.pageBg};padding:32px 16px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:520px;background-color:${p.cardBg};border:1px solid ${p.border};border-radius:16px;overflow:hidden;">
+          <tr>
+            <td style="padding:22px 26px;background-color:${p.headerBg};border-bottom:1px solid ${p.border};">
+              <div style="font-size:15px;font-weight:700;color:${p.textStrong};">MOHAMMED SUFYAN</div>
+              <div style="font-size:11px;font-family:monospace;color:${p.accent};text-transform:uppercase;margin-top:2px;">
+                Portfolio Access Verification
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:26px;">
+              <p style="margin:0 0 14px 0;font-size:14px;color:${p.text};line-height:1.6;">
+                Hi ${safeName}, please enter the 6-digit verification code below to unlock your CV download on <strong>mohammedsufyan.com</strong>:
+              </p>
+              <div style="margin:20px 0;padding:18px;border-radius:12px;background-color:${p.panelBg};border:1px solid ${p.accentSoftBorder};text-align:center;">
+                <span style="font-size:32px;font-weight:700;font-family:monospace;letter-spacing:0.25em;color:${p.accent};">
+                  ${safeCode}
+                </span>
+              </div>
+              <p style="margin:0;font-size:12px;color:${p.textMuted};line-height:1.5;">
+                This code expires in 10 minutes. If you did not request this verification, you can safely ignore this message.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+}
+
 interface DispatchEmailParams {
+  to?: string;
   fromDisplayName: string;
   replyTo?: string;
   subjectLine: string;
   html: string;
   text: string;
-  fallbackFields: Record<string, string>;
+  fallbackFields?: Record<string, string>;
+}
+
+function isDirectEmailTransportConfigured(): boolean {
+  const resendKey = cleanSecretEnv(process.env.RESEND_API_KEY);
+  const gmailPass = cleanSecretEnv(process.env.GMAIL_APP_PASSWORD).replace(/\s+/g, '');
+  const smtpHost = cleanSecretEnv(process.env.SMTP_HOST);
+  const smtpUser = cleanSecretEnv(process.env.SMTP_USER);
+  const smtpPass = cleanSecretEnv(process.env.SMTP_PASS);
+  return Boolean(resendKey || gmailPass || (smtpHost && smtpUser && smtpPass));
 }
 
 async function dispatchEmailMessage(params: DispatchEmailParams): Promise<{ provider: string }> {
-  const { fromDisplayName, replyTo, subjectLine, html, text, fallbackFields } = params;
+  const { to, fromDisplayName, replyTo, subjectLine, html, text, fallbackFields } = params;
+  const recipient = to?.trim() || DESTINATION_EMAIL;
+  const isCustomRecipient = recipient.toLowerCase() !== DESTINATION_EMAIL.toLowerCase();
   const transportErrors: string[] = [];
 
   // 1. Resend API (primary when RESEND_API_KEY is configured)
@@ -442,7 +672,7 @@ async function dispatchEmailMessage(params: DispatchEmailParams): Promise<{ prov
         },
         body: JSON.stringify({
           from: fromEmail,
-          to: [DESTINATION_EMAIL],
+          to: [recipient],
           ...(replyTo ? { reply_to: replyTo } : {}),
           subject: subjectLine,
           html,
@@ -489,7 +719,7 @@ async function dispatchEmailMessage(params: DispatchEmailParams): Promise<{ prov
 
       await transporter.sendMail({
         from: `"${fromDisplayName}" <${gmailUser}>`,
-        to: DESTINATION_EMAIL,
+        to: recipient,
         ...(replyTo ? { replyTo } : {}),
         subject: subjectLine,
         text,
@@ -526,7 +756,7 @@ async function dispatchEmailMessage(params: DispatchEmailParams): Promise<{ prov
 
       await transporter.sendMail({
         from: `"${fromDisplayName}" <${smtpUser}>`,
-        to: DESTINATION_EMAIL,
+        to: recipient,
         ...(replyTo ? { replyTo } : {}),
         subject: subjectLine,
         text,
@@ -541,9 +771,8 @@ async function dispatchEmailMessage(params: DispatchEmailParams): Promise<{ prov
     }
   }
 
-  // 4. FormSubmit relay — disabled in production unless ALLOW_FORMSUBMIT_FALLBACK=true
-  // (relays lead PII to a third party; prefer Resend/Gmail/SMTP in prod).
-  if (isFormSubmitFallbackAllowed()) {
+  // 4. FormSubmit relay — only for owner alerts (never relay visitor OTPs through FormSubmit)
+  if (!isCustomRecipient && fallbackFields && isFormSubmitFallbackAllowed()) {
     const appUrl = cleanSecretEnv(process.env.APP_URL) || `http://localhost:${PORT}`;
     try {
       const formSubmitRes = await fetch(`https://formsubmit.co/ajax/${encodeURIComponent(DESTINATION_EMAIL)}`, {
@@ -581,7 +810,7 @@ async function dispatchEmailMessage(params: DispatchEmailParams): Promise<{ prov
       const msg = fallbackErr instanceof Error ? fallbackErr.message : 'Network error';
       transportErrors.push(`FormSubmit: ${msg}`);
     }
-  } else {
+  } else if (!isCustomRecipient) {
     transportErrors.push('FormSubmit fallback disabled in production (set ALLOW_FORMSUBMIT_FALLBACK=true to enable)');
   }
 
@@ -623,15 +852,38 @@ async function sendContactEmail(payload: ContactPayload): Promise<{ provider: st
   });
 }
 
-async function sendCvAccessEmail(payload: CvAccessPayload, userAgent: string): Promise<{ provider: string }> {
+async function sendVisitorOtpEmail(params: {
+  email: string;
+  name: string;
+  code: string;
+  theme: EmailTheme;
+}): Promise<{ provider: string }> {
+  const html = buildOtpEmailHtml(params.name, params.code, params.theme);
+  const text = `Hi ${params.name || 'there'},\n\nYour verification code for mohammedsufyan.com is: ${params.code}\n\nThis code expires in 10 minutes.`;
+  return dispatchEmailMessage({
+    to: params.email,
+    fromDisplayName: 'Mohammed Sufyan Portfolio',
+    subjectLine: `${params.code} — Verification Code for Mohammed Sufyan's CV`,
+    html,
+    text,
+  });
+}
+
+async function sendCvAccessEmail(
+  payload: CvAccessPayload,
+  telemetry: VisitorTelemetryReport,
+  isSubsequent = false
+): Promise<{ provider: string }> {
   const timestamp = new Date().toUTCString();
   const safeHeaderName = sanitizeDisplayName(payload.name || '') || sanitizeHeaderValue(payload.email || payload.phone || 'Visitor');
   const safeHeaderEmail = payload.email ? sanitizeHeaderValue(payload.email) : undefined;
   const actionLabel = formatCvActionLabel(payload.action);
   const subjectPrefix = payload.action === 'install' ? 'App' : 'CV';
-  const subjectLine = `[${subjectPrefix} ${actionLabel}] ${safeHeaderName} — ${sanitizeHeaderValue(payload.formatLabel)}`;
-  const html = buildCvAccessEmailHtml(payload, timestamp, userAgent);
-  const text = buildCvAccessPlainText(payload, timestamp, userAgent);
+  const vpnTag = telemetry.risk.isVpnSuspected ? ' [VPN/PROXY]' : '';
+  const repeatTag = isSubsequent ? 'Repeat ' : '';
+  const subjectLine = `[${subjectPrefix} ${repeatTag}${actionLabel}]${vpnTag} ${safeHeaderName} (${telemetry.ip.country || 'Unknown'}) — ${sanitizeHeaderValue(payload.formatLabel)}`;
+  const html = buildCvAccessEmailHtml(payload, timestamp, telemetry, isSubsequent);
+  const text = buildCvAccessPlainText(payload, timestamp, telemetry, isSubsequent);
 
   return dispatchEmailMessage({
     fromDisplayName:
@@ -643,13 +895,56 @@ async function sendCvAccessEmail(payload: CvAccessPayload, userAgent: string): P
     html,
     text,
     fallbackFields: {
+      downloadId: telemetry.downloadId,
       name: payload.name || 'Not provided',
       email: safeHeaderEmail || 'Not provided',
       phone: payload.phone || 'Not provided',
       action: `${actionLabel} (${payload.formatLabel})`,
+      verificationStatus: telemetry.verificationStatus,
+      ipAddress: telemetry.ip.ipAddress,
+      location: buildLocationDisplay(telemetry),
+      isp: telemetry.ip.isp,
+      vpnSuspected: String(telemetry.risk.isVpnSuspected),
+      riskLevel: telemetry.risk.riskLevel,
       reason: payload.reason,
     },
   });
+}
+
+function buildTrackingSummaryForClient(
+  payload: CvAccessPayload,
+  telemetry: VisitorTelemetryReport,
+  isSubsequent: boolean
+) {
+  return {
+    downloadId: telemetry.downloadId,
+    sessionId: telemetry.sessionId,
+    visitorName: payload.name || '',
+    visitorEmail: payload.email || '',
+    visitorPhone: payload.phone || '',
+    reason: payload.reason.slice(0, 500),
+    action: payload.action,
+    formatLabel: payload.formatLabel.slice(0, 80),
+    theme: parseEmailTheme(payload.theme),
+    verificationStatus: telemetry.verificationStatus,
+    ipAddress: telemetry.ip.ipAddress.slice(0, 64),
+    country: (telemetry.ip.country || 'Unknown').slice(0, 80),
+    region: (telemetry.ip.region || '').slice(0, 80),
+    city: (telemetry.ip.city || '').slice(0, 80),
+    isp: (telemetry.ip.isp || '').slice(0, 120),
+    asn: (telemetry.ip.asn || '').slice(0, 64),
+    timezone: (telemetry.ip.timezone || '').slice(0, 64),
+    clientTimezone: telemetry.clientTimezone.slice(0, 64),
+    isVpnSuspected: telemetry.risk.isVpnSuspected,
+    isProxy: telemetry.ip.isProxy,
+    isHosting: telemetry.ip.isHosting,
+    timezoneMismatch: telemetry.risk.timezoneMismatch,
+    riskLevel: telemetry.risk.riskLevel,
+    riskReasons: telemetry.risk.riskReasons.join(', ').slice(0, 240),
+    referrer: telemetry.referrer.slice(0, 200),
+    userAgent: telemetry.userAgent.slice(0, 220),
+    isSubsequent,
+  };
 }
 
 async function startServer() {
@@ -730,6 +1025,14 @@ async function startServer() {
       ok: true,
       status: 'healthy',
       timestamp: new Date().toISOString(),
+    });
+  });
+
+  app.get('/api/access-config', (_req: Request, res: Response) => {
+    res.status(200).json({
+      turnstileSiteKey: TURNSTILE_SITE_KEY,
+      otpSupported: isDirectEmailTransportConfigured(),
+      forceOtp: FORCE_CV_OTP,
     });
   });
 
@@ -849,7 +1152,7 @@ async function startServer() {
 
       if (rejectDisallowedOrigin(req, res)) return;
 
-      const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+      const clientIp = extractClientIp(req);
       if (isRateLimited(clientIp, cvAccessRateLimitMap)) {
         res.setHeader('Retry-After', String(rateLimitRetryAfterSeconds(clientIp, cvAccessRateLimitMap)));
         res.status(429).json({
@@ -863,12 +1166,17 @@ async function startServer() {
         website?: unknown;
         turnstileToken?: unknown;
         theme?: unknown;
+        clientTimezone?: unknown;
+        clientLanguage?: unknown;
+        clientScreen?: unknown;
+        referrer?: unknown;
       };
 
       // Silent honeypot sink for automated spam bots
       if (isHoneypotTriggered(body.website)) {
         res.status(200).json({
           ok: true,
+          status: 'verified',
           provider: 'filtered',
           message: 'Access verified. Preparing your CV export.',
         });
@@ -895,6 +1203,7 @@ async function startServer() {
           : cleanAction === 'install'
             ? 'Portfolio PWA'
             : 'Executive Summary';
+      const cleanTheme = parseEmailTheme(body.theme);
 
       if (!cleanEmail && !cleanPhone) {
         res.status(400).json({
@@ -911,8 +1220,8 @@ async function startServer() {
         return;
       }
 
-      if (cleanPhone && !isValidPhoneNumber(cleanPhone)) {
-        res.status(400).json({ error: 'Please enter a valid phone number (at least 7 digits).' });
+      if (cleanPhone && (!isValidPhoneNumber(cleanPhone) || !isPlausiblePhoneNumber(cleanPhone))) {
+        res.status(400).json({ error: 'Please enter a genuine phone number (dummy or sequential numbers are blocked).' });
         return;
       }
 
@@ -936,23 +1245,134 @@ async function startServer() {
         return;
       }
 
-      const userAgent = typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : 'Unknown';
-      const result = await sendCvAccessEmail(
+      if (cleanEmail) {
+        const mxCheck = await verifyEmailMxRecord(cleanEmail);
+        if (!mxCheck.ok) {
+          res.status(400).json({ error: mxCheck.reason || 'Email domain cannot receive mail.' });
+          return;
+        }
+      }
+
+      const clientTimezone = typeof body.clientTimezone === 'string' ? sanitizeHeaderValue(body.clientTimezone).slice(0, 64) : '';
+      const clientLanguage = typeof body.clientLanguage === 'string' ? sanitizeHeaderValue(body.clientLanguage).slice(0, 32) : '';
+      const clientScreen = typeof body.clientScreen === 'string' ? sanitizeHeaderValue(body.clientScreen).slice(0, 32) : '';
+      const referrer =
+        typeof body.referrer === 'string'
+          ? sanitizeHeaderValue(body.referrer).slice(0, 200)
+          : typeof req.headers.referer === 'string'
+            ? sanitizeHeaderValue(req.headers.referer).slice(0, 200)
+            : '';
+      const userAgent = typeof req.headers['user-agent'] === 'string' ? sanitizeHeaderValue(req.headers['user-agent']).slice(0, 220) : 'Unknown';
+
+      const ipIntel = await lookupIpIntelligence(clientIp);
+      const risk = assessVisitorRisk(ipIntel, {
+        clientTimezone,
+        hasEmail: Boolean(cleanEmail),
+      });
+
+      const directTransportReady = isDirectEmailTransportConfigured();
+      const shouldStepUpOtp =
+        directTransportReady &&
+        (FORCE_CV_OTP || risk.isVpnSuspected || risk.riskLevel !== 'low');
+
+      if (shouldStepUpOtp) {
+        if (!cleanEmail) {
+          res.status(400).json({
+            requireEmail: true,
+            error:
+              'VPN, proxy, or unverified network context detected. Please enter a valid Email ID to receive a 6-digit verification code.',
+          });
+          return;
+        }
+
+        const challenge = createOtpChallenge(
+          otpChallengeStore,
+          {
+            name: cleanName,
+            email: cleanEmail,
+            phone: cleanPhone,
+            reason: cleanReason,
+            action: cleanAction,
+            formatLabel: cleanFormat,
+            theme: cleanTheme,
+            clientTimezone,
+            clientLanguage,
+            clientScreen,
+            referrer,
+            userAgent,
+            ip: ipIntel,
+            risk,
+          },
+          OTP_SECRET
+        );
+
+        await sendVisitorOtpEmail({
+          email: cleanEmail,
+          name: cleanName,
+          code: challenge.code,
+          theme: cleanTheme,
+        });
+
+        res.status(200).json({
+          ok: true,
+          status: 'otp_required',
+          challengeId: challenge.challengeId,
+          challengeToken: challenge.challengeToken,
+          maskedEmail: maskEmailAddress(cleanEmail),
+          expiresInMinutes: 10,
+          riskReasons: risk.riskReasons,
+          message: `Security check: we sent a 6-digit verification code to ${maskEmailAddress(cleanEmail)}.`,
+        });
+        return;
+      }
+
+      const downloadId = generateDownloadId();
+      const sessionId = generateSessionId();
+      const verificationStatus: VerificationStatus = cleanEmail ? 'mx_verified' : 'phone_only';
+      const telemetry: VisitorTelemetryReport = {
+        downloadId,
+        sessionId,
+        ip: ipIntel,
+        risk,
+        clientTimezone,
+        clientLanguage,
+        clientScreen,
+        referrer,
+        userAgent,
+        verificationStatus,
+      };
+
+      const accessPayload: CvAccessPayload = {
+        name: cleanName,
+        email: cleanEmail,
+        phone: cleanPhone,
+        reason: cleanReason,
+        action: cleanAction,
+        formatLabel: cleanFormat,
+        theme: cleanTheme,
+      };
+
+      const result = await sendCvAccessEmail(accessPayload, telemetry, false);
+      const sessionReceipt = signSessionReceipt(
         {
+          sessionId,
           name: cleanName,
           email: cleanEmail,
           phone: cleanPhone,
-          reason: cleanReason,
-          action: cleanAction,
-          formatLabel: cleanFormat,
-          theme: parseEmailTheme(body.theme),
+          reason: cleanReason.slice(0, 500),
+          verificationStatus,
+          issuedAt: Date.now(),
         },
-        userAgent
+        OTP_SECRET
       );
 
       res.status(200).json({
         ok: true,
+        status: 'verified',
         provider: result.provider,
+        verificationStatus,
+        sessionReceipt,
+        trackingSummary: buildTrackingSummaryForClient(accessPayload, telemetry, false),
         message:
           cleanAction === 'install'
             ? 'Access verified. Preparing app install.'
@@ -962,6 +1382,212 @@ async function startServer() {
       const errMsg = error instanceof Error ? error.message : 'Unable to process access request.';
       console.error('CV access dispatch error:', errMsg);
       res.status(500).json({ error: 'Unable to process access request right now. Please try again later.' });
+    }
+  });
+
+  app.post('/api/cv-verify-otp', async (req: Request, res: Response) => {
+    try {
+      if (!req.is('application/json')) {
+        res.status(415).json({ error: 'Content-Type must be application/json.' });
+        return;
+      }
+
+      if (rejectDisallowedOrigin(req, res)) return;
+
+      const clientIp = extractClientIp(req);
+      if (isRateLimited(clientIp, cvAccessRateLimitMap)) {
+        res.setHeader('Retry-After', String(rateLimitRetryAfterSeconds(clientIp, cvAccessRateLimitMap)));
+        res.status(429).json({
+          error: 'Too many verification attempts. Please wait a few minutes and try again.',
+        });
+        return;
+      }
+
+      const body = (req.body && typeof req.body === 'object' && !Array.isArray(req.body)
+        ? req.body
+        : {}) as { challengeId?: unknown; challengeToken?: unknown; code?: unknown };
+
+      const challengeId = typeof body.challengeId === 'string' ? body.challengeId.trim() : '';
+      const challengeToken = typeof body.challengeToken === 'string' ? body.challengeToken.trim() : '';
+      const code = typeof body.code === 'string' ? body.code.trim() : '';
+
+      if (!challengeId || !challengeToken || !/^\d{6}$/.test(code.replace(/\s+/g, ''))) {
+        res.status(400).json({ error: 'Please enter the valid 6-digit verification code sent to your email.' });
+        return;
+      }
+
+      const verified = verifyOtpChallenge(
+        otpChallengeStore,
+        { challengeId, challengeToken, code },
+        OTP_SECRET
+      );
+      if (!verified.ok) {
+        res.status(400).json({ error: verified.error });
+        return;
+      }
+
+      const p = verified.payload;
+      const downloadId = generateDownloadId();
+      const sessionId = generateSessionId();
+      const verificationStatus: VerificationStatus = 'otp_verified';
+      const telemetry: VisitorTelemetryReport = {
+        downloadId,
+        sessionId,
+        ip: p.ip,
+        risk: p.risk,
+        clientTimezone: p.clientTimezone,
+        clientLanguage: p.clientLanguage,
+        clientScreen: p.clientScreen,
+        referrer: p.referrer,
+        userAgent: p.userAgent,
+        verificationStatus,
+      };
+
+      const accessPayload: CvAccessPayload = {
+        name: p.name,
+        email: p.email,
+        phone: p.phone,
+        reason: p.reason,
+        action: p.action,
+        formatLabel: p.formatLabel,
+        theme: p.theme,
+      };
+
+      const result = await sendCvAccessEmail(accessPayload, telemetry, false);
+      const sessionReceipt = signSessionReceipt(
+        {
+          sessionId,
+          name: p.name,
+          email: p.email,
+          phone: p.phone,
+          reason: p.reason.slice(0, 500),
+          verificationStatus,
+          issuedAt: Date.now(),
+        },
+        OTP_SECRET
+      );
+
+      res.status(200).json({
+        ok: true,
+        status: 'verified',
+        provider: result.provider,
+        verificationStatus,
+        sessionReceipt,
+        trackingSummary: buildTrackingSummaryForClient(accessPayload, telemetry, false),
+        message:
+          p.action === 'install'
+            ? 'Email OTP verified. Preparing app install.'
+            : 'Email OTP verified. Preparing your CV export.',
+      });
+    } catch (error) {
+      const errMsg = error instanceof Error ? error.message : 'Unable to verify OTP code.';
+      console.error('CV OTP verification error:', errMsg);
+      res.status(500).json({ error: 'Unable to complete verification right now. Please try again.' });
+    }
+  });
+
+  app.post('/api/cv-event', async (req: Request, res: Response) => {
+    try {
+      if (!req.is('application/json')) {
+        res.status(415).json({ error: 'Content-Type must be application/json.' });
+        return;
+      }
+
+      if (rejectDisallowedOrigin(req, res)) return;
+
+      const clientIp = extractClientIp(req);
+      if (isRateLimited(clientIp, cvEventRateLimitMap, { maxRequests: 40 })) {
+        res.status(429).json({ error: 'Rate limit exceeded.' });
+        return;
+      }
+
+      const body = (req.body && typeof req.body === 'object' && !Array.isArray(req.body)
+        ? req.body
+        : {}) as {
+        sessionReceipt?: unknown;
+        action?: unknown;
+        formatLabel?: unknown;
+        theme?: unknown;
+        clientTimezone?: unknown;
+        clientLanguage?: unknown;
+        clientScreen?: unknown;
+        referrer?: unknown;
+      };
+
+      const receiptToken = typeof body.sessionReceipt === 'string' ? body.sessionReceipt : undefined;
+      const verifiedSession = verifySessionReceipt(receiptToken, OTP_SECRET);
+      if (!verifiedSession) {
+        res.status(401).json({ error: 'Session verification expired. Please re-verify.' });
+        return;
+      }
+
+      const cleanAction: CvAccessPayload['action'] =
+        body.action === 'print'
+          ? 'print'
+          : body.action === 'ats'
+            ? 'ats'
+            : body.action === 'install'
+              ? 'install'
+              : 'pdf';
+      const cleanFormat =
+        typeof body.formatLabel === 'string'
+          ? sanitizeHeaderValue(body.formatLabel).slice(0, 80) || 'Executive Summary'
+          : 'Executive Summary';
+      const cleanTheme = parseEmailTheme(body.theme);
+      const clientTimezone = typeof body.clientTimezone === 'string' ? sanitizeHeaderValue(body.clientTimezone).slice(0, 64) : '';
+      const clientLanguage = typeof body.clientLanguage === 'string' ? sanitizeHeaderValue(body.clientLanguage).slice(0, 32) : '';
+      const clientScreen = typeof body.clientScreen === 'string' ? sanitizeHeaderValue(body.clientScreen).slice(0, 32) : '';
+      const referrer = typeof body.referrer === 'string' ? sanitizeHeaderValue(body.referrer).slice(0, 200) : '';
+      const userAgent = typeof req.headers['user-agent'] === 'string' ? sanitizeHeaderValue(req.headers['user-agent']).slice(0, 220) : 'Unknown';
+
+      const ipIntel = await lookupIpIntelligence(clientIp);
+      const risk = assessVisitorRisk(ipIntel, {
+        clientTimezone,
+        hasEmail: Boolean(verifiedSession.email),
+      });
+
+      const downloadId = generateDownloadId();
+      const telemetry: VisitorTelemetryReport = {
+        downloadId,
+        sessionId: verifiedSession.sessionId,
+        ip: ipIntel,
+        risk,
+        clientTimezone,
+        clientLanguage,
+        clientScreen,
+        referrer,
+        userAgent,
+        verificationStatus: 'repeat_session',
+      };
+
+      const accessPayload: CvAccessPayload = {
+        name: verifiedSession.name,
+        email: verifiedSession.email,
+        phone: verifiedSession.phone,
+        reason: verifiedSession.reason,
+        action: cleanAction,
+        formatLabel: cleanFormat,
+        theme: cleanTheme,
+      };
+
+      // Dispatch email alert asynchronously/safely without blocking subsequent download if mail blips
+      try {
+        await sendCvAccessEmail(accessPayload, telemetry, true);
+      } catch (emailErr) {
+        console.warn(
+          'Subsequent CV event email notification failed:',
+          emailErr instanceof Error ? emailErr.message : emailErr
+        );
+      }
+
+      res.status(200).json({
+        ok: true,
+        trackingSummary: buildTrackingSummaryForClient(accessPayload, telemetry, true),
+      });
+    } catch (error) {
+      const errMsg = error instanceof Error ? error.message : 'Unable to record event.';
+      console.error('CV subsequent event error:', errMsg);
+      res.status(500).json({ error: 'Unable to record export event.' });
     }
   });
 

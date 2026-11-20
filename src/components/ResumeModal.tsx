@@ -49,8 +49,10 @@ import {
   ShieldCheck,
   Radar,
   Palette,
-  Minimize2
+  Minimize2,
+  BarChart3
 } from 'lucide-react';
+import { useFirebase } from '../contexts/FirebaseContext';
 import { useTheme } from '../theme/ThemeProvider';
 import {
   PERSONAL_INFO,
@@ -75,10 +77,13 @@ import {
   type CvSectionKey,
   type ParsedCvShareConfig,
 } from '../utils/cvShareConfig';
+import { type CvTrackingSummary } from '../utils/cvDownloadLogValidation';
 import AccessGateModal, {
   isAccessUnlocked,
+  trackSubsequentCvEvent,
   type AccessGateAction,
 } from './AccessGateModal';
+import CvAnalyticsModal from './CvAnalyticsView';
 import IssuerMark from './IssuerMark';
 import {
   CvImpactProofStrip,
@@ -376,6 +381,8 @@ export default function ResumeModal({
 
   const [cvUnlocked, setCvUnlocked] = useState<boolean>(() => isAccessUnlocked('pdf'));
   const [pendingAction, setPendingAction] = useState<AccessGateAction | null>(null);
+  const [analyticsOpen, setAnalyticsOpen] = useState(false);
+  const { isOwner, cvDownloadLogs, recordCvDownloadLog } = useFirebase();
 
   useEffect(() => {
     if (isOpen) {
@@ -900,12 +907,22 @@ export default function ResumeModal({
     }
   };
 
-  const handleDownloadPdf = async () => {
+  const handleDownloadPdf = async (initialSummary?: CvTrackingSummary, isRepeat = false) => {
     if (!contentRef.current || isGeneratingPdf || selectedSectionCount === 0) return;
 
     setIsGeneratingPdf(true);
     setPdfError(null);
     setPdfSuccess(false);
+
+    // Track subsequent PDF exports in parallel so zero latency is added to rendering
+    const trackingPromise: Promise<CvTrackingSummary | null> = isRepeat
+      ? trackSubsequentCvEvent({
+          action: 'pdf',
+          formatLabel: getFormatLabel(),
+          theme: isLight ? 'light' : 'dark',
+          onPersistLog: recordCvDownloadLog,
+        })
+      : Promise.resolve(initialSummary ?? null);
 
     let cloneHost: HTMLDivElement | null = null;
 
@@ -1197,7 +1214,16 @@ export default function ResumeModal({
         }
       }
 
-      // Stamp clean subtle executive footer & page count on every page
+      const traceSummary = await trackingPromise.catch(() => null);
+      const traceId = traceSummary?.downloadId || `CV-${Date.now().toString(36).toUpperCase()}`;
+      pdf.setProperties({
+        title: `Mohammed Sufyan — ${getFormatLabel()}`,
+        subject: `Portfolio CV (${traceId})`,
+        author: 'Mohammed Sufyan',
+        keywords: `Ref:${traceId}`,
+      });
+
+      // Stamp clean subtle executive footer, traceability ref, & page count on every page
       const totalPages = pdf.getNumberOfPages();
       for (let p = 1; p <= totalPages; p++) {
         pdf.setPage(p);
@@ -1213,6 +1239,9 @@ export default function ResumeModal({
         pdf.setFont('helvetica', 'normal');
         pdf.setFontSize(7.5);
         pdf.text('Mohammed Sufyan · Software Engineer', marginX, pageHeight - 5.5);
+        pdf.setFontSize(6.5);
+        pdf.text(`Ref: ${traceId}`, pageWidth / 2, pageHeight - 5.5, { align: 'center' });
+        pdf.setFontSize(7.5);
         pdf.text(`Page ${p} of ${totalPages}`, pageWidth - marginX, pageHeight - 5.5, { align: 'right' });
       }
 
@@ -1278,7 +1307,7 @@ export default function ResumeModal({
     if (isGeneratingPdf || selectedSectionCount === 0) return;
     if (cvUnlocked || isAccessUnlocked('pdf')) {
       setCvUnlocked(true);
-      void handleDownloadPdf();
+      void handleDownloadPdf(undefined, true);
       return;
     }
     setPendingAction('pdf');
@@ -1288,6 +1317,12 @@ export default function ResumeModal({
     if (selectedSectionCount === 0) return;
     if (cvUnlocked || isAccessUnlocked('print')) {
       setCvUnlocked(true);
+      void trackSubsequentCvEvent({
+        action: 'print',
+        formatLabel: getFormatLabel(),
+        theme: isLight ? 'light' : 'dark',
+        onPersistLog: recordCvDownloadLog,
+      });
       handleNativePrint();
       return;
     }
@@ -1298,17 +1333,23 @@ export default function ResumeModal({
     if (selectedSectionCount === 0) return;
     if (cvUnlocked || isAccessUnlocked('ats')) {
       setCvUnlocked(true);
+      void trackSubsequentCvEvent({
+        action: 'ats',
+        formatLabel: getFormatLabel(),
+        theme: isLight ? 'light' : 'dark',
+        onPersistLog: recordCvDownloadLog,
+      });
       void handleCopyAtsText();
       return;
     }
     setPendingAction('ats');
   };
 
-  const handleAccessVerified = (action: AccessGateAction) => {
+  const handleAccessVerified = (action: AccessGateAction, trackingSummary?: CvTrackingSummary) => {
     setCvUnlocked(true);
     setPendingAction(null);
     if (action === 'pdf') {
-      void handleDownloadPdf();
+      void handleDownloadPdf(trackingSummary, false);
     } else if (action === 'ats') {
       void handleCopyAtsText();
     } else if (action === 'print') {
@@ -1708,6 +1749,21 @@ export default function ResumeModal({
             </div>
 
             <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+              {isOwner && (
+                <button
+                  type="button"
+                  onClick={() => setAnalyticsOpen(true)}
+                  title="View CV download & VPN security analytics"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-cyan-500/40 bg-cyan-950/40 hover:bg-cyan-900/50 text-[11px] sm:text-xs font-mono text-cyan-300 transition-colors cursor-pointer"
+                >
+                  <BarChart3 className="w-3.5 h-3.5 text-cyan-400" />
+                  <span className="hidden sm:inline">Analytics</span>
+                  <span className="px-1 rounded bg-cyan-500/20 text-cyan-200 text-[10px]">
+                    {cvDownloadLogs.length}
+                  </span>
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={() => {
@@ -3268,6 +3324,11 @@ export default function ResumeModal({
         isLight={isLight}
         onClose={() => setPendingAction(null)}
         onVerified={handleAccessVerified}
+      />
+
+      <CvAnalyticsModal
+        isOpen={analyticsOpen}
+        onClose={() => setAnalyticsOpen(false)}
       />
     </AnimatePresence>
   );

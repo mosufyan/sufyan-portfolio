@@ -6,8 +6,14 @@ import {
   type InstallPlatform,
   type InstallSurface,
 } from '../hooks/usePWAInstall';
+import { useFirebase } from '../contexts/FirebaseContext';
+import { useTheme } from '../theme/ThemeProvider';
 import { useModalPlacement } from '../hooks/useModalPlacement';
-import AccessGateModal, { isAccessUnlocked, type AccessGateAction } from './AccessGateModal';
+import AccessGateModal, {
+  isAccessUnlocked,
+  trackSubsequentCvEvent,
+  type AccessGateAction,
+} from './AccessGateModal';
 
 function InstallIcon({ surface }: { surface: InstallSurface }) {
   if (surface === 'desktop') return <MonitorSmartphone className="w-3.5 h-3.5 text-cyan-400" />;
@@ -86,6 +92,8 @@ export default function PWAInstallButton() {
   const [showManualGuide, setShowManualGuide] = useState(false);
   const [gateAction, setGateAction] = useState<AccessGateAction | null>(null);
   const guideAlignClass = useModalPlacement(showManualGuide);
+  const { isLight } = useTheme();
+  const { recordCvDownloadLog } = useFirebase();
 
   if (isInstalled || !canOfferInstall) {
     return null;
@@ -102,6 +110,12 @@ export default function PWAInstallButton() {
       setGateAction('install');
       return;
     }
+    void trackSubsequentCvEvent({
+      action: 'install',
+      formatLabel: 'Portfolio PWA',
+      theme: isLight ? 'light' : 'dark',
+      onPersistLog: recordCvDownloadLog,
+    });
     if (canDirectInstall) {
       void runDirectInstall();
       return;

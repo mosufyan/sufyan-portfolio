@@ -76,6 +76,192 @@
         }
       },
       "required": ["role"]
+    },
+    "CvDownloadLog": {
+      "title": "CvDownloadLog",
+      "description": "Immutable CV download, print, ATS copy, and PWA install audit telemetry including network, geo, VPN risk, and verification metadata.",
+      "type": "object",
+      "properties": {
+        "downloadId": {
+          "type": "string",
+          "description": "Unique traceable reference ID (stamped onto exported PDF footers).",
+          "minLength": 4,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "sessionId": {
+          "type": "string",
+          "description": "Verification session identifier linking initial unlock and subsequent exports.",
+          "minLength": 4,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "visitorName": {
+          "type": "string",
+          "description": "Visitor-supplied name (empty string if omitted).",
+          "maxLength": 120
+        },
+        "visitorEmail": {
+          "type": "string",
+          "description": "Visitor-supplied email address (empty string if omitted).",
+          "maxLength": 254
+        },
+        "visitorPhone": {
+          "type": "string",
+          "description": "Visitor-supplied phone number (empty string if omitted).",
+          "maxLength": 40
+        },
+        "reason": {
+          "type": "string",
+          "description": "Stated purpose for downloading, printing, or installing.",
+          "minLength": 3,
+          "maxLength": 500
+        },
+        "action": {
+          "type": "string",
+          "description": "Type of portfolio export or install action.",
+          "enum": ["pdf", "print", "ats", "install"],
+          "minLength": 3,
+          "maxLength": 16
+        },
+        "formatLabel": {
+          "type": "string",
+          "description": "CV preset or portfolio format label.",
+          "minLength": 2,
+          "maxLength": 80
+        },
+        "theme": {
+          "type": "string",
+          "description": "Visual theme active during export.",
+          "enum": ["dark", "light"],
+          "minLength": 4,
+          "maxLength": 8
+        },
+        "verificationStatus": {
+          "type": "string",
+          "description": "Verification tier achieved by the visitor.",
+          "enum": ["otp_verified", "mx_verified", "phone_only", "repeat_session"],
+          "minLength": 4,
+          "maxLength": 24
+        },
+        "ipAddress": {
+          "type": "string",
+          "description": "Server-resolved client IP address.",
+          "maxLength": 64
+        },
+        "country": {
+          "type": "string",
+          "description": "Resolved country name or local network label.",
+          "maxLength": 80
+        },
+        "region": {
+          "type": "string",
+          "description": "Resolved region or state.",
+          "maxLength": 80
+        },
+        "city": {
+          "type": "string",
+          "description": "Resolved city.",
+          "maxLength": 80
+        },
+        "isp": {
+          "type": "string",
+          "description": "Resolved ISP or hosting organization.",
+          "maxLength": 120
+        },
+        "asn": {
+          "type": "string",
+          "description": "Autonomous System Number (e.g., AS15169).",
+          "maxLength": 64
+        },
+        "timezone": {
+          "type": "string",
+          "description": "IP-resolved IANA timezone.",
+          "maxLength": 64
+        },
+        "clientTimezone": {
+          "type": "string",
+          "description": "Browser-reported IANA timezone.",
+          "maxLength": 64
+        },
+        "isVpnSuspected": {
+          "type": "boolean",
+          "description": "True when proxy, hosting ASN, or timezone mismatch signals indicate VPN/proxy usage."
+        },
+        "isProxy": {
+          "type": "boolean",
+          "description": "True when IP intelligence flags a known VPN, proxy, or Tor exit."
+        },
+        "isHosting": {
+          "type": "boolean",
+          "description": "True when IP belongs to a cloud/datacenter hosting ASN."
+        },
+        "timezoneMismatch": {
+          "type": "boolean",
+          "description": "True when browser UTC offset differs materially from IP timezone."
+        },
+        "riskLevel": {
+          "type": "string",
+          "description": "Server-evaluated risk tier.",
+          "enum": ["low", "medium", "high"],
+          "minLength": 3,
+          "maxLength": 10
+        },
+        "riskReasons": {
+          "type": "string",
+          "description": "Comma-separated summary of risk triggers.",
+          "maxLength": 240
+        },
+        "referrer": {
+          "type": "string",
+          "description": "Landing referrer or campaign tag.",
+          "maxLength": 200
+        },
+        "userAgent": {
+          "type": "string",
+          "description": "Truncated HTTP User-Agent string.",
+          "maxLength": 220
+        },
+        "isSubsequent": {
+          "type": "boolean",
+          "description": "True for additional exports performed after initial session verification."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server-assigned log creation timestamp."
+        }
+      },
+      "required": [
+        "downloadId",
+        "sessionId",
+        "visitorName",
+        "visitorEmail",
+        "visitorPhone",
+        "reason",
+        "action",
+        "formatLabel",
+        "theme",
+        "verificationStatus",
+        "ipAddress",
+        "country",
+        "region",
+        "city",
+        "isp",
+        "asn",
+        "timezone",
+        "clientTimezone",
+        "isVpnSuspected",
+        "isProxy",
+        "isHosting",
+        "timezoneMismatch",
+        "riskLevel",
+        "riskReasons",
+        "referrer",
+        "userAgent",
+        "isSubsequent",
+        "createdAt"
+      ]
     }
   },
   "firestore": {
@@ -90,6 +276,12 @@
         "$ref": "#/entities/AdminRecord"
       },
       "description": "Read-locked admin allowlist collection; cannot be modified or listed by client SDKs."
+    },
+    "/cv_downloads/{downloadId}": {
+      "schema": {
+        "$ref": "#/entities/CvDownloadLog"
+      },
+      "description": "PII-isolated CV download and export audit logs; strictly owner-only read/list/delete and schema-validated immutable creation."
     }
   }
 }

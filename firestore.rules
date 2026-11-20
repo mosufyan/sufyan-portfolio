@@ -28,6 +28,11 @@ service cloud.firestore {
       return isSignedIn() && request.auth.token.email_verified == true;
     }
 
+    // Zero-DB-read owner identity check for list rules (Denial-of-Wallet & Pillar 8 compliant)
+    function isVerifiedOwnerEmail() {
+      return isVerifiedUser() && request.auth.token.email == 'sufyan.net@gmail.com';
+    }
+
     function isAdmin() {
       return isVerifiedUser() && (
         request.auth.token.email == 'sufyan.net@gmail.com' ||
@@ -63,6 +68,66 @@ service cloud.firestore {
         && data.updatedAt is timestamp;
     }
 
+    // Strict schema validation blueprint for CvDownloadLog (immutable create)
+    function isValidCvDownloadLog(data, pathId) {
+      return data.keys().hasAll([
+          'downloadId', 'sessionId', 'visitorName', 'visitorEmail', 'visitorPhone',
+          'reason', 'action', 'formatLabel', 'theme', 'verificationStatus',
+          'ipAddress', 'country', 'region', 'city', 'isp', 'asn',
+          'timezone', 'clientTimezone', 'isVpnSuspected', 'isProxy',
+          'isHosting', 'timezoneMismatch', 'riskLevel', 'riskReasons',
+          'referrer', 'userAgent', 'isSubsequent', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'downloadId', 'sessionId', 'visitorName', 'visitorEmail', 'visitorPhone',
+          'reason', 'action', 'formatLabel', 'theme', 'verificationStatus',
+          'ipAddress', 'country', 'region', 'city', 'isp', 'asn',
+          'timezone', 'clientTimezone', 'isVpnSuspected', 'isProxy',
+          'isHosting', 'timezoneMismatch', 'riskLevel', 'riskReasons',
+          'referrer', 'userAgent', 'isSubsequent', 'createdAt'
+        ])
+        && data.downloadId is string
+        && data.downloadId == pathId
+        && data.downloadId.size() >= 4
+        && data.downloadId.size() <= 64
+        && data.downloadId.matches('^[a-zA-Z0-9_\\-]+$')
+        && data.sessionId is string
+        && data.sessionId.size() >= 4
+        && data.sessionId.size() <= 64
+        && data.sessionId.matches('^[a-zA-Z0-9_\\-]+$')
+        && data.visitorName is string && data.visitorName.size() <= 120
+        && data.visitorEmail is string && data.visitorEmail.size() <= 254
+        && data.visitorPhone is string && data.visitorPhone.size() <= 40
+        && (data.visitorEmail.size() > 0 || data.visitorPhone.size() > 0)
+        && data.reason is string && data.reason.size() >= 3 && data.reason.size() <= 500
+        && data.action is string && data.action.size() >= 3 && data.action.size() <= 16
+        && data.action in ['pdf', 'print', 'ats', 'install']
+        && data.formatLabel is string && data.formatLabel.size() >= 2 && data.formatLabel.size() <= 80
+        && data.theme is string && data.theme.size() >= 4 && data.theme.size() <= 8
+        && data.theme in ['dark', 'light']
+        && data.verificationStatus is string && data.verificationStatus.size() >= 4 && data.verificationStatus.size() <= 24
+        && data.verificationStatus in ['otp_verified', 'mx_verified', 'phone_only', 'repeat_session']
+        && data.ipAddress is string && data.ipAddress.size() <= 64
+        && data.country is string && data.country.size() <= 80
+        && data.region is string && data.region.size() <= 80
+        && data.city is string && data.city.size() <= 80
+        && data.isp is string && data.isp.size() <= 120
+        && data.asn is string && data.asn.size() <= 64
+        && data.timezone is string && data.timezone.size() <= 64
+        && data.clientTimezone is string && data.clientTimezone.size() <= 64
+        && data.isVpnSuspected is bool
+        && data.isProxy is bool
+        && data.isHosting is bool
+        && data.timezoneMismatch is bool
+        && data.riskLevel is string && data.riskLevel.size() >= 3 && data.riskLevel.size() <= 10
+        && data.riskLevel in ['low', 'medium', 'high']
+        && data.riskReasons is string && data.riskReasons.size() <= 240
+        && data.referrer is string && data.referrer.size() <= 200
+        && data.userAgent is string && data.userAgent.size() <= 220
+        && data.isSubsequent is bool
+        && data.createdAt is timestamp;
+    }
+
     // Portfolio Announcements (public non-PII read; owner-only verified mutations)
     // Evaluation order: Auth -> Static Validation -> Admin Check (Denial-of-Wallet guard)
     match /announcements/{announcementId} {
@@ -87,6 +152,22 @@ service cloud.firestore {
 
       allow delete: if isVerifiedUser()
         && isValidId(announcementId)
+        && isAdmin();
+    }
+
+    // CV Download & Export Audit Telemetry (PII-isolated: owner-only read/list/delete; immutable create)
+    match /cv_downloads/{downloadId} {
+      allow get: if isVerifiedUser() && isValidId(downloadId) && isAdmin();
+      allow list: if isVerifiedOwnerEmail();
+
+      allow create: if isValidId(downloadId)
+        && isValidCvDownloadLog(incoming(), downloadId)
+        && incoming().createdAt == request.time;
+
+      allow update: if false;
+
+      allow delete: if isVerifiedUser()
+        && isValidId(downloadId)
         && isAdmin();
     }
 
