@@ -153,7 +153,9 @@ service cloud.firestore {
           'ipAddress', 'country', 'region', 'city', 'isp', 'asn',
           'timezone', 'clientTimezone', 'isVpnSuspected',
           'riskLevel', 'riskReasons', 'referrer', 'userAgent',
-          'triageStatus', 'ownerNote', 'triagedAt', 'createdAt'
+          'triageStatus', 'ownerNote', 'triagedAt', 'createdAt',
+          'leadCompany', 'leadRole', 'leadSource', 'leadPriority',
+          'leadNextAction', 'leadNextActionDueAtMs', 'leadOutcome'
         ])
         && data.messageId is string
         && data.messageId == pathId
@@ -184,6 +186,13 @@ service cloud.firestore {
         && (!('triageStatus' in data) || (data.triageStatus is string && data.triageStatus.size() >= 3 && data.triageStatus.size() <= 16 && data.triageStatus in ['new', 'replied', 'shortlisted', 'archived']))
         && (!('ownerNote' in data) || (data.ownerNote is string && data.ownerNote.size() <= 1000))
         && (!('triagedAt' in data) || data.triagedAt is timestamp)
+        && (!('leadCompany' in data) || (data.leadCompany is string && data.leadCompany.size() <= 120))
+        && (!('leadRole' in data) || (data.leadRole is string && data.leadRole.size() <= 120))
+        && (!('leadSource' in data) || (data.leadSource is string && data.leadSource in ['', 'linkedin', 'referral', 'organic', 'other']))
+        && (!('leadPriority' in data) || (data.leadPriority is string && data.leadPriority in ['', 'hot', 'warm', 'cold']))
+        && (!('leadNextAction' in data) || (data.leadNextAction is string && data.leadNextAction.size() <= 200))
+        && (!('leadNextActionDueAtMs' in data) || (data.leadNextActionDueAtMs is int && data.leadNextActionDueAtMs >= 0))
+        && (!('leadOutcome' in data) || (data.leadOutcome is string && data.leadOutcome in ['', 'open', 'interview', 'offer', 'closed_won', 'closed_lost']))
         && data.createdAt is timestamp;
     }
 
@@ -346,6 +355,13 @@ service cloud.firestore {
         && !('triageStatus' in incoming())
         && !('ownerNote' in incoming())
         && !('triagedAt' in incoming())
+        && !('leadCompany' in incoming())
+        && !('leadRole' in incoming())
+        && !('leadSource' in incoming())
+        && !('leadPriority' in incoming())
+        && !('leadNextAction' in incoming())
+        && !('leadNextActionDueAtMs' in incoming())
+        && !('leadOutcome' in incoming())
         && incoming().createdAt == request.time;
 
       allow update: if isVerifiedUser()
@@ -353,7 +369,11 @@ service cloud.firestore {
         && isValidContactMessageLog(incoming(), messageId)
         && incoming().createdAt == existing().createdAt
         && incoming().triagedAt == request.time
-        && incoming().diff(existing()).affectedKeys().hasOnly(['triageStatus', 'ownerNote', 'triagedAt'])
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'triageStatus', 'ownerNote', 'triagedAt',
+          'leadCompany', 'leadRole', 'leadSource', 'leadPriority',
+          'leadNextAction', 'leadNextActionDueAtMs', 'leadOutcome'
+        ])
         && isAdmin();
 
       allow delete: if isVerifiedUser()

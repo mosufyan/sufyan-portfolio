@@ -96,6 +96,61 @@ interface RuntimeOwnerPolicy {
 }
 
 const POLICY_CACHE_PATH = path.join(__dirname, '.owner-policy-cache.json');
+const TELEMETRY_CACHE_PATH = path.join(__dirname, '.owner-telemetry-cache.json');
+
+interface SiteTelemetryState {
+  pageviews: number;
+  ogShares: number;
+  ogByTrack: Record<string, number>;
+  updatedAtIso: string;
+}
+
+function loadSiteTelemetry(): SiteTelemetryState {
+  const defaults: SiteTelemetryState = {
+    pageviews: 0,
+    ogShares: 0,
+    ogByTrack: {},
+    updatedAtIso: new Date().toISOString(),
+  };
+  try {
+    if (!fs.existsSync(TELEMETRY_CACHE_PATH)) return defaults;
+    const parsed = JSON.parse(fs.readFileSync(TELEMETRY_CACHE_PATH, 'utf8')) as Partial<SiteTelemetryState>;
+    return {
+      pageviews: Number(parsed.pageviews) || 0,
+      ogShares: Number(parsed.ogShares) || 0,
+      ogByTrack:
+        parsed.ogByTrack && typeof parsed.ogByTrack === 'object' ? { ...parsed.ogByTrack } : {},
+      updatedAtIso: typeof parsed.updatedAtIso === 'string' ? parsed.updatedAtIso : defaults.updatedAtIso,
+    };
+  } catch {
+    return defaults;
+  }
+}
+
+let siteTelemetry: SiteTelemetryState = loadSiteTelemetry();
+
+function saveSiteTelemetry(next: SiteTelemetryState): void {
+  siteTelemetry = next;
+  try {
+    fs.writeFileSync(TELEMETRY_CACHE_PATH, JSON.stringify(next, null, 2), 'utf8');
+  } catch {
+    /* non-fatal */
+  }
+}
+
+function bumpSiteTelemetry(kind: 'pageview' | 'og_share', track?: string): void {
+  const next: SiteTelemetryState = {
+    pageviews: siteTelemetry.pageviews + (kind === 'pageview' ? 1 : 0),
+    ogShares: siteTelemetry.ogShares + (kind === 'og_share' ? 1 : 0),
+    ogByTrack: { ...siteTelemetry.ogByTrack },
+    updatedAtIso: new Date().toISOString(),
+  };
+  if (kind === 'og_share') {
+    const key = track || 'executive';
+    next.ogByTrack[key] = (next.ogByTrack[key] || 0) + 1;
+  }
+  saveSiteTelemetry(next);
+}
 
 function loadInitialOwnerPolicy(): RuntimeOwnerPolicy {
   const defaults: RuntimeOwnerPolicy = {
@@ -1259,6 +1314,9 @@ async function startServer() {
       ok: true,
       status: 'healthy',
       timestamp: new Date().toISOString(),
+      emailTransportConfigured: isDirectEmailTransportConfigured(),
+      turnstileConfigured: Boolean(TURNSTILE_SITE_KEY),
+      incidentMode: runtimeOwnerPolicy.incidentMode,
     });
   });
 
@@ -1268,6 +1326,74 @@ async function startServer() {
       otpSupported: isDirectEmailTransportConfigured(),
       forceOtp: FORCE_CV_OTP || runtimeOwnerPolicy.strictOtpForAll,
     });
+  });
+
+  app.get('/api/owner/telemetry', (_req: Request, res: Response) => {
+    res.status(200).json(siteTelemetry);
+  });
+
+  app.post('/api/telemetry/event', (req: Request, res: Response) => {
+    try {
+      if (!req.is('application/json')) {
+        res.status(415).json({ error: 'Content-Type must be application/json.' });
+        return;
+      }
+      const raw = (req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {}) as {
+        type?: unknown;
+        track?: unknown;
+      };
+      const type = raw.type === 'og_share' ? 'og_share' : raw.type === 'pageview' ? 'pageview' : null;
+      if (!type) {
+        res.status(400).json({ error: 'type must be pageview or og_share.' });
+        return;
+      }
+      const track = typeof raw.track === 'string' ? raw.track.slice(0, 32) : undefined;
+      bumpSiteTelemetry(type, track);
+      res.status(204).end();
+    } catch {
+      res.status(500).json({ error: 'Unable to record telemetry event.' });
+    }
+  });
+
+  app.post('/api/owner/digest-email', async (req: Request, res: Response) => {
+    try {
+      if (!req.is('application/json')) {
+        res.status(415).json({ error: 'Content-Type must be application/json.' });
+        return;
+      }
+      if (rejectDisallowedOrigin(req, res)) return;
+      const authCheck = await verifyOwnerFirebaseIdToken(req.headers.authorization);
+      if (!authCheck.ok) {
+        res.status(401).json({ error: authCheck.error });
+        return;
+      }
+      const raw = (req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {}) as {
+        subject?: unknown;
+        body?: unknown;
+      };
+      const subject =
+        typeof raw.subject === 'string' && raw.subject.trim()
+          ? sanitizeHeaderValue(raw.subject).slice(0, 200)
+          : 'Portfolio owner digest';
+      const body =
+        typeof raw.body === 'string' ? raw.body.trim().slice(0, 20000) : '';
+      if (body.length < 20) {
+        res.status(400).json({ error: 'Digest body is too short.' });
+        return;
+      }
+      const html = `<pre style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:1.45;white-space:pre-wrap">${escapeHtml(body)}</pre>`;
+      const result = await dispatchEmailMessage({
+        to: DESTINATION_EMAIL,
+        fromDisplayName: 'Portfolio Owner Digest',
+        subjectLine: subject,
+        html,
+        text: body,
+      });
+      res.status(200).json({ ok: true, provider: result.provider });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to send digest email.';
+      res.status(500).json({ error: message });
+    }
   });
 
   app.post('/api/owner/policy-sync', async (req: Request, res: Response) => {
@@ -1410,6 +1536,7 @@ async function startServer() {
     const theme = req.query.theme === 'light' ? 'light' : 'dark';
     const skillLabel =
       typeof req.query.skill === 'string' ? req.query.skill.slice(0, 60) : undefined;
+    bumpSiteTelemetry('og_share', track);
     const svg = buildDynamicSocialSvg({ track, theme, skillLabel });
     res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8');
     res.setHeader('Cache-Control', 'public, max-age=300');

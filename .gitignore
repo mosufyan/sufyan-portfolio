@@ -8,3 +8,4 @@ coverage/
 .env*
 !.env.example
 .owner-policy-cache.json
+.owner-telemetry-cache.json

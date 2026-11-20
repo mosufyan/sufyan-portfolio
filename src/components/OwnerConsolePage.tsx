@@ -10,6 +10,8 @@ import {
   Shield,
   ShieldCheck,
   SlidersHorizontal,
+  Activity,
+  Bell,
   UserRound,
   Users,
   Wrench,
@@ -24,7 +26,9 @@ import {
 } from '../utils/ownerConsoleRouting';
 import { CvAnalyticsPanel, type WorkspaceTab } from './CvAnalyticsView';
 import OwnerAnnouncementsPanel from './OwnerAnnouncementsPanel';
-import OwnerProfilePanel from './OwnerProfilePanel';
+import OwnerAlertsPanel from './OwnerAlertsPanel';
+import OwnerFunnelPanel from './OwnerFunnelPanel';
+import OwnerProfilePanel, { useOwnerOpsHealth } from './OwnerProfilePanel';
 import { DelegatesPanel } from './OwnerGovernancePanels';
 
 export type OwnerConsoleSection = OwnerConsoleSectionId;
@@ -62,6 +66,7 @@ export default function OwnerConsolePage({
     }
     return 'profile';
   });
+  const { telemetry, opsHealth } = useOwnerOpsHealth(true);
 
   const setSection = (next: OwnerConsoleSection, historyMode: 'push' | 'replace' = 'replace') => {
     setSectionState(next);
@@ -100,6 +105,13 @@ export default function OwnerConsolePage({
           badge: String(adminDelegates.length),
           icon: Users,
         },
+      ],
+    },
+    {
+      groupLabel: 'Tracking',
+      items: [
+        { id: 'funnel', label: 'Funnel', icon: Activity },
+        { id: 'alerts', label: 'Alerts', icon: Bell },
       ],
     },
     {
@@ -177,7 +189,16 @@ export default function OwnerConsolePage({
   const activeTitleMap: Record<OwnerConsoleSection, { title: string; subtitle: string }> = {
     profile: {
       title: 'Owner Profile & Session Security',
-      subtitle: 'Identity, deep links, and recent authentication events for the owner console.',
+      subtitle:
+        'Identity, ops health, activity timeline, sessions, SEO counters, and deep links for the owner console.',
+    },
+    funnel: {
+      title: 'Visitor Funnel & Conversion',
+      subtitle: 'Track inquiry and CV export conversion across rolling time windows.',
+    },
+    alerts: {
+      title: 'Alerts Center & Digests',
+      subtitle: 'Watchers for new leads, overdue CRM actions, risk spikes, plus on-demand email digests.',
     },
     delegates: {
       title: 'Secondary Admin Delegates',
@@ -459,6 +480,16 @@ export default function OwnerConsolePage({
                   isLight={isLight}
                   onSignOut={() => void handleSignOut()}
                   onOpenSection={(next) => setSection(next)}
+                  telemetry={telemetry}
+                  opsHealth={opsHealth}
+                />
+              ) : section === 'funnel' ? (
+                <OwnerFunnelPanel isLight={isLight} />
+              ) : section === 'alerts' ? (
+                <OwnerAlertsPanel
+                  isLight={isLight}
+                  onOpenSection={(next) => setSection(next)}
+                  telemetry={telemetry}
                 />
               ) : section === 'delegates' ? (
                 <DelegatesPanel isLight={isLight} />

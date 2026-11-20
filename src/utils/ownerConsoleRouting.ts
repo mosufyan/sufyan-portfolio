@@ -1,5 +1,7 @@
 export const OWNER_CONSOLE_SECTIONS = [
   'profile',
+  'funnel',
+  'alerts',
   'downloads',
   'messages',
   'announcements',

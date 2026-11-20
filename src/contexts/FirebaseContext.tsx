@@ -55,9 +55,11 @@ import {
   normalizeContactTriageStatus,
   sanitizeContactMessageLogPayload,
   sanitizeContactTriageUpdate,
+  sanitizeLeadCrmFields,
   type ContactMessageLogRecord,
   type ContactMessageSummary,
   type ContactTriageStatus,
+  type LeadCrmFields,
 } from '../utils/contactMessageLogValidation';
 import {
   DEFAULT_PORTFOLIO_SETTINGS,
@@ -131,7 +133,7 @@ interface FirebaseContextValue {
   deleteContactMessageLog: (messageId: string) => Promise<void>;
   updateContactMessageTriage: (
     messageId: string,
-    triage: { triageStatus: ContactTriageStatus; ownerNote: string }
+    triage: { triageStatus: ContactTriageStatus; ownerNote: string } & Partial<LeadCrmFields>
   ) => Promise<void>;
   replyToContactMessage: (
     messageId: string,
@@ -378,6 +380,16 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
             userAgent: typeof d.userAgent === 'string' ? d.userAgent : '',
             triageStatus: normalizeContactTriageStatus(d.triageStatus),
             ownerNote: typeof d.ownerNote === 'string' ? d.ownerNote : '',
+            ...sanitizeLeadCrmFields({
+              leadCompany: typeof d.leadCompany === 'string' ? d.leadCompany : '',
+              leadRole: typeof d.leadRole === 'string' ? d.leadRole : '',
+              leadSource: d.leadSource,
+              leadPriority: d.leadPriority,
+              leadNextAction: typeof d.leadNextAction === 'string' ? d.leadNextAction : '',
+              leadNextActionDueAtMs:
+                typeof d.leadNextActionDueAtMs === 'number' ? d.leadNextActionDueAtMs : null,
+              leadOutcome: d.leadOutcome,
+            }),
             triagedAtMs: triagedMs,
             createdAtMs: ms,
             createdAtIso: new Date(ms).toISOString(),
@@ -770,29 +782,49 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
   const updateContactMessageTriage = useCallback(
     async (
       messageId: string,
-      triage: { triageStatus: ContactTriageStatus; ownerNote: string }
+      triage: { triageStatus: ContactTriageStatus; ownerNote: string } & Partial<LeadCrmFields>
     ) => {
       assertOwnerActor();
-
-      const sanitized = sanitizeContactTriageUpdate(triage);
+      const existing = contactMessageLogs.find((m) => m.messageId === messageId);
+      const sanitized = sanitizeContactTriageUpdate({
+        triageStatus: triage.triageStatus,
+        ownerNote: triage.ownerNote,
+        leadCompany: triage.leadCompany ?? existing?.leadCompany,
+        leadRole: triage.leadRole ?? existing?.leadRole,
+        leadSource: triage.leadSource ?? existing?.leadSource,
+        leadPriority: triage.leadPriority ?? existing?.leadPriority,
+        leadNextAction: triage.leadNextAction ?? existing?.leadNextAction,
+        leadNextActionDueAtMs:
+          triage.leadNextActionDueAtMs !== undefined
+            ? triage.leadNextActionDueAtMs
+            : existing?.leadNextActionDueAtMs,
+        leadOutcome: triage.leadOutcome ?? existing?.leadOutcome,
+      });
       const docPath = `contact_messages/${messageId}`;
       try {
         await updateDoc(doc(db, 'contact_messages', messageId), {
           triageStatus: sanitized.triageStatus,
           ownerNote: sanitized.ownerNote,
+          leadCompany: sanitized.leadCompany,
+          leadRole: sanitized.leadRole,
+          leadSource: sanitized.leadSource,
+          leadPriority: sanitized.leadPriority,
+          leadNextAction: sanitized.leadNextAction,
+          leadNextActionDueAtMs: sanitized.leadNextActionDueAtMs ?? 0,
+          leadOutcome: sanitized.leadOutcome,
           triagedAt: serverTimestamp(),
         });
         void recordAdminAudit(
           'triage_updated',
           `Triaged ${messageId} as ${sanitized.triageStatus.toUpperCase()}${
-            sanitized.ownerNote ? ' with private note' : ''
-          }`
+            sanitized.leadPriority ? ` [${sanitized.leadPriority}]` : ''
+          }${sanitized.ownerNote ? ' with private note' : ''}`
         ).catch(() => {});
       } catch (error) {
         handleFirestoreError(error, OperationType.UPDATE, docPath);
       }
     },
-    [assertOwnerActor, recordAdminAudit]
+    [assertOwnerActor, contactMessageLogs, recordAdminAudit]
   );
 
   const replyToContactMessage = useCallback(

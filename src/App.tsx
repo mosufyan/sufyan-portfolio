@@ -163,6 +163,20 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
+  // Lightweight anonymous pageview beacon for owner SEO / funnel counters
+  useEffect(() => {
+    if (ownerViewActive) return;
+    const controller = new AbortController();
+    void fetch('/api/telemetry/event', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'pageview' }),
+      signal: controller.signal,
+      keepalive: true,
+    }).catch(() => {});
+    return () => controller.abort();
+  }, [ownerViewActive]);
+
   const handleFocusCompany = useCallback((companyName: string) => {
     setFocusedCompany((prev) => ({ name: companyName, seq: (prev?.seq ?? 0) + 1 }));
   }, []);
