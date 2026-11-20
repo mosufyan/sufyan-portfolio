@@ -92,11 +92,13 @@ describe('rate limiting', () => {
 });
 
 describe('CSP / headers', () => {
-  it('allows Google Fonts and Turnstile in production CSP', () => {
+  it('allows Google Fonts, Turnstile, and Firebase in production CSP', () => {
     const csp = buildContentSecurityPolicy(false);
     expect(csp).toContain('fonts.googleapis.com');
     expect(csp).toContain('fonts.gstatic.com');
     expect(csp).toContain('challenges.cloudflare.com');
+    expect(csp).toContain('*.googleapis.com');
+    expect(csp).toContain('*.firebaseapp.com');
     expect(csp).toContain("frame-ancestors 'none'");
     expect(csp).not.toContain('unsafe-eval');
   });
@@ -107,7 +109,7 @@ describe('CSP / headers', () => {
       headers[k] = v;
     }, { isDev: false, isHttps: true });
     expect(headers['X-Content-Type-Options']).toBe('nosniff');
-    expect(headers['Cross-Origin-Opener-Policy']).toBe('same-origin');
+    expect(headers['Cross-Origin-Opener-Policy']).toBe('same-origin-allow-popups');
     expect(headers['X-Frame-Options']).toBe('DENY');
     expect(headers['Strict-Transport-Security']).toContain('max-age=31536000');
     expect(headers['Content-Security-Policy']).toContain("default-src 'self'");

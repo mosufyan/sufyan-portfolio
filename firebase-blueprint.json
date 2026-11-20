@@ -1,0 +1,95 @@
+{
+  "entities": {
+    "Announcement": {
+      "title": "Announcement",
+      "description": "Public portfolio announcement, architectural milestone, award, or publication authored by the verified portfolio owner.",
+      "type": "object",
+      "properties": {
+        "date": {
+          "type": "string",
+          "description": "Display month/year label (e.g., NOVEMBER 2026).",
+          "minLength": 3,
+          "maxLength": 40
+        },
+        "title": {
+          "type": "string",
+          "description": "Announcement headline.",
+          "minLength": 3,
+          "maxLength": 180
+        },
+        "summary": {
+          "type": "string",
+          "description": "Concise description of the milestone, publication, or credential.",
+          "minLength": 10,
+          "maxLength": 600
+        },
+        "badge": {
+          "type": "string",
+          "description": "Classification tag displayed on the announcement card.",
+          "enum": ["VERIFIED", "MILESTONE", "CERTIFICATION", "AWARD", "PUBLICATION"],
+          "minLength": 5,
+          "maxLength": 16
+        },
+        "linkUrl": {
+          "type": "string",
+          "description": "Optional external HTTPS reference link (empty string when omitted).",
+          "maxLength": 300,
+          "pattern": "^$|^https://[^\\s]+$"
+        },
+        "authorUid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the portfolio owner who authored the announcement.",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server-assigned creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server-assigned last update timestamp."
+        }
+      },
+      "required": [
+        "date",
+        "title",
+        "summary",
+        "badge",
+        "linkUrl",
+        "authorUid",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "AdminRecord": {
+      "title": "AdminRecord",
+      "description": "Server-provisioned RBAC marker identifying authorized portfolio administrators by UID.",
+      "type": "object",
+      "properties": {
+        "role": {
+          "type": "string",
+          "enum": ["admin"],
+          "maxLength": 16
+        }
+      },
+      "required": ["role"]
+    }
+  },
+  "firestore": {
+    "/announcements/{announcementId}": {
+      "schema": {
+        "$ref": "#/entities/Announcement"
+      },
+      "description": "Publicly readable portfolio announcements; writes strictly restricted to the verified portfolio owner."
+    },
+    "/admins/{adminId}": {
+      "schema": {
+        "$ref": "#/entities/AdminRecord"
+      },
+      "description": "Read-locked admin allowlist collection; cannot be modified or listed by client SDKs."
+    }
+  }
+}

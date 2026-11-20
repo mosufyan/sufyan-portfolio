@@ -133,7 +133,7 @@ export function shouldAllowPreviewIframe(
   return isAiStudioPreviewHost(options.host);
 }
 
-/** Build Content-Security-Policy matching production static assets + Google Fonts. */
+/** Build Content-Security-Policy matching production static assets + Google Fonts + Firebase. */
 export function buildContentSecurityPolicy(
   isDev: boolean,
   options: { allowPreviewIframe?: boolean } = {}
@@ -145,15 +145,15 @@ export function buildContentSecurityPolicy(
   return [
     "default-src 'self'",
     isDev
-      ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
-      : "script-src 'self' 'unsafe-inline'",
+      ? "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com https://www.gstatic.com"
+      : "script-src 'self' 'unsafe-inline' https://apis.google.com https://www.gstatic.com",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    "img-src 'self' data: blob:",
+    "img-src 'self' data: blob: https://*.googleusercontent.com",
     "font-src 'self' data: https://fonts.gstatic.com",
     isDev
-      ? "connect-src 'self' ws: wss: https://challenges.cloudflare.com"
-      : "connect-src 'self' https://challenges.cloudflare.com",
-    "frame-src 'self' https://challenges.cloudflare.com",
+      ? "connect-src 'self' ws: wss: https://challenges.cloudflare.com https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com"
+      : "connect-src 'self' https://challenges.cloudflare.com https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com",
+    "frame-src 'self' https://challenges.cloudflare.com https://*.firebaseapp.com https://accounts.google.com",
     "worker-src 'self' blob:",
     "manifest-src 'self'",
     "base-uri 'self'",
@@ -171,7 +171,7 @@ export function applySecurityHeaders(
   setHeader('X-Content-Type-Options', 'nosniff');
   setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
-  setHeader('Cross-Origin-Opener-Policy', allowPreviewIframe ? 'same-origin-allow-popups' : 'same-origin');
+  setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
   if (!allowPreviewIframe) {
     setHeader('X-Frame-Options', 'DENY');
   }

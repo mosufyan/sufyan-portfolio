@@ -1,0 +1,100 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Reusable hardened primitives
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isAdmin() {
+      return isVerifiedUser() && (
+        request.auth.token.email == 'sufyan.net@gmail.com' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    // Strict schema validation blueprint for Announcement (create & update)
+    function isValidAnnouncement(data) {
+      return data.keys().hasAll(['date', 'title', 'summary', 'badge', 'linkUrl', 'authorUid', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['date', 'title', 'summary', 'badge', 'linkUrl', 'authorUid', 'createdAt', 'updatedAt'])
+        && data.date is string
+        && data.date.size() >= 3
+        && data.date.size() <= 40
+        && data.title is string
+        && data.title.size() >= 3
+        && data.title.size() <= 180
+        && data.summary is string
+        && data.summary.size() >= 10
+        && data.summary.size() <= 600
+        && data.badge is string
+        && data.badge.size() >= 5
+        && data.badge.size() <= 16
+        && data.badge in ['VERIFIED', 'MILESTONE', 'CERTIFICATION', 'AWARD', 'PUBLICATION']
+        && data.linkUrl is string
+        && data.linkUrl.size() <= 300
+        && (data.linkUrl == '' || data.linkUrl.matches('^https://[^\\s]+$'))
+        && data.authorUid is string
+        && data.authorUid.size() >= 1
+        && data.authorUid.size() <= 128
+        && data.authorUid == request.auth.uid
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // Portfolio Announcements (public non-PII read; owner-only verified mutations)
+    // Evaluation order: Auth -> Static Validation -> Admin Check (Denial-of-Wallet guard)
+    match /announcements/{announcementId} {
+      allow get: if isValidId(announcementId);
+      allow list: if true;
+
+      allow create: if isVerifiedUser()
+        && isValidId(announcementId)
+        && isValidAnnouncement(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && isAdmin();
+
+      allow update: if isVerifiedUser()
+        && isValidId(announcementId)
+        && isValidAnnouncement(incoming())
+        && incoming().authorUid == existing().authorUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['date', 'title', 'summary', 'badge', 'linkUrl', 'updatedAt'])
+        && isAdmin();
+
+      allow delete: if isVerifiedUser()
+        && isValidId(announcementId)
+        && isAdmin();
+    }
+
+    // Admin allowlist (strictly non-writable and non-enumerable from client SDKs)
+    match /admins/{adminId} {
+      allow get: if isVerifiedUser() && isValidId(adminId) && (request.auth.uid == adminId || isAdmin());
+      allow list: if false;
+      allow create, update, delete: if false;
+    }
+  }
+}
