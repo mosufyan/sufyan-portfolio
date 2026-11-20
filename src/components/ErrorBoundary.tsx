@@ -25,6 +25,20 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('Application ErrorBoundary caught error:', error, info.componentStack);
+    try {
+      void fetch('/api/telemetry/client-error', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: error.message?.slice(0, 500) || 'Unknown client error',
+          stack: error.stack?.slice(0, 2000),
+          componentStack: info.componentStack?.slice(0, 2000),
+        }),
+        keepalive: true,
+      });
+    } catch {
+      /* ignore reporting failures */
+    }
   }
 
   private handleReset = () => {

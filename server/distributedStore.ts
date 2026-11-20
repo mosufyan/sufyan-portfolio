@@ -328,6 +328,50 @@ export async function incrDistributedChatQuota(
   }
 }
 
+/** Generic JSON KV helpers for OTP / chat session sharing across replicas. */
+export async function redisSetJson(
+  key: string,
+  value: unknown,
+  ttlMs?: number
+): Promise<{ ok: boolean; backend: 'memory' | 'redis' }> {
+  if (!redis) return { ok: true, backend: 'memory' };
+  const clean = key.trim().slice(0, 200);
+  try {
+    if (ttlMs && ttlMs > 0) {
+      await redis.set(clean, value, { px: Math.floor(ttlMs) });
+    } else {
+      await redis.set(clean, value);
+    }
+    return { ok: true, backend: 'redis' };
+  } catch (error) {
+    console.error('Upstash redisSetJson error:', error);
+    return { ok: false, backend: 'redis' };
+  }
+}
+
+export async function redisGetJson<T>(
+  key: string
+): Promise<{ value: T | null; backend: 'memory' | 'redis'; error?: boolean }> {
+  if (!redis) return { value: null, backend: 'memory' };
+  const clean = key.trim().slice(0, 200);
+  try {
+    const raw = await redis.get<T>(clean);
+    return { value: raw ?? null, backend: 'redis' };
+  } catch (error) {
+    console.error('Upstash redisGetJson error:', error);
+    return { value: null, backend: 'redis', error: true };
+  }
+}
+
+export async function redisDel(key: string): Promise<void> {
+  if (!redis) return;
+  try {
+    await redis.del(key.trim().slice(0, 200));
+  } catch (error) {
+    console.error('Upstash redisDel error:', error);
+  }
+}
+
 export async function peekDistributedChatQuota(
   visitorKey: string,
   kind: string,

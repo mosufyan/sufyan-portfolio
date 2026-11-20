@@ -710,3 +710,74 @@ export function verifyOtpChallenge<T = OtpPendingPayload>(
   store.delete(input.challengeId);
   return { ok: true, payload: record.payload };
 }
+
+type RedisOtpBridge = {
+  setJson: (key: string, value: unknown, ttlMs?: number) => Promise<{ ok: boolean }>;
+  getJson: <T>(key: string) => Promise<{ value: T | null; error?: boolean }>;
+  del: (key: string) => Promise<void>;
+  enabled: () => boolean;
+};
+
+let otpRedisBridge: RedisOtpBridge | null = null;
+
+/** Wire Upstash helpers so OTP challenges are shared across Cloud Run replicas. */
+export function configureOtpRedisBridge(bridge: RedisOtpBridge | null): void {
+  otpRedisBridge = bridge;
+}
+
+function otpRedisKey(challengeId: string): string {
+  return `otp:${challengeId.slice(0, 80)}`;
+}
+
+/**
+ * Async OTP create — mirrors into Redis when configured so multi-replica verify works.
+ */
+export async function createOtpChallengeAsync<T = OtpPendingPayload>(
+  store: Map<string, OtpChallengeRecord<T>>,
+  payload: T,
+  secret: string,
+  options: { now?: number; ttlMs?: number; fixedCode?: string } = {}
+): Promise<{ challengeId: string; challengeToken: string; code: string; expiresAt: number }> {
+  const created = createOtpChallenge(store, payload, secret, options);
+  const record = store.get(created.challengeId);
+  if (record && otpRedisBridge?.enabled()) {
+    const ttlMs = Math.max(1_000, created.expiresAt - (options.now ?? Date.now()));
+    await otpRedisBridge.setJson(otpRedisKey(created.challengeId), record, ttlMs);
+  }
+  return created;
+}
+
+/**
+ * Async OTP verify — reads Redis when the challenge is missing on this replica.
+ */
+export async function verifyOtpChallengeAsync<T = OtpPendingPayload>(
+  store: Map<string, OtpChallengeRecord<T>>,
+  input: { challengeId: string; challengeToken: string; code: string },
+  secret: string,
+  options: { now?: number; maxAttempts?: number } = {}
+): Promise<{ ok: true; payload: T } | { ok: false; error: string }> {
+  if (!store.has(input.challengeId) && otpRedisBridge?.enabled()) {
+    const remote = await otpRedisBridge.getJson<OtpChallengeRecord<T>>(otpRedisKey(input.challengeId));
+    if (remote.error) {
+      return {
+        ok: false,
+        error: 'Verification service temporarily unavailable. Please try again shortly.',
+      };
+    }
+    if (remote.value) {
+      store.set(input.challengeId, remote.value);
+    }
+  }
+
+  const result = verifyOtpChallenge(store, input, secret, options);
+  if (otpRedisBridge?.enabled()) {
+    const local = store.get(input.challengeId);
+    if (!local || result.ok) {
+      await otpRedisBridge.del(otpRedisKey(input.challengeId));
+    } else {
+      const ttlMs = Math.max(1_000, local.expiresAt - (options.now ?? Date.now()));
+      await otpRedisBridge.setJson(otpRedisKey(input.challengeId), local, ttlMs);
+    }
+  }
+  return result;
+}

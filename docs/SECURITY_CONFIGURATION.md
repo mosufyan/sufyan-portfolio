@@ -150,9 +150,16 @@ FIREBASE_SERVICE_ACCOUNT_JSON='{"type":"service_account",...}'
 # CURSOR_API_KEY=...
 # CHAT_LLM_TIMEOUT_MS=12000
 
+# Observability (gold path)
+# SENTRY_DSN=https://<key>@oXXXX.ingest.sentry.io/<project>
+# SLACK_ALERT_WEBHOOK_URL=https://hooks.slack.com/services/...
+# STRICT_PROD_HARDENING=true   # /api/health → 503 if gold-path secrets missing in production
+
 ALLOW_FORMSUBMIT_FALLBACK=false
 FORCE_CV_OTP=false   # or true for always-on CV OTP
 ```
+
+Public readiness (no secrets): `GET /api/status` and `GET /api/health` (includes `goldPath` checklist). Disclosure: `/.well-known/security.txt` and `#security` Architecture map.
 
 ### Cloud Armor (optional if not using Cloudflare WAF)
 

@@ -1,6 +1,5 @@
 /**
- * In-process chat session store with disk cache.
- * Suitable for single-instance Cloud Run; pair with Redis later for multi-replica live chat.
+ * Chat session store with disk cache + optional Redis write-through for multi-replica.
  */
 import crypto from 'crypto';
 import fs from 'fs';
@@ -10,6 +9,11 @@ import {
   exportChatUsageSnapshot,
   importChatUsageSnapshot,
 } from './chatLimits.ts';
+import {
+  isDistributedStoreEnabled,
+  redisGetJson,
+  redisSetJson,
+} from './distributedStore.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CACHE_PATH = path.join(__dirname, '..', '.owner-chat-cache.json');
@@ -124,6 +128,17 @@ function scheduleFlush(): void {
 
 loadCache();
 
+const CHAT_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+
+function chatRedisKey(sessionId: string): string {
+  return `chatsess:${sessionId.slice(0, 64)}`;
+}
+
+function mirrorSession(session: ChatSession): void {
+  if (!isDistributedStoreEnabled()) return;
+  void redisSetJson(chatRedisKey(session.sessionId), session, CHAT_SESSION_TTL_MS);
+}
+
 export function bumpBotQuestion(): void {
   botQuestions += 1;
   scheduleFlush();
@@ -221,11 +236,23 @@ export function createChatSession(input: {
   sessions.set(sessionId, session);
   liveSessions += 1;
   scheduleFlush();
+  mirrorSession(session);
   return session;
 }
 
 export function getChatSession(sessionId: string): ChatSession | null {
   return sessions.get(sessionId) || null;
+}
+
+/** Prefer local memory; fall back to Redis when another replica owns the session. */
+export async function getChatSessionAsync(sessionId: string): Promise<ChatSession | null> {
+  const local = sessions.get(sessionId);
+  if (local) return local;
+  if (!isDistributedStoreEnabled()) return null;
+  const remote = await redisGetJson<ChatSession>(chatRedisKey(sessionId));
+  if (remote.error || !remote.value?.sessionId) return null;
+  sessions.set(sessionId, remote.value);
+  return remote.value;
 }
 
 export function listChatSessions(): ChatSession[] {
@@ -258,6 +285,7 @@ export function appendChatMessage(
     session.status = 'active';
   }
   scheduleFlush();
+  mirrorSession(session);
   return session;
 }
 
@@ -273,6 +301,7 @@ export function closeChatSession(sessionId: string): ChatSession | null {
     createdAtMs: session.updatedAtMs,
   });
   scheduleFlush();
+  mirrorSession(session);
   return session;
 }
 

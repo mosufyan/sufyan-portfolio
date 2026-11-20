@@ -22,6 +22,7 @@ import UnifiedScrollHud, { type PortfolioReadingMode } from './components/Unifie
 import DigitalCardModal from './components/DigitalCardModal';
 import OwnerConsolePage from './components/OwnerConsolePage';
 import ChatWidget from './components/ChatWidget';
+import SecurityArchitectureModal from './components/SecurityArchitectureModal';
 import { Certification } from './data/portfolioData';
 import { normalizeSelectedSkills, toggleSelectedSkill } from './utils/skillMatcher';
 import {
@@ -74,6 +75,10 @@ export default function App() {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [digitalCardOpen, setDigitalCardOpen] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
+  const [securityOpen, setSecurityOpen] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.location.hash.replace(/^#/, '').split('?')[0] === 'security';
+  });
   const [selectedCert, setSelectedCert] = useState<Certification | null>(null);
   const [selectedSkills, setSelectedSkillsState] = useState<string[]>(() => readSkillsFromUrl());
   const [focusedCompany, setFocusedCompany] = useState<{ name: string; seq: number } | null>(null);
@@ -90,6 +95,16 @@ export default function App() {
       writeOwnerConsoleHash(null);
     }
   }, [isOwner, ownerViewRequested]);
+
+  // Public `#security` deep link for the architecture map
+  useEffect(() => {
+    const syncSecurityHash = () => {
+      const id = window.location.hash.replace(/^#/, '').split('?')[0];
+      setSecurityOpen(id === 'security');
+    };
+    window.addEventListener('hashchange', syncSecurityHash);
+    return () => window.removeEventListener('hashchange', syncSecurityHash);
+  }, []);
 
   // Restore / follow `#owner/<section>` deep links once auth is ready
   useEffect(() => {
@@ -233,6 +248,18 @@ export default function App() {
     if (!features.enableTerminal) return;
     setTerminalOpen(true);
   }, [features.enableTerminal]);
+  const openSecurity = useCallback(() => {
+    setSecurityOpen(true);
+    if (typeof window !== 'undefined') {
+      window.history.replaceState({}, '', `${window.location.pathname}${window.location.search}#security`);
+    }
+  }, []);
+  const closeSecurity = useCallback(() => {
+    setSecurityOpen(false);
+    if (typeof window !== 'undefined' && window.location.hash.replace(/^#/, '').startsWith('security')) {
+      window.history.replaceState({}, '', `${window.location.pathname}${window.location.search}`);
+    }
+  }, []);
   const skillSelect = features.enableSkillFilter ? setSelectedSkill : () => {};
   const skillApply = features.enableSkillFilter ? applySelectedSkills : () => {};
   const activeSkills = features.enableSkillFilter ? selectedSkills : [];
@@ -334,6 +361,7 @@ export default function App() {
                 <Footer
                   onOpenDigitalCard={features.enableDigitalCard ? openDigitalCard : undefined}
                   onOpenTerminal={features.enableTerminal ? openTerminal : undefined}
+                  onOpenSecurity={openSecurity}
                 />
               </>
             )}
@@ -409,6 +437,8 @@ export default function App() {
             }}
           />
         )}
+
+        <SecurityArchitectureModal open={securityOpen} onClose={closeSecurity} />
       </div>
     </MotionConfig>
   );

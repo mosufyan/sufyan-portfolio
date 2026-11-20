@@ -28,7 +28,8 @@ import {
 import { getEmailPalette, parseEmailTheme, type EmailTheme } from './server/emailTheme.ts';
 import {
   assessVisitorRisk,
-  createOtpChallenge,
+  configureOtpRedisBridge,
+  createOtpChallengeAsync,
   extractClientIp,
   generateDownloadId,
   generateSessionId,
@@ -37,7 +38,7 @@ import {
   signSessionReceipt,
   validatePhoneDetails,
   verifyEmailMxRecord,
-  verifyOtpChallenge,
+  verifyOtpChallengeAsync,
   verifySessionReceipt,
   type ContactOtpPendingPayload,
   type OtpChallengeRecord,
@@ -48,9 +49,21 @@ import {
   checkDistributedRateLimit,
   isDistributedStoreEnabled,
   loadDistributedOwnerPolicy,
+  redisDel,
+  redisGetJson,
+  redisSetJson,
   saveDistributedOwnerPolicy,
   type RateLimitNamespace,
 } from './server/distributedStore.ts';
+import {
+  bumpMetric,
+  captureException,
+  evaluateGoldPathHardening,
+  getObservabilitySnapshot,
+  postSlackAlert,
+  requestContextMiddleware,
+  structuredLog,
+} from './server/observability.ts';
 import {
   adminGetContactMessage,
   adminWriteContactMessage,
@@ -66,7 +79,7 @@ import {
   bumpLlmCall,
   closeChatSession,
   createChatSession,
-  getChatSession,
+  getChatSessionAsync,
   getChatStats,
   isOwnerOnline,
   listChatSessions,
@@ -135,6 +148,13 @@ interface ChatLiveOtpPayload {
   ipAddress: string;
 }
 const chatLiveOtpStore = new Map<string, OtpChallengeRecord<ChatLiveOtpPayload>>();
+
+configureOtpRedisBridge({
+  enabled: () => isDistributedStoreEnabled(),
+  setJson: redisSetJson,
+  getJson: redisGetJson,
+  del: redisDel,
+});
 
 function signChatSessionReceipt(sessionId: string, email: string): string {
   const payload = Buffer.from(
@@ -436,7 +456,6 @@ async function emitOwnerAlert(input: {
   detail: string;
   dedupeKey: string;
 }): Promise<void> {
-  if (!isDirectEmailTransportConfigured()) return;
   try {
     const prefs = prefsFromPortfolioSettings(runtimeOwnerPolicy);
     await routeOwnerNotification({
@@ -446,6 +465,11 @@ async function emitOwnerAlert(input: {
       detail: input.detail,
       dedupeKey: input.dedupeKey,
       sendImmediate: async ({ subject, title, detail, alertClass }) => {
+        bumpMetric('alertsDispatched');
+        if (alertClass === 'urgent' || alertClass === 'warning') {
+          void postSlackAlert({ title, detail, alertClass });
+        }
+        if (!isDirectEmailTransportConfigured()) return;
         const color = alertClass === 'urgent' ? '#e11d48' : '#d97706';
         const html = `<div style="font-family:Inter,Segoe UI,sans-serif;line-height:1.5;color:#0f172a">
           <p style="margin:0 0 8px;font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:${color};font-weight:700">${alertClass}</p>
@@ -463,7 +487,10 @@ async function emitOwnerAlert(input: {
       },
     });
   } catch (err) {
-    console.warn('Owner alert dispatch failed:', err instanceof Error ? err.message : err);
+    structuredLog('warn', 'owner_alert_failed', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    void captureException(err, { source: 'emitOwnerAlert', dedupeKey: input.dedupeKey });
   }
 }
 
@@ -1616,6 +1643,8 @@ async function startServer() {
     app.set('trust proxy', 1);
   }
 
+  app.use(requestContextMiddleware);
+
   app.use((req: Request, res: Response, next: NextFunction) => {
     const isDev = process.env.NODE_ENV !== 'production';
     const requestHost =
@@ -1633,7 +1662,9 @@ async function startServer() {
       typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : undefined;
     const isSensitivePost =
       req.method === 'POST' &&
-      (req.path.startsWith('/api/contact') || req.path.startsWith('/api/cv-'));
+      (req.path.startsWith('/api/contact') ||
+        req.path.startsWith('/api/cv-') ||
+        req.path.startsWith('/api/chat'));
 
     if (isBlockedBotUserAgent(userAgent, isSensitivePost)) {
       res.status(403).json({
@@ -1689,25 +1720,75 @@ async function startServer() {
     return false;
   }
 
-  app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
+  app.use((err: unknown, req: Request, res: Response, next: NextFunction) => {
     if (err instanceof SyntaxError && 'body' in err) {
       res.status(400).json({ error: 'Invalid JSON request payload.' });
       return;
     }
+    void captureException(err, { requestId: req.requestId, path: req.path });
     next(err);
   });
 
   app.get('/api/health', (_req: Request, res: Response) => {
-    res.status(200).json({
-      ok: true,
-      status: 'healthy',
+    const gold = evaluateGoldPathHardening();
+    const strict =
+      (process.env.STRICT_PROD_HARDENING || '').toLowerCase() === 'true' &&
+      process.env.NODE_ENV === 'production';
+    const degraded = strict && !gold.productionReady;
+    res.status(degraded ? 503 : 200).json({
+      ok: !degraded,
+      status: degraded ? 'degraded' : 'healthy',
       timestamp: new Date().toISOString(),
       emailTransportConfigured: isDirectEmailTransportConfigured(),
       turnstileConfigured: Boolean(TURNSTILE_SITE_KEY),
+      sessionSecretConfigured: Boolean(process.env.SESSION_SECRET?.trim()),
       incidentMode: runtimeOwnerPolicy.incidentMode,
       distributedStore: isDistributedStoreEnabled() ? 'redis' : 'memory',
       serverTelemetryWrites: isFirebaseAdminConfigured(),
+      observability: {
+        sentry: Boolean((process.env.SENTRY_DSN || '').trim()),
+        slack: Boolean((process.env.SLACK_ALERT_WEBHOOK_URL || '').trim()),
+      },
+      goldPath: {
+        score: gold.score,
+        max: gold.max,
+        productionReady: gold.productionReady,
+        items: gold.items,
+      },
     });
+  });
+
+  /** Public boolean status for the Security Architecture page (no secrets). */
+  app.get('/api/status', (_req: Request, res: Response) => {
+    const gold = evaluateGoldPathHardening();
+    res.status(200).json({
+      ok: true,
+      timestamp: new Date().toISOString(),
+      controls: {
+        turnstile: Boolean(TURNSTILE_SITE_KEY),
+        redis: isDistributedStoreEnabled(),
+        adminWrites: isFirebaseAdminConfigured(),
+        mail: isDirectEmailTransportConfigured(),
+        incidentMode: runtimeOwnerPolicy.incidentMode,
+        sentry: Boolean((process.env.SENTRY_DSN || '').trim()),
+        slackAlerts: Boolean((process.env.SLACK_ALERT_WEBHOOK_URL || '').trim()),
+        sessionSecret: Boolean(process.env.SESSION_SECRET?.trim()),
+      },
+      goldPathScore: `${gold.score}/${gold.max}`,
+    });
+  });
+
+  app.get('/.well-known/security.txt', (_req: Request, res: Response) => {
+    const expires = new Date();
+    expires.setFullYear(expires.getFullYear() + 1);
+    const body = [
+      'Contact: mailto:sufyan.net@gmail.com',
+      'Expires: ' + expires.toISOString(),
+      'Preferred-Languages: en',
+      'Canonical: https://www.mohammedsufyan.com/.well-known/security.txt',
+      'Policy: https://www.mohammedsufyan.com/#security',
+    ].join('\n');
+    res.type('text/plain').status(200).send(body + '\n');
   });
 
   app.get('/api/access-config', (_req: Request, res: Response) => {
@@ -1716,6 +1797,20 @@ async function startServer() {
       otpSupported: isDirectEmailTransportConfigured(),
       forceOtp: FORCE_CV_OTP || runtimeOwnerPolicy.strictOtpForAll,
       serverTelemetryPreferred: isFirebaseAdminConfigured(),
+    });
+  });
+
+  app.get('/api/owner/observability', async (req: Request, res: Response) => {
+    const authCheck = await verifyConsoleActorToken(req.headers.authorization);
+    if (!authCheck.ok) {
+      res.status(401).json({ error: authCheck.error });
+      return;
+    }
+    res.status(200).json({
+      ok: true,
+      metrics: getObservabilitySnapshot(),
+      goldPath: evaluateGoldPathHardening(),
+      chat: getChatStats(),
     });
   });
 
@@ -1762,6 +1857,51 @@ async function startServer() {
       res.status(204).end();
     } catch {
       res.status(500).json({ error: 'Unable to record telemetry event.' });
+    }
+  });
+
+  /** Browser ErrorBoundary / client crash reports → structured log + optional Sentry. */
+  app.post('/api/telemetry/client-error', async (req: Request, res: Response) => {
+    try {
+      if (!req.is('application/json')) {
+        res.status(415).json({ error: 'Content-Type must be application/json.' });
+        return;
+      }
+      if (rejectDisallowedOrigin(req, res)) return;
+      const clientIp = extractClientIp(req);
+      if (
+        await enforceRateLimit(res, 'telemetry', `cerr:${clientIp}`, {
+          maxRequests: 20,
+          error: 'Client error report rate limit exceeded.',
+        })
+      ) {
+        return;
+      }
+      const raw = (req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {}) as {
+        message?: unknown;
+        stack?: unknown;
+        componentStack?: unknown;
+      };
+      const message =
+        typeof raw.message === 'string' ? raw.message.trim().slice(0, 500) : 'client_error';
+      const stack = typeof raw.stack === 'string' ? raw.stack.trim().slice(0, 2000) : undefined;
+      const componentStack =
+        typeof raw.componentStack === 'string' ? raw.componentStack.trim().slice(0, 2000) : undefined;
+      structuredLog('error', 'client_error', {
+        requestId: req.requestId,
+        message,
+        stack,
+        componentStack,
+      });
+      void captureException(new Error(message), {
+        source: 'client',
+        requestId: req.requestId,
+        stack,
+        componentStack,
+      });
+      res.status(204).end();
+    } catch {
+      res.status(500).json({ error: 'Unable to record client error.' });
     }
   });
 
@@ -2259,7 +2399,7 @@ async function startServer() {
       });
       const cleanTheme = parseEmailTheme(body.theme);
 
-      const challenge = createOtpChallenge(
+      const challenge = await createOtpChallengeAsync(
         contactOtpChallengeStore,
         {
           name: cleanName,
@@ -2276,6 +2416,7 @@ async function startServer() {
         },
         OTP_SECRET
       );
+      bumpMetric('otpIssued');
 
       await sendVisitorOtpEmail({
         email: cleanEmail,
@@ -2340,7 +2481,7 @@ async function startServer() {
         return;
       }
 
-      const verified = verifyOtpChallenge(
+      const verified = await verifyOtpChallengeAsync(
         contactOtpChallengeStore,
         { challengeId, challengeToken, code },
         OTP_SECRET
@@ -2349,6 +2490,7 @@ async function startServer() {
         res.status(400).json({ error: verified.error });
         return;
       }
+      bumpMetric('otpVerified');
 
       const p = verified.payload;
       const accessCheck = evaluateAccessRules(runtimeOwnerPolicy.rules, {
@@ -2616,7 +2758,7 @@ async function startServer() {
           return;
         }
 
-        const challenge = createOtpChallenge(
+        const challenge = await createOtpChallengeAsync(
           otpChallengeStore,
           {
             name: cleanName,
@@ -2636,6 +2778,7 @@ async function startServer() {
           },
           OTP_SECRET
         );
+        bumpMetric('otpIssued');
 
         await sendVisitorOtpEmail({
           email: cleanEmail,
@@ -2763,7 +2906,7 @@ async function startServer() {
         return;
       }
 
-      const verified = verifyOtpChallenge(
+      const verified = await verifyOtpChallengeAsync(
         otpChallengeStore,
         { challengeId, challengeToken, code },
         OTP_SECRET
@@ -2772,6 +2915,7 @@ async function startServer() {
         res.status(400).json({ error: verified.error });
         return;
       }
+      bumpMetric('otpVerified');
 
       const p = verified.payload;
       if (p.action === 'install' && !runtimeOwnerPolicy.enablePwaInstall) {
@@ -3064,7 +3208,7 @@ async function startServer() {
           res.status(401).json({ error: 'Chat session expired. Please verify your email again.' });
           return;
         }
-        const session = getChatSession(sessionId);
+        const session = await getChatSessionAsync(sessionId);
         if (!session || session.visitorEmail !== auth.email || session.status === 'closed') {
           res.status(404).json({ error: 'Chat session not found or closed.' });
           return;
@@ -3096,6 +3240,7 @@ async function startServer() {
       }
 
       bumpBotQuestion();
+      bumpMetric('chatQuestions');
 
       const wantLlm =
         runtimeOwnerPolicy.enableChatLlm &&
@@ -3138,7 +3283,7 @@ async function startServer() {
       }
 
       const llmRemaining = (await checkChatLimitAsync(visitorKey, 'llm', limitPolicy)).remaining;
-      const session = sessionId ? getChatSession(sessionId) : null;
+      const session = sessionId ? await getChatSessionAsync(sessionId) : null;
 
       res.status(200).json({
         ok: true,
@@ -3278,7 +3423,7 @@ async function startServer() {
         typeof req.headers['user-agent'] === 'string'
           ? sanitizeHeaderValue(req.headers['user-agent']).slice(0, 220)
           : 'Unknown';
-      const challenge = createOtpChallenge(
+      const challenge = await createOtpChallengeAsync(
         chatLiveOtpStore,
         {
           name,
@@ -3292,6 +3437,7 @@ async function startServer() {
         },
         OTP_SECRET
       );
+      bumpMetric('otpIssued');
       await sendVisitorOtpEmail({
         email,
         name,
@@ -3310,6 +3456,7 @@ async function startServer() {
         message: `Verification code sent to ${maskEmailAddress(email)}.`,
       });
     } catch (error) {
+      void captureException(error, { route: '/api/chat/live/start' });
       console.error('Chat live start error:', error instanceof Error ? error.message : error);
       res.status(500).json({ error: 'Unable to start live chat verification right now.' });
     }
@@ -3343,7 +3490,7 @@ async function startServer() {
         return;
       }
 
-      const verified = verifyOtpChallenge(
+      const verified = await verifyOtpChallengeAsync(
         chatLiveOtpStore,
         { challengeId, challengeToken, code },
         OTP_SECRET
@@ -3372,6 +3519,8 @@ async function startServer() {
         return;
       }
 
+      bumpMetric('otpVerified');
+      bumpMetric('chatLiveStarts');
       const session = createChatSession({
         visitorName: p.name,
         visitorEmail: p.email,
@@ -3417,7 +3566,7 @@ async function startServer() {
     });
   }
 
-  app.get('/api/chat/live/:sessionId', (req: Request, res: Response) => {
+  app.get('/api/chat/live/:sessionId', async (req: Request, res: Response) => {
     const sessionId = typeof req.params.sessionId === 'string' ? req.params.sessionId : '';
     const receipt = extractChatReceipt(req);
     const auth = verifyChatSessionReceipt(receipt, sessionId);
@@ -3425,7 +3574,7 @@ async function startServer() {
       res.status(401).json({ error: 'Invalid or expired chat session.' });
       return;
     }
-    const session = getChatSession(sessionId);
+    const session = await getChatSessionAsync(sessionId);
     if (!session || session.visitorEmail !== auth.email) {
       res.status(404).json({ error: 'Chat session not found.' });
       return;
@@ -3464,7 +3613,7 @@ async function startServer() {
         return;
       }
       const text = typeof body.text === 'string' ? body.text : '';
-      const session = getChatSession(sessionId);
+      const session = await getChatSessionAsync(sessionId);
       if (!session || session.visitorEmail !== auth.email) {
         res.status(404).json({ error: 'Chat session not found.' });
         return;

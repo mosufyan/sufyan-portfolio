@@ -1,5 +1,5 @@
 import { Linkedin } from './icons/Linkedin';
-import { Mail, ArrowUp, QrCode, Terminal } from 'lucide-react';
+import { Mail, ArrowUp, QrCode, Terminal, Shield } from 'lucide-react';
 import { motion } from 'motion/react';
 import { PERSONAL_INFO } from '../data/portfolioData';
 import { useFirebase } from '../contexts/FirebaseContext';
@@ -9,9 +9,10 @@ import PWAInstallButton from './PWAInstallButton';
 interface FooterProps {
   onOpenDigitalCard?: () => void;
   onOpenTerminal?: () => void;
+  onOpenSecurity?: () => void;
 }
 
-export default function Footer({ onOpenDigitalCard, onOpenTerminal }: FooterProps) {
+export default function Footer({ onOpenDigitalCard, onOpenTerminal, onOpenSecurity }: FooterProps) {
   const { effectivePortfolioSettings } = useFirebase();
   const scrollToTop = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -77,6 +78,18 @@ export default function Footer({ onOpenDigitalCard, onOpenTerminal }: FooterProp
               <li>
                 <a href="#contact" className="inline-block hover:text-cyan-400 hover:translate-x-0.5 transition-all">Transmit Message</a>
               </li>
+              {onOpenSecurity && (
+                <li>
+                  <button
+                    type="button"
+                    onClick={onOpenSecurity}
+                    className="inline-flex items-center gap-1.5 hover:text-cyan-400 hover:translate-x-0.5 transition-all cursor-pointer"
+                  >
+                    <Shield className="w-3 h-3" />
+                    Security Architecture
+                  </button>
+                </li>
+              )}
             </ul>
           </div>
 
