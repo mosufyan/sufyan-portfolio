@@ -1,7 +1,13 @@
 /**
  * Per-visitor chat usage counters for bot Q&A, Cursor LLM, and live sessions.
+ * When Upstash Redis is configured, quotas are shared across Cloud Run replicas.
  */
 import crypto from 'crypto';
+import {
+  incrDistributedChatQuota,
+  isDistributedStoreEnabled,
+  peekDistributedChatQuota,
+} from './distributedStore.ts';
 
 export interface VisitorChatUsage {
   visitorKey: string;
@@ -141,6 +147,137 @@ export function consumeChatLimit(
     remaining: remainingFor(kind, usage, policy),
     usage: { ...usage },
     resetAtMs: usage.windowStartedAtMs + windowMs(policy),
+  };
+}
+
+function maxFor(kind: ChatLimitKind, policy: ChatLimitPolicy): number {
+  if (kind === 'question') return policy.maxQuestionsPerVisitor;
+  if (kind === 'llm') return policy.maxLlmPerVisitor;
+  return policy.maxLiveSessionsPerVisitor;
+}
+
+function usageFromCounts(
+  visitorKey: string,
+  counts: { questions: number; llmCalls: number; liveSessions: number },
+  windowStartedAtMs: number
+): VisitorChatUsage {
+  return {
+    visitorKey,
+    windowStartedAtMs,
+    questions: counts.questions,
+    llmCalls: counts.llmCalls,
+    liveSessions: counts.liveSessions,
+  };
+}
+
+/**
+ * Check chat limit using Redis when configured (shared across replicas).
+ * Falls back to in-memory when Redis is unset. Fail-closed on Redis errors.
+ */
+export async function checkChatLimitAsync(
+  visitorKey: string,
+  kind: ChatLimitKind,
+  policy: ChatLimitPolicy,
+  now = Date.now()
+): Promise<ChatLimitDecision> {
+  if (!isDistributedStoreEnabled()) {
+    return checkChatLimit(visitorKey, kind, policy, now);
+  }
+
+  const span = windowMs(policy);
+  const peek = await peekDistributedChatQuota(visitorKey, kind, span);
+  const max = maxFor(kind, policy);
+  const windowStartedAtMs = now + peek.ttlMs - span;
+  const usage = usageFromCounts(
+    visitorKey,
+    {
+      questions: kind === 'question' ? peek.count : 0,
+      llmCalls: kind === 'llm' ? peek.count : 0,
+      liveSessions: kind === 'live' ? peek.count : 0,
+    },
+    windowStartedAtMs
+  );
+  const resetAtMs = now + Math.max(0, peek.ttlMs);
+
+  if (peek.error || peek.count >= max) {
+    const label =
+      kind === 'question' ? 'questions' : kind === 'llm' ? 'LLM answers' : 'live chat sessions';
+    return {
+      allowed: false,
+      reason: peek.error
+        ? 'Chat quota service temporarily unavailable. Try again shortly.'
+        : `Per-visitor ${label} limit reached for this window. Try again later or contact Mohammed directly.`,
+      remaining: 0,
+      usage,
+      resetAtMs,
+    };
+  }
+
+  return {
+    allowed: true,
+    remaining: Math.max(0, max - peek.count),
+    usage,
+    resetAtMs,
+  };
+}
+
+/**
+ * Consume chat limit using Redis when configured. Also updates local memory
+ * for owner dashboard aggregates on this replica.
+ */
+export async function consumeChatLimitAsync(
+  visitorKey: string,
+  kind: ChatLimitKind,
+  policy: ChatLimitPolicy,
+  now = Date.now()
+): Promise<ChatLimitDecision> {
+  if (!isDistributedStoreEnabled()) {
+    return consumeChatLimit(visitorKey, kind, policy, now);
+  }
+
+  const span = windowMs(policy);
+  const max = maxFor(kind, policy);
+  const incr = await incrDistributedChatQuota(visitorKey, kind, span);
+  const windowStartedAtMs = now + incr.ttlMs - span;
+  const usage = usageFromCounts(
+    visitorKey,
+    {
+      questions: kind === 'question' ? incr.count : 0,
+      llmCalls: kind === 'llm' ? incr.count : 0,
+      liveSessions: kind === 'live' ? incr.count : 0,
+    },
+    windowStartedAtMs
+  );
+  const resetAtMs = now + Math.max(0, incr.ttlMs);
+
+  // Mirror into local memory for approximate owner totals on this replica.
+  if (!incr.error) {
+    const local = ensureUsage(visitorKey, policy, now);
+    if (kind === 'question') local.questions = Math.max(local.questions, incr.count);
+    if (kind === 'llm') local.llmCalls = Math.max(local.llmCalls, incr.count);
+    if (kind === 'live') local.liveSessions = Math.max(local.liveSessions, incr.count);
+    usages.set(visitorKey, local);
+  }
+
+  if (incr.error || incr.count > max) {
+    const label =
+      kind === 'question' ? 'questions' : kind === 'llm' ? 'LLM answers' : 'live chat sessions';
+    return {
+      allowed: false,
+      reason: incr.error
+        ? 'Chat quota service temporarily unavailable. Try again shortly.'
+        : `Per-visitor ${label} limit reached for this window. Try again later or contact Mohammed directly.`,
+      remaining: 0,
+      usage,
+      resetAtMs,
+    };
+  }
+
+  return {
+    allowed: true,
+    remaining: Math.max(0, max - incr.count),
+    usage,
+    resetAtMs,
   };
 }
 

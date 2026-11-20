@@ -250,16 +250,112 @@ export async function loadDistributedOwnerPolicy(
       alertClassOverdueCrm: asAlertClass(raw.alertClassOverdueCrm, fallback.alertClassOverdueCrm),
     };
   } catch (error) {
-    console.error('Upstash policy load error; using local fallback:', error);
-    return fallback;
+    // Fail closed: when Redis is configured but unreachable, lock down visitor features
+    // rather than applying a potentially stale in-process fallback.
+    console.error('Upstash policy load error; failing closed (incident lockdown):', error);
+    return {
+      ...fallback,
+      incidentMode: true,
+      enableContactForm: false,
+      enableCvDownloads: false,
+      enablePwaInstall: false,
+      enableSiteTelemetry: false,
+      enablePortfolioChat: false,
+      enableLiveChat: false,
+      enableChatLlm: false,
+      strictOtpForAll: true,
+      notifyOnNewInquiry: fallback.notifyOnNewInquiry,
+    };
   }
 }
 
-export async function saveDistributedOwnerPolicy(policy: RuntimeOwnerPolicyPayload): Promise<void> {
-  if (!redis) return;
+export async function saveDistributedOwnerPolicy(
+  policy: RuntimeOwnerPolicyPayload
+): Promise<boolean> {
+  if (!redis) return true;
   try {
     await redis.set(POLICY_REDIS_KEY, policy);
+    return true;
   } catch (error) {
     console.error('Upstash policy save error:', error);
+    return false;
+  }
+}
+
+export interface ChatQuotaIncrResult {
+  count: number;
+  ttlMs: number;
+  backend: 'memory' | 'redis';
+  error?: boolean;
+}
+
+/**
+ * Shared per-visitor chat quota counter (fixed window bucket).
+ * When Redis is configured, all Cloud Run replicas share the same counter.
+ * On Redis errors, returns error:true so callers can fail closed.
+ */
+export async function incrDistributedChatQuota(
+  visitorKey: string,
+  kind: string,
+  windowMs: number
+): Promise<ChatQuotaIncrResult> {
+  const cleanKey = visitorKey.trim().slice(0, 64) || 'unknown';
+  const cleanKind = kind.trim().slice(0, 32) || 'question';
+  const span = Math.max(1_000, windowMs);
+  const now = Date.now();
+  const bucket = Math.floor(now / span);
+  const resetAtMs = (bucket + 1) * span;
+
+  if (!redis) {
+    return { count: 0, ttlMs: resetAtMs - now, backend: 'memory' };
+  }
+
+  const redisKey = `chatq:${cleanKind}:${cleanKey}:${bucket}`;
+  try {
+    const count = await redis.incr(redisKey);
+    if (count === 1) {
+      await redis.pexpire(redisKey, span);
+    }
+    const ttlMs = await redis.pttl(redisKey);
+    return {
+      count,
+      ttlMs: ttlMs > 0 ? ttlMs : resetAtMs - now,
+      backend: 'redis',
+    };
+  } catch (error) {
+    console.error('Upstash chat-quota error; fail-closed:', error);
+    return { count: Number.MAX_SAFE_INTEGER, ttlMs: Math.ceil(span / 1000) * 1000, backend: 'redis', error: true };
+  }
+}
+
+export async function peekDistributedChatQuota(
+  visitorKey: string,
+  kind: string,
+  windowMs: number
+): Promise<ChatQuotaIncrResult> {
+  const cleanKey = visitorKey.trim().slice(0, 64) || 'unknown';
+  const cleanKind = kind.trim().slice(0, 32) || 'question';
+  const span = Math.max(1_000, windowMs);
+  const now = Date.now();
+  const bucket = Math.floor(now / span);
+  const resetAtMs = (bucket + 1) * span;
+
+  if (!redis) {
+    return { count: 0, ttlMs: resetAtMs - now, backend: 'memory' };
+  }
+
+  const redisKey = `chatq:${cleanKind}:${cleanKey}:${bucket}`;
+  try {
+    const raw = await redis.get<number>(redisKey);
+    const count = typeof raw === 'number' && Number.isFinite(raw) ? raw : 0;
+    const ttlMs = await redis.pttl(redisKey);
+    return {
+      count,
+      ttlMs: ttlMs > 0 ? ttlMs : resetAtMs - now,
+      backend: 'redis',
+    };
+  } catch (error) {
+    console.error('Upstash chat-quota peek error; fail-closed:', error);
+    return { count: Number.MAX_SAFE_INTEGER, ttlMs: Math.ceil(span / 1000) * 1000, backend: 'redis', error: true };
   }
 }

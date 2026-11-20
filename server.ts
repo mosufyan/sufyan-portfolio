@@ -75,8 +75,8 @@ import {
 } from './server/chatSessions.ts';
 import {
   buildVisitorKey,
-  checkChatLimit,
-  consumeChatLimit,
+  checkChatLimitAsync,
+  consumeChatLimitAsync,
   getChatUsageTotals,
   type ChatLimitPolicy,
 } from './server/chatLimits.ts';
@@ -2043,25 +2043,25 @@ async function startServer() {
         return;
       }
 
-      // Bind recipient to the stored inquiry when Admin SDK is available (prevents arbitrary outbound mail).
-      let toEmail = toEmailRaw;
-      let toName = toNameRaw;
-      if (isFirebaseAdminConfigured()) {
-        const inquiry = await adminGetContactMessage(messageId);
-        if (!inquiry) {
-          res.status(404).json({ error: 'Inquiry not found for reply binding.' });
-          return;
-        }
-        if (toEmailRaw && toEmailRaw !== inquiry.senderEmail) {
-          res.status(403).json({ error: 'Reply recipient must match the inquiry sender email.' });
-          return;
-        }
-        toEmail = inquiry.senderEmail;
-        if (!toName) toName = inquiry.senderName;
-      } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(toEmail)) {
-        res.status(400).json({ error: 'A valid recipient email is required.' });
+      // Always bind recipient to the stored inquiry (prevents arbitrary outbound mail relay).
+      if (!isFirebaseAdminConfigured()) {
+        res.status(503).json({
+          error:
+            'Owner replies require Firebase Admin SDK binding. Set FIREBASE_SERVICE_ACCOUNT_JSON and retry.',
+        });
         return;
       }
+      const inquiry = await adminGetContactMessage(messageId);
+      if (!inquiry) {
+        res.status(404).json({ error: 'Inquiry not found for reply binding.' });
+        return;
+      }
+      if (toEmailRaw && toEmailRaw !== inquiry.senderEmail) {
+        res.status(403).json({ error: 'Reply recipient must match the inquiry sender email.' });
+        return;
+      }
+      const toEmail = inquiry.senderEmail;
+      const toName = toNameRaw || inquiry.senderName;
 
       if (
         await enforceRateLimit(res, 'contact', `owner-reply:${authCheck.email || authCheck.uid || 'actor'}`, {
@@ -3079,7 +3079,7 @@ async function startServer() {
       });
       void visitorId; // retained for future analytics only
       const limitPolicy = chatLimitPolicyFromRuntime(runtimeOwnerPolicy);
-      const questionLimit = consumeChatLimit(visitorKey, 'question', limitPolicy);
+      const questionLimit = await consumeChatLimitAsync(visitorKey, 'question', limitPolicy);
       if (!questionLimit.allowed) {
         void emitOwnerAlert({
           eventType: 'chat_limit',
@@ -3105,7 +3105,7 @@ async function startServer() {
       let answer = answerPortfolioQuestion(question);
 
       if (wantLlm) {
-        const llmCheck = checkChatLimit(visitorKey, 'llm', limitPolicy);
+        const llmCheck = await checkChatLimitAsync(visitorKey, 'llm', limitPolicy);
         if (llmCheck.allowed) {
           const enriched = await enrichAnswerWithCursorLlm(question, {
             apiKey: process.env.CURSOR_API_KEY || '',
@@ -3120,7 +3120,7 @@ async function startServer() {
           provider = enriched.provider;
           // Only spend LLM quota when Cursor actually returned an enriched answer.
           if (enriched.provider === 'cursor') {
-            consumeChatLimit(visitorKey, 'llm', limitPolicy);
+            await consumeChatLimitAsync(visitorKey, 'llm', limitPolicy);
             bumpLlmCall(true);
           } else {
             bumpLlmCall(false);
@@ -3137,7 +3137,7 @@ async function startServer() {
         appendChatMessage(sessionId, 'bot', answer.answer);
       }
 
-      const llmRemaining = checkChatLimit(visitorKey, 'llm', limitPolicy).remaining;
+      const llmRemaining = (await checkChatLimitAsync(visitorKey, 'llm', limitPolicy)).remaining;
       const session = sessionId ? getChatSession(sessionId) : null;
 
       res.status(200).json({
@@ -3249,7 +3249,7 @@ async function startServer() {
       }
 
       const liveVisitorKey = buildVisitorKey({ ipAddress: clientIp, email });
-      const liveLimit = checkChatLimit(
+      const liveLimit = await checkChatLimitAsync(
         liveVisitorKey,
         'live',
         chatLimitPolicyFromRuntime(runtimeOwnerPolicy)
@@ -3358,7 +3358,7 @@ async function startServer() {
         ipAddress: p.ipAddress || clientIp,
         email: p.email,
       });
-      const liveLimit = consumeChatLimit(
+      const liveLimit = await consumeChatLimitAsync(
         liveVisitorKey,
         'live',
         chatLimitPolicyFromRuntime(runtimeOwnerPolicy)

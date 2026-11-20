@@ -109,6 +109,102 @@ describe('distributedStore (memory fallback)', () => {
     };
     await expect(mod.loadDistributedOwnerPolicy(fallback)).resolves.toEqual(fallback);
   });
+
+  it('fails closed on policy load when Redis get throws', async () => {
+    vi.stubEnv('UPSTASH_REDIS_REST_URL', 'https://example.upstash.io');
+    vi.stubEnv('UPSTASH_REDIS_REST_TOKEN', 'test-token');
+    vi.resetModules();
+    vi.doMock('@upstash/redis', () => ({
+      Redis: class {
+        incr() {
+          return Promise.resolve(1);
+        }
+        pexpire() {
+          return Promise.resolve(1);
+        }
+        pttl() {
+          return Promise.resolve(1000);
+        }
+        get() {
+          return Promise.reject(new Error('redis down'));
+        }
+        set() {
+          return Promise.resolve('OK');
+        }
+      },
+    }));
+    const mod = await import('./distributedStore.ts');
+    const fallback = {
+      rules: [],
+      strictOtpForAll: false,
+      enableContactForm: true,
+      enableCvDownloads: true,
+      enablePwaInstall: true,
+      enableSiteTelemetry: true,
+      incidentMode: false,
+      notifyOnNewInquiry: true,
+      enablePortfolioChat: true,
+      enableLiveChat: true,
+      enableChatLlm: true,
+      chatMaxQuestionsPerVisitor: 10,
+      chatMaxLlmPerVisitor: 5,
+      chatMaxLiveSessionsPerVisitor: 3,
+      chatRateWindowHours: 24,
+      chatLlmModel: '',
+      chatShowSuggestions: true,
+      chatOfferLiveAgent: true,
+      alertEmailEnabled: true,
+      alertEmailUrgent: true,
+      alertEmailWarning: true,
+      alertEmailDigest: true,
+      alertClassNewInquiry: 'digest' as const,
+      alertClassLiveChat: 'urgent' as const,
+      alertClassRiskDownload: 'warning' as const,
+      alertClassUnusualTraffic: 'warning' as const,
+      alertClassChatLimit: 'digest' as const,
+      alertClassOverdueCrm: 'warning' as const,
+    };
+    const locked = await mod.loadDistributedOwnerPolicy(fallback);
+    expect(locked.incidentMode).toBe(true);
+    expect(locked.enableContactForm).toBe(false);
+    expect(locked.enableCvDownloads).toBe(false);
+    expect(locked.enablePortfolioChat).toBe(false);
+    expect(locked.enableLiveChat).toBe(false);
+    expect(locked.enableChatLlm).toBe(false);
+    expect(locked.strictOtpForAll).toBe(true);
+    vi.doUnmock('@upstash/redis');
+  });
+
+  it('chat quota incr fails closed when Redis throws', async () => {
+    vi.stubEnv('UPSTASH_REDIS_REST_URL', 'https://example.upstash.io');
+    vi.stubEnv('UPSTASH_REDIS_REST_TOKEN', 'test-token');
+    vi.resetModules();
+    vi.doMock('@upstash/redis', () => ({
+      Redis: class {
+        incr() {
+          return Promise.reject(new Error('redis down'));
+        }
+        pexpire() {
+          return Promise.resolve(1);
+        }
+        pttl() {
+          return Promise.resolve(1000);
+        }
+        get() {
+          return Promise.resolve(null);
+        }
+        set() {
+          return Promise.resolve('OK');
+        }
+      },
+    }));
+    const mod = await import('./distributedStore.ts');
+    const result = await mod.incrDistributedChatQuota('visitor-abc', 'question', 60_000);
+    expect(result.error).toBe(true);
+    expect(result.backend).toBe('redis');
+    expect(result.count).toBeGreaterThan(1_000);
+    vi.doUnmock('@upstash/redis');
+  });
 });
 
 describe('firebaseAdmin (unconfigured)', () => {

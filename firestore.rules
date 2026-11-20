@@ -376,12 +376,13 @@ service cloud.firestore {
         && data.createdAt is timestamp;
     }
 
-    // Portfolio Announcements (public list must be constrained to status==published;
-    // unfiltered collection queries fail closed when drafts exist — clients use where())
+    // Portfolio Announcements — public list/get use isPubliclyVisibleAnnouncement()
+    // (published, legacy missing status, or scheduled with scheduledAtMs <= now).
+    // Clients must query in a way that only returns rule-satisfying docs (published
+    // query and/or scheduled + scheduledAtMs <= now); drafts stay admin-only.
     match /announcements/{announcementId} {
       allow get: if isValidId(announcementId) && (isAdmin() || isPubliclyVisibleAnnouncement());
-      allow list: if isAdmin()
-        || (resource.data.status == 'published');
+      allow list: if isAdmin() || isPubliclyVisibleAnnouncement();
 
       allow create: if isVerifiedUser()
         && isValidId(announcementId)

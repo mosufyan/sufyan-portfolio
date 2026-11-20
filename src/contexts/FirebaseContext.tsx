@@ -234,48 +234,156 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
     if (!authReady) return;
 
     const path = 'announcements';
-    // Admins list all statuses; public visitors must constrain to published so Firestore
-    // rules do not reject the whole query when drafts exist.
-    const q = isOwner
-      ? query(collection(db, path), orderBy('createdAt', 'desc'))
-      : query(collection(db, path), where('status', '==', 'published'), orderBy('createdAt', 'desc'));
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const items: AnnouncementRecord[] = snapshot.docs.map((docSnap) => {
-          const data = docSnap.data();
-          const statusRaw = typeof data.status === 'string' ? data.status : 'published';
-          const status: AnnouncementStatus =
-            statusRaw === 'draft' || statusRaw === 'scheduled' || statusRaw === 'published'
-              ? statusRaw
-              : 'published';
-          const scheduledAtMs =
-            typeof data.scheduledAtMs === 'number' && Number.isFinite(data.scheduledAtMs) && data.scheduledAtMs > 0
-              ? Math.floor(data.scheduledAtMs)
-              : null;
-          return {
-            id: docSnap.id,
-            date: typeof data.date === 'string' ? data.date : '',
-            title: typeof data.title === 'string' ? data.title : '',
-            summary: typeof data.summary === 'string' ? data.summary : '',
-            badge: (typeof data.badge === 'string' ? data.badge : 'VERIFIED') as AnnouncementBadge,
-            linkUrl: typeof data.linkUrl === 'string' ? data.linkUrl : '',
-            status,
-            scheduledAtMs,
-            source: 'cloud',
-          };
-        });
-        setCloudAnnouncements(items);
-        setLoadingAnnouncements(false);
-      },
-      (error) => {
-        setLoadingAnnouncements(false);
-        setCloudAnnouncements((prev) => prev ?? []);
-        handleFirestoreError(error, OperationType.GET, path);
-      }
-    );
+    let cancelled = false;
+    const unsubs: Array<() => void> = [];
 
-    return () => unsubscribe();
+    const mapDoc = (docSnap: { id: string; data: () => Record<string, unknown> }): AnnouncementRecord => {
+      const data = docSnap.data();
+      const statusRaw = typeof data.status === 'string' ? data.status : 'published';
+      const status: AnnouncementStatus =
+        statusRaw === 'draft' || statusRaw === 'scheduled' || statusRaw === 'published'
+          ? statusRaw
+          : 'published';
+      const scheduledAtMs =
+        typeof data.scheduledAtMs === 'number' && Number.isFinite(data.scheduledAtMs) && data.scheduledAtMs > 0
+          ? Math.floor(data.scheduledAtMs)
+          : null;
+      return {
+        id: docSnap.id,
+        date: typeof data.date === 'string' ? data.date : '',
+        title: typeof data.title === 'string' ? data.title : '',
+        summary: typeof data.summary === 'string' ? data.summary : '',
+        badge: (typeof data.badge === 'string' ? data.badge : 'VERIFIED') as AnnouncementBadge,
+        linkUrl: typeof data.linkUrl === 'string' ? data.linkUrl : '',
+        status,
+        scheduledAtMs,
+        source: 'cloud',
+      };
+    };
+
+    if (isOwner) {
+      // Full collection for owners; migrate legacy missing status and auto-publish due scheduled.
+      const q = query(collection(db, path), orderBy('createdAt', 'desc'));
+      unsubs.push(
+        onSnapshot(
+          q,
+          (snapshot) => {
+            if (cancelled) return;
+            void (async () => {
+              try {
+                const now = Date.now();
+                const batch = writeBatch(db);
+                let ops = 0;
+                for (const docSnap of snapshot.docs) {
+                  const data = docSnap.data();
+                  const ref = doc(db, path, docSnap.id);
+                  if (data.status == null || data.status === '') {
+                    batch.update(ref, {
+                      status: 'published',
+                      updatedAt: serverTimestamp(),
+                    });
+                    ops += 1;
+                  } else if (
+                    data.status === 'scheduled' &&
+                    typeof data.scheduledAtMs === 'number' &&
+                    data.scheduledAtMs <= now
+                  ) {
+                    batch.update(ref, {
+                      status: 'published',
+                      updatedAt: serverTimestamp(),
+                    });
+                    ops += 1;
+                  }
+                  if (ops >= 400) break;
+                }
+                if (ops > 0) await batch.commit();
+              } catch (err) {
+                console.warn('Announcement status migration skipped:', err);
+              }
+            })();
+
+            setCloudAnnouncements(snapshot.docs.map(mapDoc));
+            setLoadingAnnouncements(false);
+          },
+          (error) => {
+            setLoadingAnnouncements(false);
+            setCloudAnnouncements((prev) => prev ?? []);
+            handleFirestoreError(error, OperationType.GET, path);
+          }
+        )
+      );
+    } else {
+      // Public: published query + due-scheduled query (rules allow both via isPubliclyVisibleAnnouncement).
+      const publishedById = new Map<string, AnnouncementRecord>();
+      const scheduledById = new Map<string, AnnouncementRecord>();
+
+      const publishMerged = () => {
+        if (cancelled) return;
+        const merged = new Map<string, AnnouncementRecord>();
+        for (const item of publishedById.values()) merged.set(item.id, item);
+        for (const item of scheduledById.values()) {
+          if (!merged.has(item.id)) {
+            merged.set(item.id, { ...item, status: 'published' });
+          }
+        }
+        const list = Array.from(merged.values()).sort((a, b) => {
+          const aMs = a.scheduledAtMs || 0;
+          const bMs = b.scheduledAtMs || 0;
+          return bMs - aMs;
+        });
+        setCloudAnnouncements(list);
+        setLoadingAnnouncements(false);
+      };
+
+      const publishedQ = query(
+        collection(db, path),
+        where('status', '==', 'published'),
+        orderBy('createdAt', 'desc')
+      );
+      const dueScheduledQ = query(
+        collection(db, path),
+        where('status', '==', 'scheduled'),
+        where('scheduledAtMs', '<=', Date.now()),
+        orderBy('scheduledAtMs', 'desc')
+      );
+
+      unsubs.push(
+        onSnapshot(
+          publishedQ,
+          (snapshot) => {
+            publishedById.clear();
+            for (const item of snapshot.docs.map(mapDoc)) publishedById.set(item.id, item);
+            publishMerged();
+          },
+          (error) => {
+            setLoadingAnnouncements(false);
+            setCloudAnnouncements((prev) => prev ?? []);
+            handleFirestoreError(error, OperationType.GET, path);
+          }
+        )
+      );
+      unsubs.push(
+        onSnapshot(
+          dueScheduledQ,
+          (snapshot) => {
+            scheduledById.clear();
+            for (const item of snapshot.docs.map(mapDoc)) scheduledById.set(item.id, item);
+            publishMerged();
+          },
+          (error) => {
+            // Index may still be building; published query alone covers most traffic.
+            console.warn('Due-scheduled announcements query unavailable:', error);
+            scheduledById.clear();
+            publishMerged();
+          }
+        )
+      );
+    }
+
+    return () => {
+      cancelled = true;
+      for (const unsub of unsubs) unsub();
+    };
   }, [authReady, isOwner]);
 
   // Strictly attach cv_downloads PII stream ONLY when verified portfolio owner is signed in

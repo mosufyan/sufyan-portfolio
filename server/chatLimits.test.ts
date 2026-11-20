@@ -2,7 +2,9 @@ import { describe, expect, it, beforeEach } from 'vitest';
 import {
   buildVisitorKey,
   checkChatLimit,
+  checkChatLimitAsync,
   consumeChatLimit,
+  consumeChatLimitAsync,
   getChatUsageTotals,
   resetChatUsageStoreForTests,
   type ChatLimitPolicy,
@@ -82,5 +84,14 @@ describe('chatLimits', () => {
       email: 'recruiter@example.com',
     });
     expect(ipKey).not.toBe(emailKey);
+  });
+
+  it('async helpers fall back to memory when Redis is unset', async () => {
+    const key = buildVisitorKey({ ipAddress: '203.0.113.99' });
+    const tight = { ...policy, maxQuestionsPerVisitor: 2 };
+    expect((await consumeChatLimitAsync(key, 'question', tight)).allowed).toBe(true);
+    expect((await consumeChatLimitAsync(key, 'question', tight)).allowed).toBe(true);
+    expect((await consumeChatLimitAsync(key, 'question', tight)).allowed).toBe(false);
+    expect((await checkChatLimitAsync(key, 'question', tight)).allowed).toBe(false);
   });
 });

@@ -13,10 +13,10 @@ This is an **unusually strong** personal portfolio for a security / platform eng
 
 | Goal | Realistic target | Where you are today |
 |------|------------------|---------------------|
-| Security | Defense-in-depth with **no known high-severity gaps in the gold deploy path** | **~78/100** in code; **~65–85/100** depending on whether Turnstile, Redis, Admin SDK, App Check, and Cloudflare are actually enabled in prod |
+| Security | Defense-in-depth with **no known high-severity gaps in the gold deploy path** | **~82/100** in code; **~70–88/100** depending on whether Turnstile, Redis, Admin SDK, App Check, and Cloudflare are actually enabled in prod |
 | Observability | Owner product telemetry **plus** production SRE signals (errors, uptime, traces) | **~48/100** — excellent owner console; thin ops/APM layer |
-| Product polish | Recruiter-ready narrative + complete feature set | **~84/100** |
-| **Overall** | World-class personal security portfolio | **~76/100** |
+| Product polish | Recruiter-ready narrative + complete feature set | **~85/100** |
+| **Overall** | World-class personal security portfolio | **~78/100** |
 
 ```mermaid
 %%{init: {'theme': 'neutral'}}%%
@@ -28,7 +28,7 @@ quadrantChart
     quadrant-2 Harden next
     quadrant-3 Early stage
     quadrant-4 Observe next
-    This portfolio: [0.48, 0.78]
+    This portfolio: [0.48, 0.82]
     Typical personal site: [0.15, 0.25]
     Target gold path: [0.85, 0.92]
 ```
@@ -39,11 +39,11 @@ quadrantChart
 
 | Dimension | Score | One-line rationale |
 |-----------|------:|--------------------|
-| **Security defense-in-depth** | **78** | Strong layered controls in repo; several high-value pieces are still optional or single-instance. |
+| **Security defense-in-depth** | **82** | Layered controls plus fail-closed Redis policy, shared chat quotas, Admin-bound owner replies, scheduled announcement visibility. |
 | **Observability / monitoring** | **48** | Rich owner KPIs + email alerts; no APM, error tracking, synthetics, or on-call webhooks. |
-| **Feature polish** | **84** | Owner console, chat, CV studio, governance, docs, and feature switches are well beyond typical portfolios. |
+| **Feature polish** | **85** | Owner console, chat, CV studio, governance, docs, and feature switches are well beyond typical portfolios. |
 | **Hiring narrative / credibility** | **82** | Real working controls make a compelling story — package them more visibly for recruiters. |
-| **Overall product** | **76** | Ceiling is ops hardening + observability, not missing page sections. |
+| **Overall product** | **78** | Ceiling is ops hardening + observability (Sentry/uptime/APM), not missing page sections. |
 
 ---
 
@@ -82,9 +82,9 @@ Priority order for closing the gold path:
 |---|-----|------|-----|
 | P0 | **App Check not enforced** in `firestore.rules` | Unattested clients can still hit public create paths | Enforce `request.app != null`; enable reCAPTCHA Enterprise |
 | P0 | **Public creates** on `cv_downloads` / `contact_messages` until Admin SDK is live | Spam / denial-of-wallet | Confirm Admin writes → set `allow create: if false` for clients |
-| P0 | **OTP / chat / digest in process memory** | Broken or bypassable under multi-replica Cloud Run | Redis (or sticky sessions) for OTP + chat sessions |
+| P0 | **OTP / chat sessions / digest still in process memory** | Broken under multi-replica Cloud Run (quotas + rate limits are Redis-shared when configured) | Redis (or sticky sessions) for OTP challenges + live chat sessions |
 | P0 | **Turnstile / SESSION_SECRET unset** | No bot challenge; HMAC mismatch across instances | Require secrets in Cloud Run; fail health if missing in prod |
-| P1 | **Rate limits without Redis** | Per-instance bypass | Upstash on every replica (already fail-closed when configured) |
+| P1 | **Rate limits / chat quotas without Redis** | Per-instance bypass | Keep Upstash on every replica (fail-closed when configured; chat quotas now shared) |
 | P1 | **Public read of `portfolio_settings/global`** | Recon of caps / incident posture | Split public UX flags vs private policy doc |
 | P1 | **CSP still allows `'unsafe-inline'`** | XSS blast radius | Tighten with nonces/hashes; add CSP reporting |
 | P1 | **Missing Origin/Referer allowed** | Soft CSRF for non-browser clients | Pair with Turnstile + RL (already); optionally require Fetch Metadata |
