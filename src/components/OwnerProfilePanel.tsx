@@ -27,6 +27,7 @@ import {
 } from '../utils/ownerTracking';
 import type { PortfolioSettings } from '../utils/ownerGovernance';
 import ChatConfigFields from './ChatConfigFields';
+import AlertNotifyConfigFields from './AlertNotifyConfigFields';
 
 type ChatTrackingStats = {
   botQuestions?: number;
@@ -327,6 +328,7 @@ export default function OwnerProfilePanel({
                 {chatSaved}
               </div>
             )}
+            <AlertNotifyConfigFields draft={chatDraft} setDraft={setChatDraft} isLight={isLight} />
             <div className="flex justify-end">
               <button
                 type="submit"
@@ -334,7 +336,7 @@ export default function OwnerProfilePanel({
                 className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#38bdf8] hover:bg-sky-300 disabled:opacity-50 text-slate-950 font-semibold text-xs cursor-pointer"
               >
                 {chatSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                Save chat limits
+                Save chat &amp; alert settings
               </button>
             </div>
           </form>

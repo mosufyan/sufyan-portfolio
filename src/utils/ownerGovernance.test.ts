@@ -75,6 +75,17 @@ describe('ownerGovernance utilities', () => {
     expect(sanitized.enableChatLlm).toBe(false);
   });
 
+  it('defaults alert routing with urgent live chat and digest inquiries', () => {
+    const sanitized = sanitizePortfolioSettings({
+      alertClassLiveChat: 'nope' as unknown as 'urgent',
+      alertEmailUrgent: false,
+    });
+    expect(sanitized.alertClassLiveChat).toBe('urgent');
+    expect(sanitized.alertClassNewInquiry).toBe('digest');
+    expect(sanitized.alertEmailEnabled).toBe(true);
+    expect(sanitized.alertEmailUrgent).toBe(false);
+  });
+
   it('validates admin delegate drafts', () => {
     const ok = validateAdminDelegateDraft({
       uid: 'abc123UID',

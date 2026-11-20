@@ -60,6 +60,16 @@ describe('distributedStore (memory fallback)', () => {
       chatLlmModel: '',
       chatShowSuggestions: true,
       chatOfferLiveAgent: true,
+      alertEmailEnabled: true,
+      alertEmailUrgent: true,
+      alertEmailWarning: true,
+      alertEmailDigest: true,
+      alertClassNewInquiry: 'digest' as const,
+      alertClassLiveChat: 'urgent' as const,
+      alertClassRiskDownload: 'warning' as const,
+      alertClassUnusualTraffic: 'warning' as const,
+      alertClassChatLimit: 'digest' as const,
+      alertClassOverdueCrm: 'warning' as const,
     };
     await expect(mod.loadDistributedOwnerPolicy(fallback)).resolves.toEqual(fallback);
   });

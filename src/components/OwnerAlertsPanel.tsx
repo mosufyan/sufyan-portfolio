@@ -22,7 +22,8 @@ export default function OwnerAlertsPanel({
   onOpenSection: (section: OwnerConsoleSectionId) => void;
   telemetry?: SiteTelemetrySnapshot;
 }) {
-  const { contactMessageLogs, cvDownloadLogs, user } = useFirebase();
+  const { contactMessageLogs, cvDownloadLogs, user, portfolioSettings, isPrimaryOwner } =
+    useFirebase();
   const [digestBusy, setDigestBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -98,7 +99,8 @@ export default function OwnerAlertsPanel({
             Alerts center
           </h3>
           <p className={`text-[11px] mt-0.5 ${mutedCls}`}>
-            Live watchers over inquiries, overdue CRM follow-ups, and risk spikes.
+            Live watchers over inquiries, overdue CRM follow-ups, and risk spikes. Configure email routing
+            (urgent / warning / digest) in Owner Profile.
           </p>
         </div>
         <button
@@ -110,6 +112,38 @@ export default function OwnerAlertsPanel({
           {digestBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Mail className="w-3.5 h-3.5" />}
           Email digest now
         </button>
+      </div>
+
+      <div className={`rounded-xl border p-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] font-mono ${card}`}>
+        {[
+          ['Email alerts', portfolioSettings.alertEmailEnabled ? 'On' : 'Off'],
+          [
+            'Immediate',
+            `urgent=${portfolioSettings.alertEmailUrgent ? 'yes' : 'no'} · warning=${
+              portfolioSettings.alertEmailWarning ? 'yes' : 'no'
+            }`,
+          ],
+          ['Digest queue', portfolioSettings.alertEmailDigest ? 'On' : 'Off'],
+          ['Live chat class', portfolioSettings.alertClassLiveChat],
+          ['Risk download class', portfolioSettings.alertClassRiskDownload],
+          ['New inquiry class', portfolioSettings.alertClassNewInquiry],
+        ].map(([k, v]) => (
+          <div key={String(k)} className="flex justify-between gap-2">
+            <span className={mutedCls}>{k}</span>
+            <span className={titleCls}>{v}</span>
+          </div>
+        ))}
+        {isPrimaryOwner && (
+          <button
+            type="button"
+            onClick={() => onOpenSection('profile')}
+            className={`sm:col-span-2 text-left text-[10px] uppercase font-mono cursor-pointer ${
+              isLight ? 'text-sky-700 hover:underline' : 'text-cyan-300 hover:underline'
+            }`}
+          >
+            Edit notification classes in Owner Profile →
+          </button>
+        )}
       </div>
 
       {notice && (

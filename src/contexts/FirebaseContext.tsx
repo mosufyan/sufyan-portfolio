@@ -523,6 +523,16 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
         chatLlmModel: settings.chatLlmModel,
         chatShowSuggestions: settings.chatShowSuggestions,
         chatOfferLiveAgent: settings.chatOfferLiveAgent,
+        alertEmailEnabled: settings.alertEmailEnabled,
+        alertEmailUrgent: settings.alertEmailUrgent,
+        alertEmailWarning: settings.alertEmailWarning,
+        alertEmailDigest: settings.alertEmailDigest,
+        alertClassNewInquiry: settings.alertClassNewInquiry,
+        alertClassLiveChat: settings.alertClassLiveChat,
+        alertClassRiskDownload: settings.alertClassRiskDownload,
+        alertClassUnusualTraffic: settings.alertClassUnusualTraffic,
+        alertClassChatLimit: settings.alertClassChatLimit,
+        alertClassOverdueCrm: settings.alertClassOverdueCrm,
       };
       const digest = JSON.stringify(payload);
       if (digest === lastPolicyDigestRef.current) return;

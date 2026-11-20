@@ -48,6 +48,37 @@ export interface AdminAuditLogRecord extends AdminAuditLogPayload {
 export const PORTFOLIO_AVAILABILITY_STATUSES = ['open', 'advisory', 'unavailable'] as const;
 export type AvailabilityStatus = (typeof PORTFOLIO_AVAILABILITY_STATUSES)[number];
 
+export const OWNER_ALERT_CLASSES = ['urgent', 'warning', 'digest', 'off'] as const;
+export type OwnerAlertClass = (typeof OWNER_ALERT_CLASSES)[number];
+
+export const OWNER_ALERT_EVENT_TYPES = [
+  'new_inquiry',
+  'live_chat',
+  'risk_download',
+  'unusual_traffic',
+  'chat_limit',
+  'overdue_crm',
+] as const;
+export type OwnerAlertEventType = (typeof OWNER_ALERT_EVENT_TYPES)[number];
+
+export const OWNER_ALERT_EVENT_LABELS: Record<OwnerAlertEventType, string> = {
+  new_inquiry: 'New contact inquiry',
+  live_chat: 'Verified live chat / customer session',
+  risk_download: 'High-risk / VPN CV download',
+  unusual_traffic: 'Unusual traffic / rate pressure',
+  chat_limit: 'Visitor chat limit reached',
+  overdue_crm: 'Overdue CRM follow-up',
+};
+
+export function sanitizeOwnerAlertClass(
+  value: unknown,
+  fallback: OwnerAlertClass
+): OwnerAlertClass {
+  return value === 'urgent' || value === 'warning' || value === 'digest' || value === 'off'
+    ? value
+    : fallback;
+}
+
 export const PORTFOLIO_SETTINGS_CONSTRAINTS = {
   availabilityTextMaxLength: 140,
   maintenanceMessageMaxLength: 300,
@@ -101,6 +132,21 @@ export interface PortfolioSettings {
   chatShowSuggestions: boolean;
   /** Offer live-agent handoff when bot confidence is low. */
   chatOfferLiveAgent: boolean;
+  /** Master switch for owner email alert routing (urgent / warning / digest). */
+  alertEmailEnabled: boolean;
+  /** Send immediate email for events classified as urgent. */
+  alertEmailUrgent: boolean;
+  /** Send immediate email for events classified as warning. */
+  alertEmailWarning: boolean;
+  /** Queue digest-class (and copies of higher) events for digest emails. */
+  alertEmailDigest: boolean;
+  /** Event → urgency class mappings. */
+  alertClassNewInquiry: OwnerAlertClass;
+  alertClassLiveChat: OwnerAlertClass;
+  alertClassRiskDownload: OwnerAlertClass;
+  alertClassUnusualTraffic: OwnerAlertClass;
+  alertClassChatLimit: OwnerAlertClass;
+  alertClassOverdueCrm: OwnerAlertClass;
 }
 
 export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
@@ -127,6 +173,16 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
   chatLlmModel: '',
   chatShowSuggestions: true,
   chatOfferLiveAgent: true,
+  alertEmailEnabled: true,
+  alertEmailUrgent: true,
+  alertEmailWarning: true,
+  alertEmailDigest: true,
+  alertClassNewInquiry: 'digest',
+  alertClassLiveChat: 'urgent',
+  alertClassRiskDownload: 'warning',
+  alertClassUnusualTraffic: 'warning',
+  alertClassChatLimit: 'digest',
+  alertClassOverdueCrm: 'warning',
 };
 
 function clampInt(value: unknown, fallback: number, min: number, max: number): number {
@@ -344,6 +400,46 @@ export function sanitizePortfolioSettings(input: Partial<PortfolioSettings> | nu
       typeof input.chatOfferLiveAgent === 'boolean'
         ? input.chatOfferLiveAgent
         : DEFAULT_PORTFOLIO_SETTINGS.chatOfferLiveAgent,
+    alertEmailEnabled:
+      typeof input.alertEmailEnabled === 'boolean'
+        ? input.alertEmailEnabled
+        : DEFAULT_PORTFOLIO_SETTINGS.alertEmailEnabled,
+    alertEmailUrgent:
+      typeof input.alertEmailUrgent === 'boolean'
+        ? input.alertEmailUrgent
+        : DEFAULT_PORTFOLIO_SETTINGS.alertEmailUrgent,
+    alertEmailWarning:
+      typeof input.alertEmailWarning === 'boolean'
+        ? input.alertEmailWarning
+        : DEFAULT_PORTFOLIO_SETTINGS.alertEmailWarning,
+    alertEmailDigest:
+      typeof input.alertEmailDigest === 'boolean'
+        ? input.alertEmailDigest
+        : DEFAULT_PORTFOLIO_SETTINGS.alertEmailDigest,
+    alertClassNewInquiry: sanitizeOwnerAlertClass(
+      input.alertClassNewInquiry,
+      DEFAULT_PORTFOLIO_SETTINGS.alertClassNewInquiry
+    ),
+    alertClassLiveChat: sanitizeOwnerAlertClass(
+      input.alertClassLiveChat,
+      DEFAULT_PORTFOLIO_SETTINGS.alertClassLiveChat
+    ),
+    alertClassRiskDownload: sanitizeOwnerAlertClass(
+      input.alertClassRiskDownload,
+      DEFAULT_PORTFOLIO_SETTINGS.alertClassRiskDownload
+    ),
+    alertClassUnusualTraffic: sanitizeOwnerAlertClass(
+      input.alertClassUnusualTraffic,
+      DEFAULT_PORTFOLIO_SETTINGS.alertClassUnusualTraffic
+    ),
+    alertClassChatLimit: sanitizeOwnerAlertClass(
+      input.alertClassChatLimit,
+      DEFAULT_PORTFOLIO_SETTINGS.alertClassChatLimit
+    ),
+    alertClassOverdueCrm: sanitizeOwnerAlertClass(
+      input.alertClassOverdueCrm,
+      DEFAULT_PORTFOLIO_SETTINGS.alertClassOverdueCrm
+    ),
   };
 }
 

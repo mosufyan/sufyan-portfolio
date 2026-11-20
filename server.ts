@@ -83,9 +83,17 @@ import { buildDynamicSocialSvg, SHARE_CARD_TRACKS, type ShareTrackId } from './s
 import {
   DEFAULT_PORTFOLIO_SETTINGS,
   evaluateAccessRules,
+  sanitizeOwnerAlertClass,
   validateAccessRuleDraft,
   type CompactAccessRule,
+  type OwnerAlertClass,
 } from './src/utils/ownerGovernance.ts';
+import {
+  drainDigestItems,
+  formatDigestQueueText,
+  prefsFromPortfolioSettings,
+  routeOwnerNotification,
+} from './server/ownerNotify.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -179,6 +187,16 @@ interface RuntimeOwnerPolicy {
   chatLlmModel: string;
   chatShowSuggestions: boolean;
   chatOfferLiveAgent: boolean;
+  alertEmailEnabled: boolean;
+  alertEmailUrgent: boolean;
+  alertEmailWarning: boolean;
+  alertEmailDigest: boolean;
+  alertClassNewInquiry: OwnerAlertClass;
+  alertClassLiveChat: OwnerAlertClass;
+  alertClassRiskDownload: OwnerAlertClass;
+  alertClassUnusualTraffic: OwnerAlertClass;
+  alertClassChatLimit: OwnerAlertClass;
+  alertClassOverdueCrm: OwnerAlertClass;
 }
 
 function chatLimitPolicyFromRuntime(policy: RuntimeOwnerPolicy): ChatLimitPolicy {
@@ -280,6 +298,16 @@ function loadInitialOwnerPolicy(): RuntimeOwnerPolicy {
     chatLlmModel: DEFAULT_PORTFOLIO_SETTINGS.chatLlmModel,
     chatShowSuggestions: DEFAULT_PORTFOLIO_SETTINGS.chatShowSuggestions,
     chatOfferLiveAgent: DEFAULT_PORTFOLIO_SETTINGS.chatOfferLiveAgent,
+    alertEmailEnabled: DEFAULT_PORTFOLIO_SETTINGS.alertEmailEnabled,
+    alertEmailUrgent: DEFAULT_PORTFOLIO_SETTINGS.alertEmailUrgent,
+    alertEmailWarning: DEFAULT_PORTFOLIO_SETTINGS.alertEmailWarning,
+    alertEmailDigest: DEFAULT_PORTFOLIO_SETTINGS.alertEmailDigest,
+    alertClassNewInquiry: DEFAULT_PORTFOLIO_SETTINGS.alertClassNewInquiry,
+    alertClassLiveChat: DEFAULT_PORTFOLIO_SETTINGS.alertClassLiveChat,
+    alertClassRiskDownload: DEFAULT_PORTFOLIO_SETTINGS.alertClassRiskDownload,
+    alertClassUnusualTraffic: DEFAULT_PORTFOLIO_SETTINGS.alertClassUnusualTraffic,
+    alertClassChatLimit: DEFAULT_PORTFOLIO_SETTINGS.alertClassChatLimit,
+    alertClassOverdueCrm: DEFAULT_PORTFOLIO_SETTINGS.alertClassOverdueCrm,
   };
   try {
     if (!fs.existsSync(POLICY_CACHE_PATH)) return defaults;
@@ -336,9 +364,92 @@ function loadInitialOwnerPolicy(): RuntimeOwnerPolicy {
         typeof parsed.chatOfferLiveAgent === 'boolean'
           ? parsed.chatOfferLiveAgent
           : defaults.chatOfferLiveAgent,
+      alertEmailEnabled:
+        typeof parsed.alertEmailEnabled === 'boolean'
+          ? parsed.alertEmailEnabled
+          : defaults.alertEmailEnabled,
+      alertEmailUrgent:
+        typeof parsed.alertEmailUrgent === 'boolean'
+          ? parsed.alertEmailUrgent
+          : defaults.alertEmailUrgent,
+      alertEmailWarning:
+        typeof parsed.alertEmailWarning === 'boolean'
+          ? parsed.alertEmailWarning
+          : defaults.alertEmailWarning,
+      alertEmailDigest:
+        typeof parsed.alertEmailDigest === 'boolean'
+          ? parsed.alertEmailDigest
+          : defaults.alertEmailDigest,
+      alertClassNewInquiry: sanitizeOwnerAlertClass(
+        parsed.alertClassNewInquiry,
+        defaults.alertClassNewInquiry
+      ),
+      alertClassLiveChat: sanitizeOwnerAlertClass(
+        parsed.alertClassLiveChat,
+        defaults.alertClassLiveChat
+      ),
+      alertClassRiskDownload: sanitizeOwnerAlertClass(
+        parsed.alertClassRiskDownload,
+        defaults.alertClassRiskDownload
+      ),
+      alertClassUnusualTraffic: sanitizeOwnerAlertClass(
+        parsed.alertClassUnusualTraffic,
+        defaults.alertClassUnusualTraffic
+      ),
+      alertClassChatLimit: sanitizeOwnerAlertClass(
+        parsed.alertClassChatLimit,
+        defaults.alertClassChatLimit
+      ),
+      alertClassOverdueCrm: sanitizeOwnerAlertClass(
+        parsed.alertClassOverdueCrm,
+        defaults.alertClassOverdueCrm
+      ),
     };
   } catch {
     return defaults;
+  }
+}
+
+async function emitOwnerAlert(input: {
+  eventType:
+    | 'new_inquiry'
+    | 'live_chat'
+    | 'risk_download'
+    | 'unusual_traffic'
+    | 'chat_limit'
+    | 'overdue_crm';
+  title: string;
+  detail: string;
+  dedupeKey: string;
+}): Promise<void> {
+  if (!isDirectEmailTransportConfigured()) return;
+  try {
+    const prefs = prefsFromPortfolioSettings(runtimeOwnerPolicy);
+    await routeOwnerNotification({
+      prefs,
+      eventType: input.eventType,
+      title: input.title,
+      detail: input.detail,
+      dedupeKey: input.dedupeKey,
+      sendImmediate: async ({ subject, title, detail, alertClass }) => {
+        const color = alertClass === 'urgent' ? '#e11d48' : '#d97706';
+        const html = `<div style="font-family:Inter,Segoe UI,sans-serif;line-height:1.5;color:#0f172a">
+          <p style="margin:0 0 8px;font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:${color};font-weight:700">${alertClass}</p>
+          <h2 style="margin:0 0 8px;font-size:18px;">${escapeHtml(title)}</h2>
+          <p style="margin:0 0 16px;font-size:14px;">${escapeHtml(detail)}</p>
+          <p style="margin:0;font-size:12px;opacity:0.7">Open Owner Console → Alerts / Chat / Messages on mohammedsufyan.com</p>
+        </div>`;
+        await dispatchEmailMessage({
+          to: DESTINATION_EMAIL,
+          fromDisplayName: 'Portfolio Alerts',
+          subjectLine: subject,
+          html,
+          text: `${title}\n\n${detail}\n\nOpen Owner Console on mohammedsufyan.com`,
+        });
+      },
+    });
+  } catch (err) {
+    console.warn('Owner alert dispatch failed:', err instanceof Error ? err.message : err);
   }
 }
 
@@ -1658,19 +1769,22 @@ async function startServer() {
           : 'Portfolio owner digest';
       const body =
         typeof raw.body === 'string' ? raw.body.trim().slice(0, 20000) : '';
-      if (body.length < 20) {
+      const queued = drainDigestItems();
+      const queuedText = formatDigestQueueText(queued);
+      const combined = [queuedText, body].filter(Boolean).join('\n\n').trim();
+      if (combined.length < 20) {
         res.status(400).json({ error: 'Digest body is too short.' });
         return;
       }
-      const html = `<pre style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:1.45;white-space:pre-wrap">${escapeHtml(body)}</pre>`;
+      const html = `<pre style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:1.45;white-space:pre-wrap">${escapeHtml(combined.slice(0, 20000))}</pre>`;
       const result = await dispatchEmailMessage({
         to: DESTINATION_EMAIL,
         fromDisplayName: 'Portfolio Owner Digest',
         subjectLine: subject,
         html,
-        text: body,
+        text: combined.slice(0, 20000),
       });
-      res.status(200).json({ ok: true, provider: result.provider });
+      res.status(200).json({ ok: true, provider: result.provider, queuedAlerts: queued.length });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to send digest email.';
       res.status(500).json({ error: message });
@@ -1708,6 +1822,16 @@ async function startServer() {
         chatLlmModel?: unknown;
         chatShowSuggestions?: unknown;
         chatOfferLiveAgent?: unknown;
+        alertEmailEnabled?: unknown;
+        alertEmailUrgent?: unknown;
+        alertEmailWarning?: unknown;
+        alertEmailDigest?: unknown;
+        alertClassNewInquiry?: unknown;
+        alertClassLiveChat?: unknown;
+        alertClassRiskDownload?: unknown;
+        alertClassUnusualTraffic?: unknown;
+        alertClassChatLimit?: unknown;
+        alertClassOverdueCrm?: unknown;
       };
 
       const normalizedRules: CompactAccessRule[] = [];
@@ -1801,6 +1925,46 @@ async function startServer() {
           typeof raw.chatOfferLiveAgent === 'boolean'
             ? raw.chatOfferLiveAgent
             : runtimeOwnerPolicy.chatOfferLiveAgent,
+        alertEmailEnabled:
+          typeof raw.alertEmailEnabled === 'boolean'
+            ? raw.alertEmailEnabled
+            : runtimeOwnerPolicy.alertEmailEnabled,
+        alertEmailUrgent:
+          typeof raw.alertEmailUrgent === 'boolean'
+            ? raw.alertEmailUrgent
+            : runtimeOwnerPolicy.alertEmailUrgent,
+        alertEmailWarning:
+          typeof raw.alertEmailWarning === 'boolean'
+            ? raw.alertEmailWarning
+            : runtimeOwnerPolicy.alertEmailWarning,
+        alertEmailDigest:
+          typeof raw.alertEmailDigest === 'boolean'
+            ? raw.alertEmailDigest
+            : runtimeOwnerPolicy.alertEmailDigest,
+        alertClassNewInquiry: sanitizeOwnerAlertClass(
+          raw.alertClassNewInquiry,
+          runtimeOwnerPolicy.alertClassNewInquiry
+        ),
+        alertClassLiveChat: sanitizeOwnerAlertClass(
+          raw.alertClassLiveChat,
+          runtimeOwnerPolicy.alertClassLiveChat
+        ),
+        alertClassRiskDownload: sanitizeOwnerAlertClass(
+          raw.alertClassRiskDownload,
+          runtimeOwnerPolicy.alertClassRiskDownload
+        ),
+        alertClassUnusualTraffic: sanitizeOwnerAlertClass(
+          raw.alertClassUnusualTraffic,
+          runtimeOwnerPolicy.alertClassUnusualTraffic
+        ),
+        alertClassChatLimit: sanitizeOwnerAlertClass(
+          raw.alertClassChatLimit,
+          runtimeOwnerPolicy.alertClassChatLimit
+        ),
+        alertClassOverdueCrm: sanitizeOwnerAlertClass(
+          raw.alertClassOverdueCrm,
+          runtimeOwnerPolicy.alertClassOverdueCrm
+        ),
       });
 
       res.status(200).json({ ok: true, ruleCount: normalizedRules.length });
@@ -2180,6 +2344,15 @@ async function startServer() {
       };
       const telemetryPersistedByServer = await tryPersistContactSummary(contactSummary);
 
+      void emitOwnerAlert({
+        eventType: 'new_inquiry',
+        title: `New inquiry from ${p.name}`,
+        detail: `${p.email}${p.subject ? ` · ${p.subject}` : ''} · risk ${p.risk.riskLevel}${
+          p.risk.isVpnSuspected ? ' · VPN/proxy suspected' : ''
+        }`,
+        dedupeKey: `inquiry:${messageId}`,
+      });
+
       res.status(200).json({
         ok: true,
         provider: result.provider,
@@ -2462,6 +2635,17 @@ async function startServer() {
 
       const trackingSummary = buildTrackingSummaryForClient(accessPayload, telemetry, false);
       const telemetryPersistedByServer = await tryPersistCvTracking(trackingSummary);
+
+      if (telemetry.risk.isVpnSuspected || telemetry.risk.riskLevel === 'high') {
+        void emitOwnerAlert({
+          eventType: 'risk_download',
+          title: `High-risk CV access from ${cleanName}`,
+          detail: `${cleanEmail} · ${telemetry.risk.riskLevel} · IP ${telemetry.ip.ipAddress || 'unknown'}${
+            telemetry.risk.isVpnSuspected ? ' · VPN/proxy suspected' : ''
+          }`,
+          dedupeKey: `cvrisk:${cleanEmail.toLowerCase()}:${Math.floor(Date.now() / 3_600_000)}`,
+        });
+      }
 
       res.status(200).json({
         ok: true,
@@ -2819,6 +3003,12 @@ async function startServer() {
       const limitPolicy = chatLimitPolicyFromRuntime(runtimeOwnerPolicy);
       const questionLimit = consumeChatLimit(visitorKey, 'question', limitPolicy);
       if (!questionLimit.allowed) {
+        void emitOwnerAlert({
+          eventType: 'chat_limit',
+          title: 'Visitor chat question limit reached',
+          detail: `A visitor hit the per-window chat question cap (${runtimeOwnerPolicy.chatMaxQuestionsPerVisitor}).`,
+          dedupeKey: `chatlimit:${visitorKey}:${Math.floor(Date.now() / 3_600_000)}`,
+        });
         res.status(429).json({
           error: questionLimit.reason,
           remaining: questionLimit.remaining,
@@ -3108,6 +3298,16 @@ async function startServer() {
         interest: p.interest,
       });
       const sessionReceipt = signChatSessionReceipt(session.sessionId, p.email);
+
+      void emitOwnerAlert({
+        eventType: 'live_chat',
+        title: `New verified chat from ${p.name}`,
+        detail: `${p.email}${p.company ? ` · ${p.company}` : ''}${
+          p.interest ? ` · ${p.interest}` : ''
+        } · session ${session.sessionId} · owner ${isOwnerOnline() ? 'online' : 'offline/queued'}`,
+        dedupeKey: `live:${session.sessionId}`,
+      });
+
       res.status(200).json({
         ok: true,
         status: 'live',

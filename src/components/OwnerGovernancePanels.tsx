@@ -32,6 +32,7 @@ import {
   validateAccessRuleDraft,
 } from '../utils/ownerGovernance';
 import ChatConfigFields from './ChatConfigFields';
+import AlertNotifyConfigFields from './AlertNotifyConfigFields';
 
 function formatAuditTime(ms: number): string {
   try {
@@ -632,6 +633,7 @@ export function SiteControlsPanel({ isLight }: { isLight: boolean }) {
         </div>
 
         <ChatConfigFields draft={draft} setDraft={setDraft} isLight={isLight} />
+        <AlertNotifyConfigFields draft={draft} setDraft={setDraft} isLight={isLight} />
 
         <div className="flex items-center justify-end gap-2 pt-1">
           <button

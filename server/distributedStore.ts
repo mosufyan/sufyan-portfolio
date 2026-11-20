@@ -49,6 +49,24 @@ export interface RuntimeOwnerPolicyPayload {
   chatLlmModel: string;
   chatShowSuggestions: boolean;
   chatOfferLiveAgent: boolean;
+  alertEmailEnabled: boolean;
+  alertEmailUrgent: boolean;
+  alertEmailWarning: boolean;
+  alertEmailDigest: boolean;
+  alertClassNewInquiry: 'urgent' | 'warning' | 'digest' | 'off';
+  alertClassLiveChat: 'urgent' | 'warning' | 'digest' | 'off';
+  alertClassRiskDownload: 'urgent' | 'warning' | 'digest' | 'off';
+  alertClassUnusualTraffic: 'urgent' | 'warning' | 'digest' | 'off';
+  alertClassChatLimit: 'urgent' | 'warning' | 'digest' | 'off';
+  alertClassOverdueCrm: 'urgent' | 'warning' | 'digest' | 'off';
+}
+
+type AlertClass = RuntimeOwnerPolicyPayload['alertClassNewInquiry'];
+
+function asAlertClass(value: unknown, fallback: AlertClass): AlertClass {
+  return value === 'urgent' || value === 'warning' || value === 'digest' || value === 'off'
+    ? value
+    : fallback;
 }
 
 function createUpstashClient(): Redis | null {
@@ -193,6 +211,30 @@ export async function loadDistributedOwnerPolicy(
         typeof raw.chatOfferLiveAgent === 'boolean'
           ? raw.chatOfferLiveAgent
           : fallback.chatOfferLiveAgent,
+      alertEmailEnabled:
+        typeof raw.alertEmailEnabled === 'boolean'
+          ? raw.alertEmailEnabled
+          : fallback.alertEmailEnabled,
+      alertEmailUrgent:
+        typeof raw.alertEmailUrgent === 'boolean' ? raw.alertEmailUrgent : fallback.alertEmailUrgent,
+      alertEmailWarning:
+        typeof raw.alertEmailWarning === 'boolean'
+          ? raw.alertEmailWarning
+          : fallback.alertEmailWarning,
+      alertEmailDigest:
+        typeof raw.alertEmailDigest === 'boolean' ? raw.alertEmailDigest : fallback.alertEmailDigest,
+      alertClassNewInquiry: asAlertClass(raw.alertClassNewInquiry, fallback.alertClassNewInquiry),
+      alertClassLiveChat: asAlertClass(raw.alertClassLiveChat, fallback.alertClassLiveChat),
+      alertClassRiskDownload: asAlertClass(
+        raw.alertClassRiskDownload,
+        fallback.alertClassRiskDownload
+      ),
+      alertClassUnusualTraffic: asAlertClass(
+        raw.alertClassUnusualTraffic,
+        fallback.alertClassUnusualTraffic
+      ),
+      alertClassChatLimit: asAlertClass(raw.alertClassChatLimit, fallback.alertClassChatLimit),
+      alertClassOverdueCrm: asAlertClass(raw.alertClassOverdueCrm, fallback.alertClassOverdueCrm),
     };
   } catch (error) {
     console.error('Upstash policy load error; using local fallback:', error);

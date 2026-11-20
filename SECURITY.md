@@ -85,6 +85,7 @@ Email security concerns to **sufyan.net@gmail.com**. Please allow reasonable tim
 - **Per-visitor caps** (default 10 questions / window, plus LLM + live-session caps) are owner-configurable and enforced server-side; tracking KPIs appear on the Owner Profile.
 - **Live agent** requires email OTP (same mail transport as contact/CV). Sessions live in Express memory + `.owner-chat-cache.json`; owner console `#owner/chat` replies in near-real-time while presence heartbeats mark you online.
 - Rate-limited under the `chat` bucket; allow/block rules still apply to live-chat emails.
+- **Owner alert router** — classify events (live chat, risk CV, inquiry, chat limits, etc.) as `urgent` / `warning` / `digest` / `off` in Owner Profile; urgent/warning email immediately when enabled; digest-class items flush with “Email digest now”.
 
 ### Quick env checklist
 

@@ -249,6 +249,9 @@ service cloud.firestore {
           'enablePortfolioChat', 'enableLiveChat', 'enableChatLlm',
           'chatMaxQuestionsPerVisitor', 'chatMaxLlmPerVisitor', 'chatMaxLiveSessionsPerVisitor',
           'chatRateWindowHours', 'chatLlmModel', 'chatShowSuggestions', 'chatOfferLiveAgent',
+          'alertEmailEnabled', 'alertEmailUrgent', 'alertEmailWarning', 'alertEmailDigest',
+          'alertClassNewInquiry', 'alertClassLiveChat', 'alertClassRiskDownload',
+          'alertClassUnusualTraffic', 'alertClassChatLimit', 'alertClassOverdueCrm',
           'updatedByUid', 'updatedAt'
         ])
         && data.keys().hasOnly([
@@ -258,6 +261,9 @@ service cloud.firestore {
           'enablePortfolioChat', 'enableLiveChat', 'enableChatLlm',
           'chatMaxQuestionsPerVisitor', 'chatMaxLlmPerVisitor', 'chatMaxLiveSessionsPerVisitor',
           'chatRateWindowHours', 'chatLlmModel', 'chatShowSuggestions', 'chatOfferLiveAgent',
+          'alertEmailEnabled', 'alertEmailUrgent', 'alertEmailWarning', 'alertEmailDigest',
+          'alertClassNewInquiry', 'alertClassLiveChat', 'alertClassRiskDownload',
+          'alertClassUnusualTraffic', 'alertClassChatLimit', 'alertClassOverdueCrm',
           'updatedByUid', 'updatedAt'
         ])
         && data.availabilityStatus is string
@@ -293,6 +299,22 @@ service cloud.firestore {
         && data.chatLlmModel.size() <= 64
         && data.chatShowSuggestions is bool
         && data.chatOfferLiveAgent is bool
+        && data.alertEmailEnabled is bool
+        && data.alertEmailUrgent is bool
+        && data.alertEmailWarning is bool
+        && data.alertEmailDigest is bool
+        && data.alertClassNewInquiry is string
+        && data.alertClassNewInquiry in ['urgent', 'warning', 'digest', 'off']
+        && data.alertClassLiveChat is string
+        && data.alertClassLiveChat in ['urgent', 'warning', 'digest', 'off']
+        && data.alertClassRiskDownload is string
+        && data.alertClassRiskDownload in ['urgent', 'warning', 'digest', 'off']
+        && data.alertClassUnusualTraffic is string
+        && data.alertClassUnusualTraffic in ['urgent', 'warning', 'digest', 'off']
+        && data.alertClassChatLimit is string
+        && data.alertClassChatLimit in ['urgent', 'warning', 'digest', 'off']
+        && data.alertClassOverdueCrm is string
+        && data.alertClassOverdueCrm in ['urgent', 'warning', 'digest', 'off']
         && data.updatedByUid is string && data.updatedByUid.size() >= 1 && data.updatedByUid.size() <= 128 && data.updatedByUid == request.auth.uid
         && data.updatedAt is timestamp;
     }
