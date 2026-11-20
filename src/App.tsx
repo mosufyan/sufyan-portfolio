@@ -28,6 +28,11 @@ import {
   parseCvShareSearch,
   type ParsedCvShareConfig,
 } from './utils/cvShareConfig';
+import {
+  parseOwnerConsoleHash,
+  writeOwnerConsoleHash,
+  type OwnerConsoleSectionId,
+} from './utils/ownerConsoleRouting';
 
 function readSkillsFromUrl(): string[] {
   if (typeof window === 'undefined') return [];
@@ -51,11 +56,18 @@ function writeSkillsToUrl(skills: string[]) {
 }
 
 export default function App() {
-  const { portfolioSettings, isOwner } = useFirebase();
+  const { effectivePortfolioSettings, isOwner, authReady } = useFirebase();
   const [initialCvShare] = useState<ParsedCvShareConfig>(() =>
     typeof window !== 'undefined' ? parseCvShareSearch(window.location.search) : { shouldOpen: false }
   );
-  const [ownerViewRequested, setOwnerViewRequested] = useState(false);
+  const [ownerViewRequested, setOwnerViewRequested] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return parseOwnerConsoleHash(window.location.hash).open;
+  });
+  const [ownerConsoleSection, setOwnerConsoleSection] = useState<OwnerConsoleSectionId>(() => {
+    if (typeof window === 'undefined') return 'profile';
+    return parseOwnerConsoleHash(window.location.hash).section;
+  });
   const [resumeOpen, setResumeOpen] = useState(() => initialCvShare.shouldOpen);
   const [announcementsOpen, setAnnouncementsOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
@@ -74,16 +86,34 @@ export default function App() {
   useEffect(() => {
     if (!isOwner && ownerViewRequested) {
       setOwnerViewRequested(false);
+      writeOwnerConsoleHash(null);
     }
   }, [isOwner, ownerViewRequested]);
 
+  // Restore / follow `#owner/<section>` deep links once auth is ready
+  useEffect(() => {
+    if (!authReady) return;
+    const applyHash = () => {
+      const parsed = parseOwnerConsoleHash(window.location.hash);
+      if (parsed.open && isOwner) {
+        setOwnerConsoleSection(parsed.section);
+        setOwnerViewRequested(true);
+      }
+    };
+    applyHash();
+    window.addEventListener('hashchange', applyHash);
+    return () => window.removeEventListener('hashchange', applyHash);
+  }, [authReady, isOwner]);
+
   const handleEnterOwnerConsole = useCallback(() => {
     setOwnerViewRequested(true);
+    writeOwnerConsoleHash(ownerConsoleSection || 'profile');
     window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, []);
+  }, [ownerConsoleSection]);
 
   const handleExitOwnerConsole = useCallback(() => {
     setOwnerViewRequested(false);
+    writeOwnerConsoleHash(null);
   }, []);
 
   const setSelectedSkill = useCallback((skill: string | null) => {
@@ -157,21 +187,32 @@ export default function App() {
               <OwnerConsolePage
                 onBackToPortfolio={handleExitOwnerConsole}
                 onOpenResume={() => setResumeOpen(true)}
+                initialSection={ownerConsoleSection}
               />
             ) : (
               <>
-                {portfolioSettings.maintenanceMode && (
+                {effectivePortfolioSettings.maintenanceMode && (
                   <div
                     role="status"
-                    className="border-b border-amber-500/35 bg-amber-950/35 text-amber-200 print:hidden"
+                    className={`border-b print:hidden ${
+                      effectivePortfolioSettings.incidentMode
+                        ? 'border-rose-500/40 bg-rose-950/40 text-rose-100'
+                        : 'border-amber-500/35 bg-amber-950/35 text-amber-200'
+                    }`}
                   >
                     <div className="page-shell py-2.5 flex flex-wrap items-center justify-center sm:justify-between gap-2 text-xs font-mono">
                       <div className="flex items-center gap-2 min-w-0">
-                        <Wrench className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                        <span className="leading-snug">{portfolioSettings.maintenanceMessage}</span>
+                        <Wrench className="w-3.5 h-3.5 shrink-0" />
+                        <span className="leading-snug">{effectivePortfolioSettings.maintenanceMessage}</span>
                       </div>
-                      <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded border border-amber-500/40 bg-amber-950/60 text-amber-300 shrink-0">
-                        Maintenance Notice
+                      <span
+                        className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded border shrink-0 ${
+                          effectivePortfolioSettings.incidentMode
+                            ? 'border-rose-500/50 bg-rose-950/70 text-rose-200'
+                            : 'border-amber-500/40 bg-amber-950/60 text-amber-300'
+                        }`}
+                      >
+                        {effectivePortfolioSettings.incidentMode ? 'Incident Mode' : 'Maintenance Notice'}
                       </span>
                     </div>
                   </div>

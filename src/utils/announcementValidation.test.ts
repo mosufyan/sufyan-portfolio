@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ANNOUNCEMENT_CONSTRAINTS,
   generateAnnouncementId,
+  isAnnouncementPubliclyVisible,
   isPortfolioOwner,
   validateAnnouncementDraft,
 } from './announcementValidation';
@@ -65,5 +66,35 @@ describe('announcementValidation', () => {
     const id = generateAnnouncementId();
     expect(ANNOUNCEMENT_CONSTRAINTS.idPattern.test(id)).toBe(true);
     expect(id.length).toBeLessThanOrEqual(ANNOUNCEMENT_CONSTRAINTS.idMaxLength);
+  });
+
+  it('defaults status to published and gates public visibility', () => {
+    const published = validateAnnouncementDraft({
+      date: 'NOVEMBER 2026',
+      title: 'Test Title',
+      summary: 'Valid summary description with sufficient characters.',
+      linkUrl: '',
+    });
+    expect(published.normalized.status).toBe('published');
+    expect(isAnnouncementPubliclyVisible(published.normalized)).toBe(true);
+
+    const draft = validateAnnouncementDraft({
+      date: 'NOVEMBER 2026',
+      title: 'Draft Title',
+      summary: 'Valid summary description with sufficient characters.',
+      status: 'draft',
+    });
+    expect(isAnnouncementPubliclyVisible(draft.normalized)).toBe(false);
+
+    const due = Date.now() - 1000;
+    const scheduled = validateAnnouncementDraft({
+      date: 'NOVEMBER 2026',
+      title: 'Scheduled Title',
+      summary: 'Valid summary description with sufficient characters.',
+      status: 'scheduled',
+      scheduledAtMs: due,
+    });
+    expect(scheduled.valid).toBe(true);
+    expect(isAnnouncementPubliclyVisible(scheduled.normalized, due + 10)).toBe(true);
   });
 });

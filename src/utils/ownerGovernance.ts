@@ -6,6 +6,10 @@ export const ADMIN_AUDIT_EVENTS = [
   'rule_deleted',
   'triage_updated',
   'announcement_mutated',
+  'owner_reply_sent',
+  'delegate_added',
+  'delegate_removed',
+  'incident_mode_toggled',
 ] as const;
 
 export type AdminAuditEventType = (typeof ADMIN_AUDIT_EVENTS)[number];
@@ -47,6 +51,7 @@ export type AvailabilityStatus = (typeof PORTFOLIO_AVAILABILITY_STATUSES)[number
 export const PORTFOLIO_SETTINGS_CONSTRAINTS = {
   availabilityTextMaxLength: 140,
   maintenanceMessageMaxLength: 300,
+  incidentMessageMaxLength: 300,
   uidMinLength: 1,
   uidMaxLength: 128,
 } as const;
@@ -60,6 +65,11 @@ export interface PortfolioSettings {
   enableCvDownloads: boolean;
   strictOtpForAll: boolean;
   showAnnouncementsBadge: boolean;
+  /** One-click lockdown: maintenance + pause contact/CV + strict OTP. */
+  incidentMode: boolean;
+  incidentMessage: string;
+  /** When true, new verified inquiries also trigger an owner alert email subject tag. */
+  notifyOnNewInquiry: boolean;
 }
 
 export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
@@ -72,7 +82,31 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
   enableCvDownloads: true,
   strictOtpForAll: false,
   showAnnouncementsBadge: true,
+  incidentMode: false,
+  incidentMessage:
+    'Incident response mode is active. Public contact and CV exports are temporarily paused.',
+  notifyOnNewInquiry: true,
 };
+
+export interface AdminDelegateDraft {
+  uid: string;
+  email: string;
+}
+
+export interface AdminDelegateRecord extends AdminDelegateDraft {
+  role: 'admin';
+  createdByUid: string;
+  createdAtMs: number;
+  createdAtIso: string;
+}
+
+export const ADMIN_DELEGATE_CONSTRAINTS = {
+  uidMinLength: 1,
+  uidMaxLength: 128,
+  emailMinLength: 3,
+  emailMaxLength: 254,
+  emailPattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+} as const;
 
 export const ACCESS_RULE_TYPES = ['allow', 'block'] as const;
 export type AccessRuleType = (typeof ACCESS_RULE_TYPES)[number];
@@ -205,7 +239,54 @@ export function sanitizePortfolioSettings(input: Partial<PortfolioSettings> | nu
       typeof input.showAnnouncementsBadge === 'boolean'
         ? input.showAnnouncementsBadge
         : DEFAULT_PORTFOLIO_SETTINGS.showAnnouncementsBadge,
+    incidentMode: Boolean(input.incidentMode),
+    incidentMessage:
+      clampString(
+        input.incidentMessage ?? DEFAULT_PORTFOLIO_SETTINGS.incidentMessage,
+        PORTFOLIO_SETTINGS_CONSTRAINTS.incidentMessageMaxLength
+      ) || DEFAULT_PORTFOLIO_SETTINGS.incidentMessage,
+    notifyOnNewInquiry:
+      typeof input.notifyOnNewInquiry === 'boolean'
+        ? input.notifyOnNewInquiry
+        : DEFAULT_PORTFOLIO_SETTINGS.notifyOnNewInquiry,
   };
+}
+
+/** Visitor-facing effective settings when incident mode is active. */
+export function getEffectivePortfolioSettings(settings: PortfolioSettings): PortfolioSettings {
+  if (!settings.incidentMode) return settings;
+  return {
+    ...settings,
+    maintenanceMode: true,
+    enableContactForm: false,
+    enableCvDownloads: false,
+    strictOtpForAll: true,
+    maintenanceMessage: settings.incidentMessage || settings.maintenanceMessage,
+  };
+}
+
+export function validateAdminDelegateDraft(draft: AdminDelegateDraft): {
+  valid: boolean;
+  error?: string;
+  normalized?: { uid: string; email: string };
+} {
+  const uid = clampString(draft.uid, ADMIN_DELEGATE_CONSTRAINTS.uidMaxLength);
+  const email = clampString(draft.email, ADMIN_DELEGATE_CONSTRAINTS.emailMaxLength).toLowerCase();
+
+  if (uid.length < ADMIN_DELEGATE_CONSTRAINTS.uidMinLength) {
+    return { valid: false, error: 'Firebase UID is required.' };
+  }
+  if (!/^[a-zA-Z0-9_-]+$/.test(uid)) {
+    return { valid: false, error: 'UID may only contain letters, numbers, underscores, and hyphens.' };
+  }
+  if (
+    email.length < ADMIN_DELEGATE_CONSTRAINTS.emailMinLength ||
+    !ADMIN_DELEGATE_CONSTRAINTS.emailPattern.test(email)
+  ) {
+    return { valid: false, error: 'Please enter a valid delegate email address.' };
+  }
+
+  return { valid: true, normalized: { uid, email } };
 }
 
 export function normalizeRuleValue(matchType: AccessRuleMatchType, rawValue: string): string {

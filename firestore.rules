@@ -42,8 +42,14 @@ service cloud.firestore {
 
     // Strict schema validation blueprint for Announcement (create & update)
     function isValidAnnouncement(data) {
-      return data.keys().hasAll(['date', 'title', 'summary', 'badge', 'linkUrl', 'authorUid', 'createdAt', 'updatedAt'])
-        && data.keys().hasOnly(['date', 'title', 'summary', 'badge', 'linkUrl', 'authorUid', 'createdAt', 'updatedAt'])
+      return data.keys().hasAll([
+          'date', 'title', 'summary', 'badge', 'linkUrl', 'status', 'scheduledAtMs',
+          'authorUid', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'date', 'title', 'summary', 'badge', 'linkUrl', 'status', 'scheduledAtMs',
+          'authorUid', 'createdAt', 'updatedAt'
+        ])
         && data.date is string
         && data.date.size() >= 3
         && data.date.size() <= 40
@@ -60,6 +66,10 @@ service cloud.firestore {
         && data.linkUrl is string
         && data.linkUrl.size() <= 300
         && (data.linkUrl == '' || data.linkUrl.matches('^https://[^\\s]+$'))
+        && data.status is string
+        && data.status in ['draft', 'scheduled', 'published']
+        && data.scheduledAtMs is int
+        && data.scheduledAtMs >= 0
         && data.authorUid is string
         && data.authorUid.size() >= 1
         && data.authorUid.size() <= 128
@@ -197,7 +207,8 @@ service cloud.firestore {
         && data.eventType.size() <= 32
         && data.eventType in [
           'owner_login', 'owner_logout', 'settings_updated',
-          'rule_created', 'rule_deleted', 'triage_updated', 'announcement_mutated'
+          'rule_created', 'rule_deleted', 'triage_updated', 'announcement_mutated',
+          'owner_reply_sent', 'delegate_added', 'delegate_removed', 'incident_mode_toggled'
         ]
         && data.actorEmail is string && data.actorEmail.size() >= 3 && data.actorEmail.size() <= 254
         && data.actorUid is string && data.actorUid.size() >= 1 && data.actorUid.size() <= 128 && data.actorUid == request.auth.uid
@@ -213,11 +224,13 @@ service cloud.firestore {
       return data.keys().hasAll([
           'availabilityStatus', 'availabilityText', 'maintenanceMode', 'maintenanceMessage',
           'enableContactForm', 'enableCvDownloads', 'strictOtpForAll', 'showAnnouncementsBadge',
+          'incidentMode', 'incidentMessage', 'notifyOnNewInquiry',
           'updatedByUid', 'updatedAt'
         ])
         && data.keys().hasOnly([
           'availabilityStatus', 'availabilityText', 'maintenanceMode', 'maintenanceMessage',
           'enableContactForm', 'enableCvDownloads', 'strictOtpForAll', 'showAnnouncementsBadge',
+          'incidentMode', 'incidentMessage', 'notifyOnNewInquiry',
           'updatedByUid', 'updatedAt'
         ])
         && data.availabilityStatus is string
@@ -231,8 +244,31 @@ service cloud.firestore {
         && data.enableCvDownloads is bool
         && data.strictOtpForAll is bool
         && data.showAnnouncementsBadge is bool
+        && data.incidentMode is bool
+        && data.incidentMessage is string && data.incidentMessage.size() <= 300
+        && data.notifyOnNewInquiry is bool
         && data.updatedByUid is string && data.updatedByUid.size() >= 1 && data.updatedByUid.size() <= 128 && data.updatedByUid == request.auth.uid
         && data.updatedAt is timestamp;
+    }
+
+    function isValidAdminRecord(data, pathId) {
+      return data.keys().hasAll(['uid', 'email', 'role', 'createdByUid', 'createdAt'])
+        && data.keys().hasOnly(['uid', 'email', 'role', 'createdByUid', 'createdAt'])
+        && data.uid is string
+        && data.uid == pathId
+        && data.uid.size() >= 1
+        && data.uid.size() <= 128
+        && data.uid.matches('^[a-zA-Z0-9_\\-]+$')
+        && data.email is string
+        && data.email.size() >= 3
+        && data.email.size() <= 254
+        && data.role is string
+        && data.role == 'admin'
+        && data.createdByUid is string
+        && data.createdByUid.size() >= 1
+        && data.createdByUid.size() <= 128
+        && data.createdByUid == request.auth.uid
+        && data.createdAt is timestamp;
     }
 
     // Strict schema validation blueprint for AccessRule (owner-only allowlist/blocklist)
@@ -274,7 +310,9 @@ service cloud.firestore {
         && incoming().authorUid == existing().authorUid
         && incoming().createdAt == existing().createdAt
         && incoming().updatedAt == request.time
-        && incoming().diff(existing()).affectedKeys().hasOnly(['date', 'title', 'summary', 'badge', 'linkUrl', 'updatedAt'])
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'date', 'title', 'summary', 'badge', 'linkUrl', 'status', 'scheduledAtMs', 'updatedAt'
+        ])
         && isAdmin();
 
       allow delete: if isVerifiedUser()
@@ -285,7 +323,7 @@ service cloud.firestore {
     // CV Download & Export Audit Telemetry (PII-isolated: owner-only read/list/delete; immutable create)
     match /cv_downloads/{downloadId} {
       allow get: if isVerifiedUser() && isValidId(downloadId) && isAdmin();
-      allow list: if isVerifiedOwnerEmail();
+      allow list: if isAdmin();
 
       allow create: if isValidId(downloadId)
         && isValidCvDownloadLog(incoming(), downloadId)
@@ -301,7 +339,7 @@ service cloud.firestore {
     // Contact / Transmit Message Inquiry Logs (PII-isolated: owner-only read/list/triage/delete; public create)
     match /contact_messages/{messageId} {
       allow get: if isVerifiedUser() && isValidId(messageId) && isAdmin();
-      allow list: if isVerifiedOwnerEmail();
+      allow list: if isAdmin();
 
       allow create: if isValidId(messageId)
         && isValidContactMessageLog(incoming(), messageId)
@@ -326,7 +364,7 @@ service cloud.firestore {
     // Owner Admin Audit & Login History (strictly owner-only read/list/create/delete; immutable create)
     match /admin_audit_logs/{auditId} {
       allow get: if isVerifiedUser() && isValidId(auditId) && isAdmin();
-      allow list: if isVerifiedOwnerEmail();
+      allow list: if isAdmin();
 
       allow create: if isVerifiedUser()
         && isValidId(auditId)
@@ -364,7 +402,7 @@ service cloud.firestore {
     // Owner-Managed Allowlist & Blocklist Rules (PII-isolated; owner-only read/list/create/delete)
     match /access_rules/{ruleId} {
       allow get: if isVerifiedUser() && isValidId(ruleId) && isAdmin();
-      allow list: if isVerifiedOwnerEmail();
+      allow list: if isAdmin();
 
       allow create: if isVerifiedUser()
         && isValidId(ruleId)
@@ -379,11 +417,16 @@ service cloud.firestore {
         && isAdmin();
     }
 
-    // Admin allowlist (strictly non-writable and non-enumerable from client SDKs)
+    // Secondary admin delegates (primary owner manages roster; self-get for console access)
     match /admins/{adminId} {
       allow get: if isVerifiedUser() && isValidId(adminId) && (request.auth.uid == adminId || isAdmin());
-      allow list: if false;
-      allow create, update, delete: if false;
+      allow list: if isVerifiedOwnerEmail();
+      allow create: if isVerifiedOwnerEmail()
+        && isValidId(adminId)
+        && isValidAdminRecord(incoming(), adminId)
+        && incoming().createdAt == request.time;
+      allow update: if false;
+      allow delete: if isVerifiedOwnerEmail() && isValidId(adminId);
     }
   }
 }

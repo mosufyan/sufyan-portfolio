@@ -16,10 +16,12 @@ import { useFirebase } from '../contexts/FirebaseContext';
 import {
   ANNOUNCEMENT_BADGES,
   ANNOUNCEMENT_CONSTRAINTS,
+  ANNOUNCEMENT_STATUSES,
   defaultMonthYearLabel,
   validateAnnouncementDraft,
   type AnnouncementBadge,
   type AnnouncementRecord,
+  type AnnouncementStatus,
 } from '../utils/announcementValidation';
 import { EASE_OUT_EXPO } from './MotionPrimitives';
 
@@ -29,6 +31,8 @@ interface FormState {
   summary: string;
   badge: AnnouncementBadge;
   linkUrl: string;
+  status: AnnouncementStatus;
+  scheduledLocal: string;
 }
 
 function createEmptyForm(): FormState {
@@ -38,7 +42,16 @@ function createEmptyForm(): FormState {
     summary: '',
     badge: 'VERIFIED',
     linkUrl: '',
+    status: 'published',
+    scheduledLocal: '',
   };
+}
+
+function toLocalInputValue(ms: number | null): string {
+  if (!ms) return '';
+  const d = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 export default function OwnerAnnouncementsPanel({ isLight }: { isLight: boolean }) {
@@ -76,6 +89,8 @@ export default function OwnerAnnouncementsPanel({ isLight }: { isLight: boolean 
       summary: item.summary,
       badge: item.badge,
       linkUrl: item.linkUrl,
+      status: item.status || 'published',
+      scheduledLocal: toLocalInputValue(item.scheduledAtMs),
     });
     setFeedbackError(null);
     setFeedbackSuccess(null);
@@ -88,7 +103,15 @@ export default function OwnerAnnouncementsPanel({ isLight }: { isLight: boolean 
     setFeedbackError(null);
     setFeedbackSuccess(null);
 
-    const check = validateAnnouncementDraft(form);
+    const scheduledAtMs =
+      form.status === 'scheduled' && form.scheduledLocal
+        ? new Date(form.scheduledLocal).getTime()
+        : null;
+
+    const check = validateAnnouncementDraft({
+      ...form,
+      scheduledAtMs,
+    });
     if (!check.valid) {
       setFeedbackError(check.errors[0] || 'Please check the announcement fields.');
       return;
@@ -101,7 +124,11 @@ export default function OwnerAnnouncementsPanel({ isLight }: { isLight: boolean 
         setFeedbackSuccess('Announcement updated cleanly.');
       } else {
         await createAnnouncement(check.normalized, keepStarterOnFirstPublish);
-        setFeedbackSuccess('Announcement published live to visitors.');
+        setFeedbackSuccess(
+          check.normalized.status === 'published'
+            ? 'Announcement published live to visitors.'
+            : `Announcement saved as ${check.normalized.status}.`
+        );
       }
       setComposerOpen(false);
       setEditingId(null);
@@ -342,6 +369,42 @@ export default function OwnerAnnouncementsPanel({ isLight }: { isLight: boolean 
               />
             </div>
 
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className={`block text-[11px] font-mono uppercase mb-1 ${mutedCls}`}>
+                  Publish Status
+                </label>
+                <select
+                  value={form.status}
+                  onChange={(e) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      status: e.target.value as AnnouncementStatus,
+                    }))
+                  }
+                  className={`w-full rounded-lg border px-3 py-2 text-xs font-mono focus:outline-none ${inputCls}`}
+                >
+                  {ANNOUNCEMENT_STATUSES.map((status) => (
+                    <option key={status} value={status}>
+                      {status}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className={`block text-[11px] font-mono uppercase mb-1 ${mutedCls}`}>
+                  Schedule (local time)
+                </label>
+                <input
+                  type="datetime-local"
+                  disabled={form.status !== 'scheduled'}
+                  value={form.scheduledLocal}
+                  onChange={(e) => setForm((prev) => ({ ...prev, scheduledLocal: e.target.value }))}
+                  className={`w-full rounded-lg border px-3 py-2 text-xs font-mono focus:outline-none disabled:opacity-40 ${inputCls}`}
+                />
+              </div>
+            </div>
+
             {!editingId && usingStarterFallback && (
               <label className={`flex items-center gap-2 text-xs cursor-pointer ${bodyCls}`}>
                 <input
@@ -411,6 +474,23 @@ export default function OwnerAnnouncementsPanel({ isLight }: { isLight: boolean 
                     }`}
                   >
                     {item.source === 'cloud' ? 'Cloud' : 'Starter'}
+                  </span>
+                  <span
+                    className={`px-1.5 py-0.5 rounded border text-[10px] font-mono uppercase ${
+                      item.status === 'published'
+                        ? isLight
+                          ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
+                          : 'border-emerald-500/40 bg-emerald-950/40 text-emerald-300'
+                        : item.status === 'scheduled'
+                          ? isLight
+                            ? 'border-amber-300 bg-amber-50 text-amber-800'
+                            : 'border-amber-500/40 bg-amber-950/40 text-amber-300'
+                          : isLight
+                            ? 'border-slate-300 bg-slate-100 text-slate-600'
+                            : 'border-slate-700 bg-slate-900 text-slate-400'
+                    }`}
+                  >
+                    {item.status || 'published'}
                   </span>
 
                   {item.source === 'cloud' && (

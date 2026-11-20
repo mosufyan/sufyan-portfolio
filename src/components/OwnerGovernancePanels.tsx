@@ -65,6 +65,14 @@ function eventMeta(eventType: AdminAuditEventType): {
       return { label: 'INQUIRY TRIAGE', tone: 'sky' };
     case 'announcement_mutated':
       return { label: 'ANNOUNCEMENTS', tone: 'emerald' };
+    case 'owner_reply_sent':
+      return { label: 'OWNER REPLY', tone: 'sky' };
+    case 'delegate_added':
+      return { label: 'DELEGATE ADDED', tone: 'emerald' };
+    case 'delegate_removed':
+      return { label: 'DELEGATE REMOVED', tone: 'rose' };
+    case 'incident_mode_toggled':
+      return { label: 'INCIDENT MODE', tone: 'rose' };
     default:
       return { label: 'AUDIT EVENT', tone: 'slate' };
   }
@@ -504,6 +512,18 @@ export function SiteControlsPanel({ isLight }: { isLight: boolean }) {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
           {[
             {
+              key: 'incidentMode' as const,
+              icon: ShieldAlert,
+              title: 'Incident Mode (one-click lockdown)',
+              desc: 'Forces maintenance banner, pauses contact + CV exports, and enables strict OTP.',
+            },
+            {
+              key: 'notifyOnNewInquiry' as const,
+              icon: Mail,
+              title: 'Alert Tag on New Inquiries',
+              desc: 'Prefixes owner notification emails with [ALERT] when a verified inquiry arrives.',
+            },
+            {
               key: 'maintenanceMode' as const,
               icon: Wrench,
               title: 'Maintenance Banner Mode',
@@ -576,6 +596,20 @@ export function SiteControlsPanel({ isLight }: { isLight: boolean }) {
           />
         </div>
 
+        <div className={`rounded-xl border p-3.5 space-y-1.5 ${rowCard}`}>
+          <label className={`block text-[10px] font-mono uppercase ${mutedCls}`}>
+            Incident Mode Message ({draft.incidentMessage.length}/300 chars)
+          </label>
+          <textarea
+            rows={2}
+            maxLength={300}
+            value={draft.incidentMessage}
+            onChange={(e) => setDraft((prev) => ({ ...prev, incidentMessage: e.target.value }))}
+            placeholder={DEFAULT_PORTFOLIO_SETTINGS.incidentMessage}
+            className={`w-full rounded-lg border px-3 py-2 text-xs focus:outline-none resize-y ${inputCls}`}
+          />
+        </div>
+
         <div className="flex items-center justify-end gap-2 pt-1">
           <button
             type="button"
@@ -632,10 +666,17 @@ export function AdminAuditPanel({ isLight }: { isLight: boolean }) {
         return (
           entry.eventType === 'settings_updated' ||
           entry.eventType === 'rule_created' ||
-          entry.eventType === 'rule_deleted'
+          entry.eventType === 'rule_deleted' ||
+          entry.eventType === 'delegate_added' ||
+          entry.eventType === 'delegate_removed' ||
+          entry.eventType === 'incident_mode_toggled'
         );
       }
-      return entry.eventType === 'triage_updated' || entry.eventType === 'announcement_mutated';
+      return (
+        entry.eventType === 'triage_updated' ||
+        entry.eventType === 'announcement_mutated' ||
+        entry.eventType === 'owner_reply_sent'
+      );
     });
   }, [adminAuditLogs, filterCategory]);
 
@@ -814,6 +855,128 @@ export function AdminAuditPanel({ isLight }: { isLight: boolean }) {
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+export function DelegatesPanel({ isLight }: { isLight: boolean }) {
+  const {
+    isPrimaryOwner,
+    adminDelegates,
+    loadingDelegates,
+    addAdminDelegate,
+    removeAdminDelegate,
+  } = useFirebase();
+  const [uid, setUid] = useState('');
+  const [email, setEmail] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  const card = isLight ? 'border-slate-200 bg-white' : 'border-slate-800 bg-[#090d16]';
+  const subCard = isLight ? 'border-slate-200 bg-slate-50' : 'border-slate-800/80 bg-[#070b14]';
+  const titleCls = isLight ? 'text-slate-900' : 'text-white';
+  const mutedCls = isLight ? 'text-slate-500' : 'text-slate-400';
+  const inputCls = isLight
+    ? 'border-slate-300 bg-white text-slate-900 placeholder-slate-400 focus:border-sky-500'
+    : 'border-slate-700 bg-[#070b14] text-slate-100 placeholder-slate-500 focus:border-cyan-500';
+
+  if (!isPrimaryOwner) {
+    return (
+      <div className={`rounded-xl border p-4 text-xs ${card} ${mutedCls}`}>
+        Delegate admin management is restricted to the primary owner account.
+      </div>
+    );
+  }
+
+  const handleAdd = async (e: FormEvent) => {
+    e.preventDefault();
+    if (busy) return;
+    setError(null);
+    setSuccess(null);
+    setBusy(true);
+    try {
+      await addAdminDelegate({ uid, email });
+      setUid('');
+      setEmail('');
+      setSuccess('Delegate admin added. They can open the Owner Console after Google sign-in.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to add delegate.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <form onSubmit={(e) => void handleAdd(e)} className={`rounded-xl border p-4 space-y-3 ${card}`}>
+        <div>
+          <h4 className={`text-sm font-display font-bold ${titleCls}`}>Secondary Admin Delegates</h4>
+          <p className={`text-[11px] mt-0.5 ${mutedCls}`}>
+            Add Firebase Auth UIDs for teammates who should access console analytics and triage. Policy sync and
+            reply email remain primary-owner only.
+          </p>
+        </div>
+        {error && (
+          <div role="alert" className="rounded-lg border border-rose-500/40 bg-rose-950/30 px-3 py-2 text-xs text-rose-200">
+            {error}
+          </div>
+        )}
+        {success && (
+          <div role="status" className="rounded-lg border border-emerald-500/40 bg-emerald-950/30 px-3 py-2 text-xs text-emerald-200">
+            {success}
+          </div>
+        )}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <input
+            type="text"
+            value={uid}
+            onChange={(e) => setUid(e.target.value)}
+            placeholder="Firebase UID"
+            className={`rounded-lg border px-3 py-2 text-xs focus:outline-none ${inputCls}`}
+          />
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Delegate email"
+            className={`rounded-lg border px-3 py-2 text-xs focus:outline-none ${inputCls}`}
+          />
+        </div>
+        <button
+          type="submit"
+          disabled={busy}
+          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#38bdf8] text-slate-950 text-xs font-semibold cursor-pointer disabled:opacity-50"
+        >
+          {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+          Add Delegate
+        </button>
+      </form>
+
+      <div className={`rounded-xl border p-4 space-y-2 ${card}`}>
+        <div className={`text-xs font-mono ${mutedCls}`}>
+          {loadingDelegates ? 'Loading delegates…' : `${adminDelegates.length} delegate(s)`}
+        </div>
+        {adminDelegates.map((delegate) => (
+          <div
+            key={delegate.uid}
+            className={`flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 text-xs ${subCard}`}
+          >
+            <div className="min-w-0">
+              <div className={`font-mono truncate ${titleCls}`}>{delegate.email}</div>
+              <div className={`font-mono text-[10px] truncate ${mutedCls}`}>{delegate.uid}</div>
+            </div>
+            <button
+              type="button"
+              onClick={() => void removeAdminDelegate(delegate.uid)}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-rose-500/40 text-rose-300 text-[11px] cursor-pointer"
+            >
+              <Trash2 className="w-3 h-3" />
+              Remove
+            </button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

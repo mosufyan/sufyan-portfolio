@@ -48,6 +48,10 @@ import {
   type CvDownloadLogRecord,
 } from '../utils/cvDownloadLogValidation';
 import { evaluateAccessRules } from '../utils/ownerGovernance';
+import {
+  OWNER_REPLY_TEMPLATES,
+  composeOwnerReplySubject,
+} from '../utils/ownerConsoleRouting';
 import CvAnalyticsCharts from './CvAnalyticsCharts';
 import ModalHeaderScan from './ModalHeaderScan';
 import { EASE_OUT_EXPO } from './MotionPrimitives';
@@ -144,6 +148,7 @@ export function CvAnalyticsPanel({
     loadingContactLogs,
     deleteContactMessageLog,
     updateContactMessageTriage,
+    replyToContactMessage,
     accessRules,
     createAccessRule,
     adminAuditLogs,
@@ -163,6 +168,10 @@ export function CvAnalyticsPanel({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [ruleBusyKey, setRuleBusyKey] = useState<string | null>(null);
   const [triageNotesDraft, setTriageNotesDraft] = useState<Record<string, string>>({});
+  const [replyDrafts, setReplyDrafts] = useState<Record<string, { subject: string; body: string }>>(
+    {}
+  );
+  const [replyBusyId, setReplyBusyId] = useState<string | null>(null);
   const [savingNoteId, setSavingNoteId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
@@ -578,6 +587,35 @@ export function CvAnalyticsPanel({
       setActionError(err instanceof Error ? err.message : 'Unable to save note.');
     } finally {
       setSavingNoteId(null);
+    }
+  };
+
+  const getReplyDraft = (msg: ContactMessageLogRecord) =>
+    replyDrafts[msg.messageId] || {
+      subject: composeOwnerReplySubject(msg.subject || 'Portfolio inquiry'),
+      body: '',
+    };
+
+  const handleSendReply = async (msg: ContactMessageLogRecord) => {
+    const draft = getReplyDraft(msg);
+    setReplyBusyId(msg.messageId);
+    setActionError(null);
+    try {
+      await replyToContactMessage(msg.messageId, {
+        subject: draft.subject,
+        body: draft.body,
+        markReplied: true,
+      });
+      setActionSuccess(`Reply sent to ${msg.senderEmail}`);
+      setReplyDrafts((prev) => ({
+        ...prev,
+        [msg.messageId]: { subject: draft.subject, body: '' },
+      }));
+      window.setTimeout(() => setActionSuccess(null), 3500);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Unable to send reply.');
+    } finally {
+      setReplyBusyId(null);
     }
   };
 
@@ -1188,6 +1226,88 @@ export function CvAnalyticsPanel({
                               <Check className="w-3 h-3" />
                             )}
                             <span>Save Note</span>
+                          </button>
+                        </div>
+
+                        <div className="space-y-1.5 pt-1 border-t border-dashed border-slate-700/50">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className={`text-[10px] font-mono uppercase ${mutedCls}`}>
+                              Reply from console
+                            </span>
+                            <div className="flex flex-wrap gap-1">
+                              {OWNER_REPLY_TEMPLATES.map((tpl) => (
+                                <button
+                                  key={tpl.id}
+                                  type="button"
+                                  onClick={() =>
+                                    setReplyDrafts((prev) => ({
+                                      ...prev,
+                                      [msg.messageId]: {
+                                        subject: composeOwnerReplySubject(
+                                          msg.subject || 'Portfolio inquiry'
+                                        ),
+                                        body: tpl.body,
+                                      },
+                                    }))
+                                  }
+                                  className={`px-2 py-0.5 rounded border text-[10px] font-mono cursor-pointer ${
+                                    isLight
+                                      ? 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                                      : 'border-slate-700 bg-slate-900/70 text-slate-400 hover:text-white'
+                                  }`}
+                                >
+                                  {tpl.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          <input
+                            type="text"
+                            maxLength={200}
+                            value={getReplyDraft(msg).subject}
+                            onChange={(e) =>
+                              setReplyDrafts((prev) => ({
+                                ...prev,
+                                [msg.messageId]: {
+                                  ...getReplyDraft(msg),
+                                  subject: e.target.value,
+                                },
+                              }))
+                            }
+                            placeholder="Reply subject"
+                            className={`w-full rounded-md border px-2.5 py-1 text-xs focus:outline-none ${inputCls}`}
+                          />
+                          <textarea
+                            rows={3}
+                            maxLength={5000}
+                            value={getReplyDraft(msg).body}
+                            onChange={(e) =>
+                              setReplyDrafts((prev) => ({
+                                ...prev,
+                                [msg.messageId]: {
+                                  ...getReplyDraft(msg),
+                                  body: e.target.value,
+                                },
+                              }))
+                            }
+                            placeholder="Write a reply to the visitor..."
+                            className={`w-full rounded-md border px-2.5 py-1.5 text-xs focus:outline-none resize-y ${inputCls}`}
+                          />
+                          <button
+                            type="button"
+                            disabled={
+                              replyBusyId === msg.messageId ||
+                              getReplyDraft(msg).body.trim().length < 3
+                            }
+                            onClick={() => void handleSendReply(msg)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#34d399] text-slate-950 text-[11px] font-semibold cursor-pointer disabled:opacity-40"
+                          >
+                            {replyBusyId === msg.messageId ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <Mail className="w-3 h-3" />
+                            )}
+                            Send reply &amp; mark Replied
                           </button>
                         </div>
                       </div>

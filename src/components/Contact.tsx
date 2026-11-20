@@ -91,7 +91,7 @@ function formatSanJoseTime(): string {
 
 export default function Contact({ onOpenDigitalCard }: ContactProps) {
   const { theme, isLight } = useTheme();
-  const { recordContactMessageLog, portfolioSettings } = useFirebase();
+  const { recordContactMessageLog, portfolioSettings, effectivePortfolioSettings } = useFirebase();
   const shouldReduceMotion = useReducedMotion();
   const [formData, setFormData] = useState({
     name: '',
@@ -142,7 +142,7 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
   const showingOtpPanel = Boolean(otpStep && (status === 'otp' || status === 'sending'));
 
   useEffect(() => {
-    if (!turnstileSiteKey || showingOtpPanel || !portfolioSettings.enableContactForm) return;
+    if (!turnstileSiteKey || showingOtpPanel || !effectivePortfolioSettings.enableContactForm) return;
     const container = turnstileContainerRef.current;
     if (!container) return;
 
@@ -195,7 +195,7 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
         turnstileWidgetIdRef.current = null;
       }
     };
-  }, [turnstileSiteKey, isLight, showingOtpPanel, portfolioSettings.enableContactForm]);
+  }, [turnstileSiteKey, isLight, showingOtpPanel, effectivePortfolioSettings.enableContactForm]);
 
   const copyEmail = () => {
     navigator.clipboard
@@ -249,7 +249,7 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!portfolioSettings.enableContactForm) {
+    if (!effectivePortfolioSettings.enableContactForm) {
       setStatus('error');
       setErrorMsg(
         'Direct form submissions are temporarily paused. Please use the email button below.'
@@ -600,7 +600,7 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
                 </span>
               </div>
 
-              {!portfolioSettings.enableContactForm ? (
+              {!effectivePortfolioSettings.enableContactForm ? (
                 <div
                   className={`rounded-xl border p-6 space-y-4 ${
                     isLight
@@ -615,8 +615,9 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
                         Web Inquiries Temporarily Paused
                       </h4>
                       <p className="text-xs sm:text-sm opacity-90 leading-relaxed">
-                        {portfolioSettings.maintenanceMode && portfolioSettings.maintenanceMessage
-                          ? portfolioSettings.maintenanceMessage
+                        {effectivePortfolioSettings.maintenanceMode &&
+                        effectivePortfolioSettings.maintenanceMessage
+                          ? effectivePortfolioSettings.maintenanceMessage
                           : 'Direct web form submissions are temporarily paused. Please reach out directly via email or LinkedIn.'}
                       </p>
                     </div>

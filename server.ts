@@ -91,6 +91,8 @@ interface RuntimeOwnerPolicy {
   strictOtpForAll: boolean;
   enableContactForm: boolean;
   enableCvDownloads: boolean;
+  incidentMode: boolean;
+  notifyOnNewInquiry: boolean;
 }
 
 const POLICY_CACHE_PATH = path.join(__dirname, '.owner-policy-cache.json');
@@ -101,6 +103,8 @@ function loadInitialOwnerPolicy(): RuntimeOwnerPolicy {
     strictOtpForAll: false,
     enableContactForm: true,
     enableCvDownloads: true,
+    incidentMode: false,
+    notifyOnNewInquiry: true,
   };
   try {
     if (!fs.existsSync(POLICY_CACHE_PATH)) return defaults;
@@ -110,6 +114,9 @@ function loadInitialOwnerPolicy(): RuntimeOwnerPolicy {
       strictOtpForAll: Boolean(parsed.strictOtpForAll),
       enableContactForm: typeof parsed.enableContactForm === 'boolean' ? parsed.enableContactForm : true,
       enableCvDownloads: typeof parsed.enableCvDownloads === 'boolean' ? parsed.enableCvDownloads : true,
+      incidentMode: Boolean(parsed.incidentMode),
+      notifyOnNewInquiry:
+        typeof parsed.notifyOnNewInquiry === 'boolean' ? parsed.notifyOnNewInquiry : true,
     };
   } catch {
     return defaults;
@@ -999,9 +1006,10 @@ async function sendContactEmail(payload: ContactPayload): Promise<{ provider: st
   const safeHeaderName = sanitizeDisplayName(payload.name) || 'Portfolio Visitor';
   const safeHeaderSubject = payload.subject ? sanitizeHeaderValue(payload.subject) : '';
   const safeHeaderEmail = sanitizeHeaderValue(payload.email);
+  const alertTag = runtimeOwnerPolicy.notifyOnNewInquiry ? '[ALERT] ' : '';
   const subjectLine = safeHeaderSubject
-    ? `[Portfolio Inquiry] ${safeHeaderSubject} — ${safeHeaderName}`
-    : `[Portfolio Inquiry] New message from ${safeHeaderName}`;
+    ? `${alertTag}[Portfolio Inquiry] ${safeHeaderSubject} — ${safeHeaderName}`
+    : `${alertTag}[Portfolio Inquiry] New message from ${safeHeaderName}`;
   const html = buildPortfolioEmailHtml(payload, timestamp);
   const text = buildPlainTextEmail(payload, timestamp);
 
@@ -1018,6 +1026,30 @@ async function sendContactEmail(payload: ContactPayload): Promise<{ provider: st
       subject: safeHeaderSubject || 'Portfolio Architecture Inquiry',
       message: payload.message,
     },
+  });
+}
+
+async function sendOwnerReplyEmail(params: {
+  toEmail: string;
+  toName: string;
+  subject: string;
+  body: string;
+  originalSubject?: string;
+}): Promise<{ provider: string }> {
+  const safeName = sanitizeDisplayName(params.toName) || 'there';
+  const safeSubject = sanitizeHeaderValue(params.subject).slice(0, 200);
+  const safeBody = escapeHtml(params.body).replace(/\r?\n/g, '<br />');
+  const original = params.originalSubject
+    ? `<p style="margin:16px 0 0;font-size:12px;opacity:0.75;">In reply to: ${escapeHtml(params.originalSubject)}</p>`
+    : '';
+  const html = `<div style="font-family:Inter,Segoe UI,sans-serif;line-height:1.5;color:#0f172a"><p>Hi ${escapeHtml(safeName)},</p><p>${safeBody}</p>${original}<p style="margin-top:24px;font-size:12px;opacity:0.7">— Mohammed Sufyan</p></div>`;
+  const text = `Hi ${safeName},\n\n${params.body.trim()}\n\n— Mohammed Sufyan`;
+  return dispatchEmailMessage({
+    to: params.toEmail,
+    fromDisplayName: 'Mohammed Sufyan',
+    subjectLine: safeSubject,
+    html,
+    text,
   });
 }
 
@@ -1257,6 +1289,8 @@ async function startServer() {
         strictOtpForAll?: unknown;
         enableContactForm?: unknown;
         enableCvDownloads?: unknown;
+        incidentMode?: unknown;
+        notifyOnNewInquiry?: unknown;
       };
 
       const normalizedRules: CompactAccessRule[] = [];
@@ -1275,25 +1309,95 @@ async function startServer() {
         }
       }
 
+      const incidentMode =
+        typeof raw.incidentMode === 'boolean' ? raw.incidentMode : runtimeOwnerPolicy.incidentMode;
+
       saveRuntimeOwnerPolicy({
         rules: normalizedRules,
         strictOtpForAll:
           typeof raw.strictOtpForAll === 'boolean'
             ? raw.strictOtpForAll
-            : runtimeOwnerPolicy.strictOtpForAll,
-        enableContactForm:
-          typeof raw.enableContactForm === 'boolean'
+            : runtimeOwnerPolicy.strictOtpForAll || incidentMode,
+        enableContactForm: incidentMode
+          ? false
+          : typeof raw.enableContactForm === 'boolean'
             ? raw.enableContactForm
             : runtimeOwnerPolicy.enableContactForm,
-        enableCvDownloads:
-          typeof raw.enableCvDownloads === 'boolean'
+        enableCvDownloads: incidentMode
+          ? false
+          : typeof raw.enableCvDownloads === 'boolean'
             ? raw.enableCvDownloads
             : runtimeOwnerPolicy.enableCvDownloads,
+        incidentMode,
+        notifyOnNewInquiry:
+          typeof raw.notifyOnNewInquiry === 'boolean'
+            ? raw.notifyOnNewInquiry
+            : runtimeOwnerPolicy.notifyOnNewInquiry,
       });
 
       res.status(200).json({ ok: true, ruleCount: normalizedRules.length });
     } catch {
       res.status(500).json({ error: 'Unable to sync owner security policy.' });
+    }
+  });
+
+  app.post('/api/owner/reply-message', async (req: Request, res: Response) => {
+    try {
+      if (!req.is('application/json')) {
+        res.status(415).json({ error: 'Content-Type must be application/json.' });
+        return;
+      }
+      if (rejectDisallowedOrigin(req, res)) return;
+
+      const authCheck = await verifyOwnerFirebaseIdToken(req.headers.authorization);
+      if (!authCheck.ok) {
+        res.status(401).json({ error: authCheck.error });
+        return;
+      }
+
+      const raw = (req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {}) as {
+        messageId?: unknown;
+        toEmail?: unknown;
+        toName?: unknown;
+        subject?: unknown;
+        body?: unknown;
+        originalSubject?: unknown;
+      };
+
+      const toEmail = typeof raw.toEmail === 'string' ? raw.toEmail.trim().toLowerCase() : '';
+      const toName = typeof raw.toName === 'string' ? raw.toName.trim() : '';
+      const subject = typeof raw.subject === 'string' ? raw.subject.trim() : '';
+      const body = typeof raw.body === 'string' ? raw.body.trim() : '';
+      const messageId = typeof raw.messageId === 'string' ? raw.messageId.trim() : '';
+      const originalSubject =
+        typeof raw.originalSubject === 'string' ? raw.originalSubject.trim().slice(0, 200) : '';
+
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(toEmail)) {
+        res.status(400).json({ error: 'A valid recipient email is required.' });
+        return;
+      }
+      if (subject.length < 3 || body.length < 3) {
+        res.status(400).json({ error: 'Reply subject and body must be at least 3 characters.' });
+        return;
+      }
+
+      const result = await sendOwnerReplyEmail({
+        toEmail,
+        toName,
+        subject: subject.slice(0, 200),
+        body: body.slice(0, 5000),
+        originalSubject,
+      });
+
+      res.status(200).json({
+        ok: true,
+        provider: result.provider,
+        messageId: messageId || undefined,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Unable to send owner reply email.';
+      res.status(500).json({ error: message });
     }
   });
 

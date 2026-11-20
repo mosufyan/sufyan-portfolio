@@ -379,7 +379,7 @@ export default function ResumeModal({
 
   const [cvUnlocked, setCvUnlocked] = useState<boolean>(() => isAccessUnlocked('pdf'));
   const [pendingAction, setPendingAction] = useState<AccessGateAction | null>(null);
-  const { recordCvDownloadLog, portfolioSettings } = useFirebase();
+  const { recordCvDownloadLog, effectivePortfolioSettings } = useFirebase();
 
   useEffect(() => {
     if (isOpen) {
@@ -1302,7 +1302,7 @@ export default function ResumeModal({
 
   const handleRequestPdf = () => {
     if (isGeneratingPdf || selectedSectionCount === 0) return;
-    if (!portfolioSettings.enableCvDownloads) {
+    if (!effectivePortfolioSettings.enableCvDownloads) {
       setPdfError('CV exports are temporarily paused by the portfolio owner.');
       return;
     }
@@ -1316,7 +1316,7 @@ export default function ResumeModal({
 
   const handleRequestPrint = () => {
     if (selectedSectionCount === 0) return;
-    if (!portfolioSettings.enableCvDownloads) {
+    if (!effectivePortfolioSettings.enableCvDownloads) {
       setPdfError('CV exports are temporarily paused by the portfolio owner.');
       return;
     }
@@ -1336,7 +1336,7 @@ export default function ResumeModal({
 
   const handleRequestAtsCopy = () => {
     if (selectedSectionCount === 0) return;
-    if (!portfolioSettings.enableCvDownloads) {
+    if (!effectivePortfolioSettings.enableCvDownloads) {
       setPdfError('CV exports are temporarily paused by the portfolio owner.');
       return;
     }

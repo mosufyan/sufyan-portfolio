@@ -234,8 +234,9 @@ export default function AccessGateModal({
   const { isLight: siteIsLight } = useTheme();
   const isLight = isLightProp ?? siteIsLight;
   const alignClass = useModalPlacement(action !== null);
-  const { recordCvDownloadLog, portfolioSettings } = useFirebase();
-  const exportsPaused = action !== null && action !== 'install' && !portfolioSettings.enableCvDownloads;
+  const { recordCvDownloadLog, effectivePortfolioSettings } = useFirebase();
+  const exportsPaused =
+    action !== null && action !== 'install' && !effectivePortfolioSettings.enableCvDownloads;
 
   const [form, setForm] = useState({
     name: '',

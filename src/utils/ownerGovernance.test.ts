@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_PORTFOLIO_SETTINGS,
   evaluateAccessRules,
+  getEffectivePortfolioSettings,
   sanitizeAdminAuditPayload,
   sanitizePortfolioSettings,
   validateAccessRuleDraft,
+  validateAdminDelegateDraft,
 } from './ownerGovernance';
 
 describe('ownerGovernance utilities', () => {
@@ -37,11 +39,33 @@ describe('ownerGovernance utilities', () => {
       maintenanceMode: true,
       enableContactForm: false,
       strictOtpForAll: true,
+      incidentMode: true,
+      notifyOnNewInquiry: false,
     });
     expect(sanitized.availabilityStatus).toBe('advisory');
     expect(sanitized.maintenanceMode).toBe(true);
     expect(sanitized.enableContactForm).toBe(false);
     expect(sanitized.enableCvDownloads).toBe(DEFAULT_PORTFOLIO_SETTINGS.enableCvDownloads);
+    expect(sanitized.incidentMode).toBe(true);
+    expect(sanitized.notifyOnNewInquiry).toBe(false);
+
+    const effective = getEffectivePortfolioSettings(sanitized);
+    expect(effective.maintenanceMode).toBe(true);
+    expect(effective.enableContactForm).toBe(false);
+    expect(effective.enableCvDownloads).toBe(false);
+    expect(effective.strictOtpForAll).toBe(true);
+  });
+
+  it('validates admin delegate drafts', () => {
+    const ok = validateAdminDelegateDraft({
+      uid: 'abc123UID',
+      email: 'teammate@example.com',
+    });
+    expect(ok.valid).toBe(true);
+    expect(ok.normalized?.email).toBe('teammate@example.com');
+
+    const bad = validateAdminDelegateDraft({ uid: '', email: 'nope' });
+    expect(bad.valid).toBe(false);
   });
 
   it('validates and evaluates allowlist and blocklist rules with block precedence', () => {
