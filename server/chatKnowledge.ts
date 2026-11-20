@@ -23,6 +23,8 @@ export interface ChatAnswer {
   confidence: number;
   sources: string[];
   suggestions: string[];
+  /** Contextual follow-up questions shown under each answer. */
+  followUps: string[];
   offerLiveAgent: boolean;
 }
 
@@ -140,6 +142,18 @@ const SUGGESTIONS = [
   'Is he open to new opportunities?',
 ];
 
+const FOLLOW_UPS_BY_TOPIC: Record<string, string[]> = {
+  about: ['What is his engineering philosophy?', 'Is he open to new opportunities?'],
+  contact: ['How do I request a CV?', 'Is he open to advisory work?'],
+  philosophy: ['Where has he applied Zero Trust in practice?', 'Which clouds has he worked with?'],
+  'open-to': ['What is his current role at Cisco?', 'How can I contact him?'],
+  experience: ['Which clouds and platforms has he worked with?', 'Summarize his security / Zero Trust experience'],
+  skills: ['Summarize his security / Zero Trust experience', 'What certifications does he hold?'],
+  certifications: ['Which clouds and platforms has he worked with?', 'What awards has he received?'],
+  awards: ['What is Mohammed’s current role at Cisco?', 'What certifications does he hold?'],
+  education: ['What is Mohammed’s current role at Cisco?', 'How can I contact him?'],
+};
+
 function scoreChunk(tokens: string[], chunk: KnowledgeChunk): number {
   if (tokens.length === 0) return 0;
   const hay = `${chunk.topic} ${chunk.text} ${chunk.keywords.join(' ')}`.toLowerCase();
@@ -151,6 +165,53 @@ function scoreChunk(tokens: string[], chunk: KnowledgeChunk): number {
   return score;
 }
 
+/** Keep answers short: prefer 1–2 sentences, hard-cap length. */
+export function makeConciseAnswer(raw: string, maxChars = 360): string {
+  const cleaned = raw.replace(/\s+/g, ' ').trim();
+  if (!cleaned) return cleaned;
+  const sentences = cleaned.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [cleaned];
+  let out = '';
+  for (const sentence of sentences) {
+    const next = `${out}${sentence}`.trim();
+    if (out && next.length > maxChars) break;
+    out = next;
+    if (out.length >= 120 && sentences.indexOf(sentence) >= 1) break;
+    if (out.length >= maxChars) break;
+  }
+  if (out.length > maxChars) {
+    out = `${out.slice(0, maxChars - 1).trimEnd()}…`;
+  }
+  return out;
+}
+
+function followUpsForChunks(chunks: KnowledgeChunk[], question: string): string[] {
+  const q = question.toLowerCase();
+  const picked: string[] = [];
+  for (const chunk of chunks) {
+    const key = chunk.id.startsWith('exp-')
+      ? 'experience'
+      : chunk.id.startsWith('skill-')
+        ? 'skills'
+        : chunk.id.startsWith('cert-')
+          ? 'certifications'
+          : chunk.id.startsWith('award-')
+            ? 'awards'
+            : chunk.id.startsWith('edu-')
+              ? 'education'
+              : chunk.id;
+    for (const item of FOLLOW_UPS_BY_TOPIC[key] || []) {
+      if (!q.includes(item.toLowerCase().slice(0, 18)) && !picked.includes(item)) {
+        picked.push(item);
+      }
+    }
+  }
+  for (const s of SUGGESTIONS) {
+    if (picked.length >= 3) break;
+    if (!q.includes(s.toLowerCase().slice(0, 18)) && !picked.includes(s)) picked.push(s);
+  }
+  return picked.slice(0, 3);
+}
+
 export function answerPortfolioQuestion(questionRaw: string): ChatAnswer {
   const question = questionRaw.trim().slice(0, 500);
   const tokens = tokenize(question);
@@ -158,35 +219,42 @@ export function answerPortfolioQuestion(questionRaw: string): ChatAnswer {
     .filter((row) => row.score > 0)
     .sort((a, b) => b.score - a.score);
 
-  const top = ranked.slice(0, 3);
+  const top = ranked.slice(0, 2);
   const bestScore = top[0]?.score ?? 0;
   const confidence = Math.max(0, Math.min(1, bestScore / Math.max(8, tokens.length * 2.5)));
+  const starterSuggestions = SUGGESTIONS.filter(
+    (s) => !question.toLowerCase().includes(s.toLowerCase().slice(0, 18))
+  ).slice(0, 4);
 
   if (top.length === 0 || confidence < 0.18) {
     return {
       answer:
-        "I don’t have a confident match for that in the published portfolio. Try asking about experience, skills, certifications, awards, education, or contact — or request a live chat with Mohammed (email OTP required).",
+        "I don’t have a confident match in the published portfolio. Try experience, skills, certifications, or contact — or ask Mohammed directly in this chat.",
       confidence,
       sources: [],
-      suggestions: SUGGESTIONS.slice(0, 4),
+      suggestions: starterSuggestions,
+      followUps: SUGGESTIONS.slice(0, 3),
       offerLiveAgent: true,
     };
   }
 
-  const answer = top
-    .map((row, idx) =>
-      idx === 0 ? row.chunk.text : `Also relevant — ${row.chunk.topic}: ${row.chunk.text}`
-    )
-    .join('\n\n')
-    .slice(0, 1800);
+  const primary = top[0].chunk.text;
+  const secondary =
+    top[1] && confidence > 0.45
+      ? ` ${makeConciseAnswer(top[1].chunk.text, 140)}`
+      : '';
+  const answer = makeConciseAnswer(`${primary}${secondary}`, 360);
+  const followUps = followUpsForChunks(
+    top.map((row) => row.chunk),
+    question
+  );
 
   return {
     answer,
     confidence,
     sources: top.map((row) => row.chunk.topic),
-    suggestions: SUGGESTIONS.filter(
-      (s) => !question.toLowerCase().includes(s.toLowerCase().slice(0, 18))
-    ).slice(0, 4),
+    suggestions: starterSuggestions,
+    followUps,
     offerLiveAgent: confidence < 0.55 || /talk|human|agent|live|call|chat with/i.test(question),
   };
 }

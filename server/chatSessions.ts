@@ -27,6 +27,8 @@ export interface ChatSession {
   sessionId: string;
   visitorName: string;
   visitorEmail: string;
+  company: string;
+  interest: string;
   status: 'queued' | 'active' | 'closed';
   createdAtMs: number;
   updatedAtMs: number;
@@ -78,7 +80,12 @@ function loadCache(): void {
     llmFallbacks = Number(parsed.llmFallbacks) || 0;
     if (Array.isArray(parsed.sessions)) {
       for (const s of parsed.sessions.slice(-MAX_SESSIONS)) {
-        if (s?.sessionId) sessions.set(s.sessionId, s);
+        if (!s?.sessionId) continue;
+        sessions.set(s.sessionId, {
+          ...s,
+          company: typeof s.company === 'string' ? s.company : '',
+          interest: typeof s.interest === 'string' ? s.interest : '',
+        });
       }
     }
     if (Array.isArray(parsed.usages)) {
@@ -164,16 +171,27 @@ export function createChatSession(input: {
   ipAddress: string;
   userAgent: string;
   openingMessage?: string;
+  company?: string;
+  interest?: string;
 }): ChatSession {
   const now = Date.now();
   const sessionId = `CHAT-${crypto.randomBytes(5).toString('hex').toUpperCase()}`;
+  const visitorName = input.visitorName.slice(0, 120);
+  const company = (input.company || '').trim().slice(0, 120);
+  const interest = (input.interest || '').trim().slice(0, 160);
   const messages: ChatMessage[] = [
     {
       id: `m-${crypto.randomBytes(4).toString('hex')}`,
       role: 'system',
+      text: `Welcome, ${visitorName}! You’re verified. Ask about experience, skills, certifications, or contact — or leave a note for Mohammed.`,
+      createdAtMs: now,
+    },
+    {
+      id: `m-${crypto.randomBytes(4).toString('hex')}`,
+      role: 'bot',
       text: isOwnerOnline(now)
-        ? 'Live chat connected. Mohammed (or a delegate) has been notified and may reply shortly.'
-        : 'Live chat request received. Mohammed is offline right now — your message is queued and he will see it in the Owner Console.',
+        ? 'Mohammed appears online and may reply live. Meanwhile I can answer portfolio questions concisely.'
+        : 'Mohammed is offline right now — your chat is queued in the Owner Console. I can still answer portfolio questions.',
       createdAtMs: now,
     },
   ];
@@ -187,8 +205,10 @@ export function createChatSession(input: {
   }
   const session: ChatSession = {
     sessionId,
-    visitorName: input.visitorName.slice(0, 120),
+    visitorName,
     visitorEmail: input.visitorEmail.slice(0, 254).toLowerCase(),
+    company,
+    interest,
     status: isOwnerOnline(now) ? 'active' : 'queued',
     createdAtMs: now,
     updatedAtMs: now,
@@ -262,6 +282,8 @@ export function publicSessionView(session: ChatSession) {
     status: session.status,
     visitorName: session.visitorName,
     visitorEmail: session.visitorEmail,
+    company: session.company || '',
+    interest: session.interest || '',
     createdAtMs: session.createdAtMs,
     updatedAtMs: session.updatedAtMs,
     messages: session.messages.map((m) => ({

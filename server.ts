@@ -117,6 +117,8 @@ const contactOtpChallengeStore = new Map<string, OtpChallengeRecord<ContactOtpPe
 interface ChatLiveOtpPayload {
   name: string;
   email: string;
+  company: string;
+  interest: string;
   openingMessage: string;
   theme: EmailTheme;
   userAgent: string;
@@ -2782,15 +2784,38 @@ async function startServer() {
       const raw = (req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {}) as {
         question?: unknown;
         visitorId?: unknown;
+        sessionId?: unknown;
+        receipt?: unknown;
       };
       const question = typeof raw.question === 'string' ? raw.question.trim() : '';
       const visitorId = typeof raw.visitorId === 'string' ? raw.visitorId.trim() : '';
+      const sessionId = typeof raw.sessionId === 'string' ? raw.sessionId.trim() : '';
+      const receipt = typeof raw.receipt === 'string' ? raw.receipt : undefined;
       if (question.length < 3) {
         res.status(400).json({ error: 'Please enter a question (at least 3 characters).' });
         return;
       }
 
-      const visitorKey = buildVisitorKey({ ipAddress: clientIp, visitorId });
+      let sessionEmail = '';
+      if (sessionId && receipt) {
+        const auth = verifyChatSessionReceipt(receipt, sessionId);
+        if (!auth.ok) {
+          res.status(401).json({ error: 'Chat session expired. Please verify your email again.' });
+          return;
+        }
+        const session = getChatSession(sessionId);
+        if (!session || session.visitorEmail !== auth.email || session.status === 'closed') {
+          res.status(404).json({ error: 'Chat session not found or closed.' });
+          return;
+        }
+        sessionEmail = auth.email;
+      }
+
+      const visitorKey = buildVisitorKey({
+        ipAddress: clientIp,
+        visitorId,
+        email: sessionEmail || undefined,
+      });
       const limitPolicy = chatLimitPolicyFromRuntime(runtimeOwnerPolicy);
       const questionLimit = consumeChatLimit(visitorKey, 'question', limitPolicy);
       if (!questionLimit.allowed) {
@@ -2818,7 +2843,12 @@ async function startServer() {
             apiKey: process.env.CURSOR_API_KEY || '',
             modelId: runtimeOwnerPolicy.chatLlmModel,
           });
-          answer = enriched.answer;
+          answer = {
+            ...enriched.answer,
+            followUps: enriched.answer.followUps?.length
+              ? enriched.answer.followUps
+              : answer.followUps,
+          };
           provider = enriched.provider;
           bumpLlmCall(enriched.provider === 'cursor');
         }
@@ -2828,7 +2858,13 @@ async function startServer() {
         answer = { ...answer, offerLiveAgent: false };
       }
 
+      if (sessionId && sessionEmail) {
+        appendChatMessage(sessionId, 'visitor', question);
+        appendChatMessage(sessionId, 'bot', answer.answer);
+      }
+
       const llmRemaining = checkChatLimit(visitorKey, 'llm', limitPolicy).remaining;
+      const session = sessionId ? getChatSession(sessionId) : null;
 
       res.status(200).json({
         ok: true,
@@ -2845,6 +2881,7 @@ async function startServer() {
           rateWindowHours: runtimeOwnerPolicy.chatRateWindowHours,
         },
         resetAtMs: questionLimit.resetAtMs,
+        session: session ? publicSessionView(session) : undefined,
       });
     } catch {
       res.status(500).json({ error: 'Unable to answer right now. Please try again.' });
@@ -2885,6 +2922,8 @@ async function startServer() {
       const raw = (req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {}) as {
         name?: unknown;
         email?: unknown;
+        company?: unknown;
+        interest?: unknown;
         openingMessage?: unknown;
         website?: unknown;
         turnstileToken?: unknown;
@@ -2904,6 +2943,10 @@ async function startServer() {
 
       const name = typeof raw.name === 'string' ? sanitizeHeaderValue(raw.name).slice(0, 120) : '';
       const email = typeof raw.email === 'string' ? sanitizeHeaderValue(raw.email).slice(0, 254) : '';
+      const company =
+        typeof raw.company === 'string' ? sanitizeHeaderValue(raw.company).slice(0, 120) : '';
+      const interest =
+        typeof raw.interest === 'string' ? sanitizeHeaderValue(raw.interest).slice(0, 160) : '';
       const openingMessage =
         typeof raw.openingMessage === 'string' ? raw.openingMessage.trim().slice(0, 2000) : '';
       const theme = parseEmailTheme(raw.theme);
@@ -2966,6 +3009,8 @@ async function startServer() {
         {
           name,
           email: email.toLowerCase(),
+          company,
+          interest,
           openingMessage,
           theme,
           userAgent,
@@ -3059,6 +3104,8 @@ async function startServer() {
         ipAddress: p.ipAddress || clientIp,
         userAgent: p.userAgent,
         openingMessage: p.openingMessage,
+        company: p.company,
+        interest: p.interest,
       });
       const sessionReceipt = signChatSessionReceipt(session.sessionId, p.email);
       res.status(200).json({
@@ -3067,6 +3114,7 @@ async function startServer() {
         sessionReceipt,
         session: publicSessionView(session),
         ownerOnline: isOwnerOnline(),
+        suggestions: runtimeOwnerPolicy.chatShowSuggestions ? listChatSuggestions() : [],
         remaining: { live: liveLimit.remaining },
         resetAtMs: liveLimit.resetAtMs,
       });

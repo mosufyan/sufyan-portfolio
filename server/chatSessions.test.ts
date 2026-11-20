@@ -18,19 +18,25 @@ describe('chatSessions', () => {
     }
   });
 
-  it('creates sessions with opening visitor message and public view', () => {
+  it('creates sessions with welcome, customer fields, and public view', () => {
     const session = createChatSession({
       visitorName: 'Alex Recruiter',
       visitorEmail: 'alex@Example.com',
       ipAddress: '203.0.113.5',
       userAgent: 'vitest',
+      company: 'Cisco',
+      interest: 'Principal Security',
       openingMessage: 'Interested in a Principal Security role.',
     });
     expect(session.sessionId).toMatch(/^CHAT-/);
     expect(session.visitorEmail).toBe('alex@example.com');
+    expect(session.company).toBe('Cisco');
+    expect(session.interest).toBe('Principal Security');
+    expect(session.messages.some((m) => m.role === 'system')).toBe(true);
     expect(session.messages.some((m) => m.role === 'visitor')).toBe(true);
     const view = publicSessionView(session);
     expect(view.sessionId).toBe(session.sessionId);
+    expect(view.company).toBe('Cisco');
     expect(view.messages.length).toBeGreaterThanOrEqual(2);
   });
 
