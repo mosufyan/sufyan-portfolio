@@ -79,7 +79,13 @@ function eventMeta(eventType: AdminAuditEventType): {
 }
 
 export function AccessRulesPanel({ isLight }: { isLight: boolean }) {
-  const { accessRules, loadingAccessRules, createAccessRule, deleteAccessRule } = useFirebase();
+  const {
+    accessRules,
+    loadingAccessRules,
+    createAccessRule,
+    deleteAccessRule,
+    isPrimaryOwner,
+  } = useFirebase();
   const [ruleType, setRuleType] = useState<AccessRuleType>('allow');
   const [matchType, setMatchType] = useState<AccessRuleMatchType>('domain');
   const [value, setValue] = useState('');
@@ -105,6 +111,10 @@ export function AccessRulesPanel({ isLight }: { isLight: boolean }) {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (busy) return;
+    if (!isPrimaryOwner) {
+      setError('Only the primary portfolio owner can create access rules.');
+      return;
+    }
     setError(null);
     setSuccess(null);
 
@@ -131,6 +141,10 @@ export function AccessRulesPanel({ isLight }: { isLight: boolean }) {
   };
 
   const handleDelete = async (ruleId: string) => {
+    if (!isPrimaryOwner) {
+      setError('Only the primary portfolio owner can delete access rules.');
+      return;
+    }
     setDeletingId(ruleId);
     setError(null);
     try {
@@ -152,6 +166,7 @@ export function AccessRulesPanel({ isLight }: { isLight: boolean }) {
             </h4>
             <p className={`text-[11px] font-mono mt-0.5 ${mutedCls}`}>
               Block rules reject submissions with HTTP 403. Allow rules bypass adaptive CV OTP checks (block takes precedence).
+              {!isPrimaryOwner && ' Delegates have read-only access to these rules.'}
             </p>
           </div>
           <span
@@ -192,7 +207,11 @@ export function AccessRulesPanel({ isLight }: { isLight: boolean }) {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 pt-1">
+        <form
+          onSubmit={handleSubmit}
+          className={`grid grid-cols-1 sm:grid-cols-12 gap-2.5 pt-1 ${!isPrimaryOwner ? 'opacity-60 pointer-events-none' : ''}`}
+          aria-disabled={!isPrimaryOwner}
+        >
           <div className="sm:col-span-3">
             <label className={`block text-[10px] font-mono uppercase mb-1 ${mutedCls}`}>
               Action
@@ -200,6 +219,7 @@ export function AccessRulesPanel({ isLight }: { isLight: boolean }) {
             <select
               value={ruleType}
               onChange={(e) => setRuleType(e.target.value as AccessRuleType)}
+              disabled={!isPrimaryOwner}
               className={`w-full rounded-lg border px-2.5 py-2 text-xs font-mono focus:outline-none ${inputCls}`}
             >
               <option value="allow">Allow (Trusted)</option>
@@ -257,7 +277,7 @@ export function AccessRulesPanel({ isLight }: { isLight: boolean }) {
           <div className="sm:col-span-3 flex justify-end">
             <button
               type="submit"
-              disabled={busy}
+              disabled={busy || !isPrimaryOwner}
               className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-[#38bdf8] hover:bg-sky-300 disabled:opacity-50 text-slate-950 font-semibold text-xs transition-colors cursor-pointer whitespace-nowrap"
             >
               {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
@@ -326,9 +346,9 @@ export function AccessRulesPanel({ isLight }: { isLight: boolean }) {
                   <span className={mutedCls}>{formatAuditTime(rule.createdAtMs)}</span>
                   <button
                     type="button"
-                    disabled={deletingId === rule.ruleId}
+                    disabled={deletingId === rule.ruleId || !isPrimaryOwner}
                     onClick={() => void handleDelete(rule.ruleId)}
-                    title="Delete rule"
+                    title={isPrimaryOwner ? 'Delete rule' : 'Primary owner only'}
                     aria-label={`Delete rule ${rule.value}`}
                     className={`p-1.5 rounded-lg border transition-colors cursor-pointer disabled:opacity-50 ${
                       isLight

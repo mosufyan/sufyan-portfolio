@@ -13,7 +13,7 @@ import {
   type RateLimitBucket,
 } from './security.ts';
 
-export type RateLimitNamespace = 'contact' | 'cv-access' | 'cv-event' | 'otp-email';
+export type RateLimitNamespace = 'contact' | 'cv-access' | 'cv-event' | 'otp-email' | 'telemetry';
 
 export interface RateLimitResult {
   limited: boolean;
@@ -53,6 +53,7 @@ const memoryBuckets: Record<RateLimitNamespace, RateLimitBucket> = {
   'cv-access': createRateLimitBucket(),
   'cv-event': createRateLimitBucket(),
   'otp-email': createRateLimitBucket(),
+  telemetry: createRateLimitBucket(),
 };
 
 export function isDistributedStoreEnabled(): boolean {

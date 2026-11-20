@@ -40,6 +40,18 @@ service cloud.firestore {
       );
     }
 
+    // Public portfolio announcements only (drafts stay admin-private).
+    function isPubliclyVisibleAnnouncement() {
+      return !('status' in resource.data)
+        || resource.data.status == 'published'
+        || (
+          resource.data.status == 'scheduled'
+          && resource.data.scheduledAtMs is int
+          && resource.data.scheduledAtMs > 0
+          && resource.data.scheduledAtMs <= request.time.toMillis()
+        );
+    }
+
     // Strict schema validation blueprint for Announcement (create & update)
     function isValidAnnouncement(data) {
       return data.keys().hasAll([
@@ -301,10 +313,10 @@ service cloud.firestore {
         && data.createdAt is timestamp;
     }
 
-    // Portfolio Announcements (public non-PII read; owner-only verified mutations)
+    // Portfolio Announcements (public read only when published/due; admin mutations)
     match /announcements/{announcementId} {
-      allow get: if isValidId(announcementId);
-      allow list: if true;
+      allow get: if isValidId(announcementId) && (isAdmin() || isPubliclyVisibleAnnouncement());
+      allow list: if isAdmin() || isPubliclyVisibleAnnouncement();
 
       allow create: if isVerifiedUser()
         && isValidId(announcementId)
@@ -399,42 +411,38 @@ service cloud.firestore {
         && isAdmin();
     }
 
-    // Portfolio Feature & Maintenance Settings (public singleton 'global' read; owner-only write)
+    // Portfolio Feature & Maintenance Settings (public read; primary-owner write only)
     match /portfolio_settings/{settingsId} {
       allow get: if settingsId == 'global';
       allow list: if false;
 
-      allow create: if isVerifiedUser()
+      allow create: if isVerifiedOwnerEmail()
         && settingsId == 'global'
         && isValidPortfolioSettings(incoming())
-        && incoming().updatedAt == request.time
-        && isAdmin();
+        && incoming().updatedAt == request.time;
 
-      allow update: if isVerifiedUser()
+      allow update: if isVerifiedOwnerEmail()
         && settingsId == 'global'
         && isValidPortfolioSettings(incoming())
-        && incoming().updatedAt == request.time
-        && isAdmin();
+        && incoming().updatedAt == request.time;
 
       allow delete: if false;
     }
 
-    // Owner-Managed Allowlist & Blocklist Rules (PII-isolated; owner-only read/list/create/delete)
+    // Access rules: admins can read; only primary owner can create/delete (prevents delegate policy planting)
     match /access_rules/{ruleId} {
       allow get: if isVerifiedUser() && isValidId(ruleId) && isAdmin();
       allow list: if isAdmin();
 
-      allow create: if isVerifiedUser()
+      allow create: if isVerifiedOwnerEmail()
         && isValidId(ruleId)
         && isValidAccessRule(incoming(), ruleId)
-        && incoming().createdAt == request.time
-        && isAdmin();
+        && incoming().createdAt == request.time;
 
       allow update: if false;
 
-      allow delete: if isVerifiedUser()
-        && isValidId(ruleId)
-        && isAdmin();
+      allow delete: if isVerifiedOwnerEmail()
+        && isValidId(ruleId);
     }
 
     // Secondary admin delegates (primary owner manages roster; self-get for console access)

@@ -917,6 +917,9 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
   const createAccessRule = useCallback(
     async (draft: AccessRuleDraft) => {
       const currentUser = assertOwnerActor();
+      if (!isPortfolioOwner(currentUser)) {
+        throw new Error('Only the primary portfolio owner can create access rules.');
+      }
 
       const check = validateAccessRuleDraft(draft);
       if (!check.valid || !check.normalized) {
@@ -945,7 +948,10 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
 
   const deleteAccessRule = useCallback(
     async (ruleId: string) => {
-      assertOwnerActor();
+      const currentUser = assertOwnerActor();
+      if (!isPortfolioOwner(currentUser)) {
+        throw new Error('Only the primary portfolio owner can delete access rules.');
+      }
 
       const target = accessRules.find((r) => r.ruleId === ruleId);
       const docPath = `access_rules/${ruleId}`;

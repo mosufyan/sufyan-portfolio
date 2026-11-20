@@ -2,7 +2,7 @@ import { Linkedin } from './icons/Linkedin';
 import { Mail, ArrowUp, QrCode, Terminal } from 'lucide-react';
 import { motion } from 'motion/react';
 import { PERSONAL_INFO } from '../data/portfolioData';
-import { Reveal } from './MotionPrimitives';
+import { HoverLift, Reveal } from './MotionPrimitives';
 import PWAInstallButton from './PWAInstallButton';
 
 interface FooterProps {
@@ -21,23 +21,23 @@ export default function Footer({ onOpenDigitalCard, onOpenTerminal }: FooterProp
         <div className="grid grid-cols-1 md:grid-cols-12 gap-10 pb-12 border-b border-slate-800/80">
           {/* Col 1: Brand & Synopsis */}
           <div className="md:col-span-5 space-y-4">
-            <div className="flex items-center gap-2.5">
+            <HoverLift className="inline-flex items-center gap-2.5">
               <motion.div
                 whileHover={{ scale: 1.08, rotate: 360 }}
                 transition={{
                   scale: { type: 'spring', stiffness: 400, damping: 20 },
                   rotate: { duration: 0.65, ease: [0.22, 1, 0.36, 1] },
                 }}
-                className="flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-950/60 border border-cyan-500/40 text-cyan-400 font-bold font-display text-xs"
+                className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-lg bg-cyan-950/60 border border-cyan-500/40 text-cyan-400 font-bold font-display text-xs"
               >
                 MS
               </motion.div>
-              <span className="font-display font-bold text-base text-white tracking-tight">
+              <span className="font-display font-bold text-sm sm:text-base min-[2560px]:text-lg text-white tracking-tight">
                 MOHAMMED SUFYAN
               </span>
-            </div>
+            </HoverLift>
 
-            <p className="text-xs sm:text-sm text-slate-400 leading-relaxed max-w-md font-light">
+            <p className="fluid-body text-slate-400 max-w-md font-light">
               Software Engineer with 13+ years of enterprise engineering experience across{' '}
               <span className="sm:hidden">Cisco</span>
               <span className="hidden sm:inline">Cisco Systems Inc.</span>

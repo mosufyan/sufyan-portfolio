@@ -315,6 +315,7 @@ export default function OwnerProfilePanel({
 
 /** Hook-friendly fetcher used by OwnerConsolePage */
 export function useOwnerOpsHealth(enabled: boolean) {
+  const { user } = useFirebase();
   const [telemetry, setTelemetry] = useState<SiteTelemetrySnapshot>(EMPTY_SITE_TELEMETRY);
   const [opsHealth, setOpsHealth] = useState<{
     apiOk: boolean | null;
@@ -333,13 +334,22 @@ export function useOwnerOpsHealth(enabled: boolean) {
     let cancelled = false;
     const run = async () => {
       try {
+        const authHeaders: HeadersInit = {};
+        if (user) {
+          try {
+            const idToken = await user.getIdToken();
+            authHeaders.Authorization = `Bearer ${idToken}`;
+          } catch {
+            /* proceed without token; telemetry endpoint will 401 */
+          }
+        }
         const [healthRes, accessRes, telemetryRes] = await Promise.all([
           fetch('/api/health').then((r) => ({ ok: r.ok })),
           fetch('/api/access-config').then(async (r) => {
             if (!r.ok) return null;
             return (await r.json()) as { turnstileSiteKey?: string; otpSupported?: boolean };
           }),
-          fetch('/api/owner/telemetry')
+          fetch('/api/owner/telemetry', { headers: authHeaders })
             .then(async (r) => (r.ok ? ((await r.json()) as SiteTelemetrySnapshot) : null))
             .catch(() => null),
         ]);
@@ -368,7 +378,7 @@ export function useOwnerOpsHealth(enabled: boolean) {
     return () => {
       cancelled = true;
     };
-  }, [enabled]);
+  }, [enabled, user]);
 
   return { telemetry, opsHealth };
 }

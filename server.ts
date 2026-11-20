@@ -133,14 +133,22 @@ function loadSiteTelemetry(): SiteTelemetryState {
 }
 
 let siteTelemetry: SiteTelemetryState = loadSiteTelemetry();
+let telemetryFlushTimer: ReturnType<typeof setTimeout> | null = null;
 
-function saveSiteTelemetry(next: SiteTelemetryState): void {
-  siteTelemetry = next;
+function persistSiteTelemetryToDisk(): void {
   try {
-    fs.writeFileSync(TELEMETRY_CACHE_PATH, JSON.stringify(next, null, 2), 'utf8');
+    fs.writeFileSync(TELEMETRY_CACHE_PATH, JSON.stringify(siteTelemetry, null, 2), 'utf8');
   } catch {
     /* non-fatal */
   }
+}
+
+function scheduleSiteTelemetryFlush(): void {
+  if (telemetryFlushTimer) return;
+  telemetryFlushTimer = setTimeout(() => {
+    telemetryFlushTimer = null;
+    persistSiteTelemetryToDisk();
+  }, 2000);
 }
 
 function bumpSiteTelemetry(kind: 'pageview' | 'og_share', track?: string): void {
@@ -154,7 +162,8 @@ function bumpSiteTelemetry(kind: 'pageview' | 'og_share', track?: string): void 
     const key = track || 'executive';
     next.ogByTrack[key] = (next.ogByTrack[key] || 0) + 1;
   }
-  saveSiteTelemetry(next);
+  siteTelemetry = next;
+  scheduleSiteTelemetryFlush();
 }
 
 function loadInitialOwnerPolicy(): RuntimeOwnerPolicy {
@@ -246,7 +255,24 @@ async function getFirebasePublicCerts(): Promise<Record<string, string>> {
   return certs;
 }
 
-async function verifyOwnerFirebaseIdToken(authHeader: string | undefined): Promise<{ ok: true; email: string; uid: string } | { ok: false; error: string }> {
+function readFirebaseDatabaseId(): string {
+  try {
+    const raw = fs.readFileSync(path.join(__dirname, 'firebase-applet-config.json'), 'utf8');
+    const parsed = JSON.parse(raw) as { firestoreDatabaseId?: string };
+    return parsed.firestoreDatabaseId || '(default)';
+  } catch {
+    return '(default)';
+  }
+}
+
+const FIRESTORE_DATABASE_ID = readFirebaseDatabaseId();
+
+async function verifyFirebaseIdTokenPayload(
+  authHeader: string | undefined
+): Promise<
+  | { ok: true; email: string; uid: string; emailVerified: boolean; rawToken: string }
+  | { ok: false; error: string }
+> {
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return { ok: false, error: 'Missing owner authorization token.' };
   }
@@ -301,17 +327,57 @@ async function verifyOwnerFirebaseIdToken(authHeader: string | undefined): Promi
       return { ok: false, error: 'Token expired or audience mismatch.' };
     }
 
-    if (
-      !payload.email ||
-      payload.email.toLowerCase() !== DESTINATION_EMAIL.toLowerCase() ||
-      payload.email_verified !== true
-    ) {
-      return { ok: false, error: 'Restricted to verified portfolio owner.' };
+    if (!payload.email || payload.email_verified !== true) {
+      return { ok: false, error: 'Verified email claim required.' };
     }
 
-    return { ok: true, email: payload.email, uid: payload.sub };
+    return {
+      ok: true,
+      email: payload.email,
+      uid: payload.sub,
+      emailVerified: true,
+      rawToken: token,
+    };
   } catch {
     return { ok: false, error: 'Failed to verify owner authorization token.' };
+  }
+}
+
+async function verifyOwnerFirebaseIdToken(
+  authHeader: string | undefined
+): Promise<{ ok: true; email: string; uid: string } | { ok: false; error: string }> {
+  const verified = await verifyFirebaseIdTokenPayload(authHeader);
+  if (!verified.ok) return verified;
+  if (verified.email.toLowerCase() !== DESTINATION_EMAIL.toLowerCase()) {
+    return { ok: false, error: 'Restricted to verified portfolio owner.' };
+  }
+  return { ok: true, email: verified.email, uid: verified.uid };
+}
+
+/** Primary owner or Firestore-confirmed delegate admin. */
+async function verifyConsoleActorToken(
+  authHeader: string | undefined
+): Promise<{ ok: true; email: string; uid: string; role: 'owner' | 'delegate' } | { ok: false; error: string }> {
+  const verified = await verifyFirebaseIdTokenPayload(authHeader);
+  if (!verified.ok) return verified;
+
+  if (verified.email.toLowerCase() === DESTINATION_EMAIL.toLowerCase()) {
+    return { ok: true, email: verified.email, uid: verified.uid, role: 'owner' };
+  }
+
+  try {
+    const dbPath = encodeURIComponent(FIRESTORE_DATABASE_ID);
+    const url = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/${dbPath}/documents/admins/${encodeURIComponent(verified.uid)}`;
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${verified.rawToken}` },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) {
+      return { ok: false, error: 'Restricted to verified portfolio owner or delegate admin.' };
+    }
+    return { ok: true, email: verified.email, uid: verified.uid, role: 'delegate' };
+  } catch {
+    return { ok: false, error: 'Unable to verify console actor privileges.' };
   }
 }
 
@@ -1368,14 +1434,29 @@ async function startServer() {
     });
   });
 
-  app.get('/api/owner/telemetry', (_req: Request, res: Response) => {
+  app.get('/api/owner/telemetry', async (req: Request, res: Response) => {
+    const authCheck = await verifyConsoleActorToken(req.headers.authorization);
+    if (!authCheck.ok) {
+      res.status(401).json({ error: authCheck.error });
+      return;
+    }
     res.status(200).json(siteTelemetry);
   });
 
-  app.post('/api/telemetry/event', (req: Request, res: Response) => {
+  app.post('/api/telemetry/event', async (req: Request, res: Response) => {
     try {
       if (!req.is('application/json')) {
         res.status(415).json({ error: 'Content-Type must be application/json.' });
+        return;
+      }
+      if (rejectDisallowedOrigin(req, res)) return;
+      const clientIp = extractClientIp(req);
+      if (
+        await enforceRateLimit(res, 'telemetry', clientIp, {
+          maxRequests: 60,
+          error: 'Telemetry rate limit exceeded.',
+        })
+      ) {
         return;
       }
       const raw = (req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {}) as {
@@ -1402,7 +1483,7 @@ async function startServer() {
         return;
       }
       if (rejectDisallowedOrigin(req, res)) return;
-      const authCheck = await verifyOwnerFirebaseIdToken(req.headers.authorization);
+      const authCheck = await verifyConsoleActorToken(req.headers.authorization);
       if (!authCheck.ok) {
         res.status(401).json({ error: authCheck.error });
         return;
@@ -1515,7 +1596,7 @@ async function startServer() {
       }
       if (rejectDisallowedOrigin(req, res)) return;
 
-      const authCheck = await verifyOwnerFirebaseIdToken(req.headers.authorization);
+      const authCheck = await verifyConsoleActorToken(req.headers.authorization);
       if (!authCheck.ok) {
         res.status(401).json({ error: authCheck.error });
         return;
@@ -1567,7 +1648,14 @@ async function startServer() {
     }
   });
 
-  app.get(['/api/og-card.svg', '/og-card.svg'], (req: Request, res: Response) => {
+  app.get(['/api/og-card.svg', '/og-card.svg'], async (req: Request, res: Response) => {
+    const clientIp = extractClientIp(req);
+    const ogLimit = await checkDistributedRateLimit('telemetry', `og:${clientIp}`, { maxRequests: 120 });
+    if (ogLimit.limited) {
+      res.setHeader('Retry-After', String(ogLimit.retryAfterSeconds));
+      res.status(429).type('text/plain').send('Rate limit exceeded.');
+      return;
+    }
     const rawTrack = typeof req.query.track === 'string' ? req.query.track : undefined;
     const track: ShareTrackId =
       rawTrack === 'security' || rawTrack === 'platform' || rawTrack === 'ai'

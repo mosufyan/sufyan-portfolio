@@ -246,16 +246,14 @@ export default function Hero({
         className="absolute top-0 bottom-0 left-0 w-1/3 z-0 bg-gradient-to-r from-transparent via-cyan-400/[0.045] to-transparent skew-x-[-18deg] pointer-events-none print:hidden"
       />
 
-      {/* Background glow atmosphere */}
-      <motion.div
-        animate={{ scale: [1, 1.1, 1], opacity: [0.55, 0.9, 0.55] }}
-        transition={{ duration: 9, repeat: Infinity, ease: 'easeInOut' }}
-        className="absolute top-0 left-1/4 z-0 h-96 w-96 rounded-full bg-cyan-600/10 blur-3xl pointer-events-none print:hidden"
+      {/* Background glow atmosphere — CSS ambient drift scales cleanly on large TVs */}
+      <div
+        aria-hidden="true"
+        className="ambient-orb absolute top-0 left-1/4 z-0 h-72 w-72 sm:h-96 sm:w-96 rounded-full bg-cyan-600/10 blur-3xl pointer-events-none print:hidden"
       />
-      <motion.div
-        animate={{ scale: [1.05, 0.95, 1.05], opacity: [0.5, 0.85, 0.5] }}
-        transition={{ duration: 11, repeat: Infinity, ease: 'easeInOut' }}
-        className="absolute top-20 right-10 z-0 h-80 w-80 rounded-full bg-blue-600/10 blur-3xl pointer-events-none print:hidden"
+      <div
+        aria-hidden="true"
+        className="ambient-orb ambient-orb-delayed absolute top-20 right-4 sm:right-10 z-0 h-64 w-64 sm:h-80 sm:w-80 rounded-full bg-blue-600/10 blur-3xl pointer-events-none print:hidden"
       />
 
       <div className="relative z-10 page-shell">
@@ -263,7 +261,7 @@ export default function Hero({
         <div className="grid grid-cols-1 md:grid-cols-12 items-center gap-8 lg:gap-12">
           <div className="md:col-span-7 xl:col-span-8 flex flex-col space-y-4">
           {/* Main Headline — letter stagger unlocks with portrait reveal */}
-          <h1 className="text-[1.85rem] sm:text-5xl md:text-[2.45rem] lg:text-[3.15rem] xl:text-6xl 2xl:text-7xl font-display font-extrabold tracking-tight text-white leading-[1.08] text-balance">
+          <h1 className="fluid-display font-display font-extrabold tracking-tight text-white text-balance">
             <span className="sr-only">Hello! I&apos;m Mohammed Sufyan</span>
             <span aria-hidden="true">
               <motion.span

@@ -437,11 +437,15 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
   };
 
   return (
-    <section id="contact" className="relative py-16 lg:py-24 border-b border-slate-800/80 bg-[#06080d]">
+    <section id="contact" className="relative py-16 lg:py-24 2xl:py-28 border-b border-slate-800/80 bg-[#06080d]">
       <SectionScanLine />
+      <div
+        aria-hidden="true"
+        className="ambient-orb ambient-orb-delayed pointer-events-none absolute -right-20 bottom-10 h-72 w-72 rounded-full bg-cyan-500/10 blur-3xl print:hidden"
+      />
       <div className="page-shell">
         {/* Main 2-column split */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-stretch">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10 min-[2560px]:gap-14 items-stretch">
           {/* Left Column: Direct channels and bio */}
           <Reveal className="lg:col-span-5 flex flex-col justify-between space-y-8">
             <div>
@@ -450,7 +454,7 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
                   <MessageSquare className="w-3.5 h-3.5" />
                   <span>INITIATE COLLABORATION</span>
                 </div>
-                <h2 className="text-3xl sm:text-4xl font-display font-bold text-white tracking-tight leading-tight">
+                <h2 className="fluid-title font-display font-bold text-white tracking-tight">
                   Let&apos;s Connect &amp; Collaborate
                 </h2>
                 <p className="mt-3 text-sm sm:text-base text-slate-300 leading-relaxed font-light">
