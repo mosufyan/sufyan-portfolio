@@ -145,15 +145,15 @@ export function buildContentSecurityPolicy(
   return [
     "default-src 'self'",
     isDev
-      ? "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com https://www.gstatic.com https://www.google.com https://challenges.cloudflare.com"
-      : "script-src 'self' 'unsafe-inline' https://apis.google.com https://www.gstatic.com https://www.google.com https://challenges.cloudflare.com",
+      ? "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com https://www.gstatic.com https://www.google.com https://www.gstatic.com/recaptcha/ https://www.recaptcha.net https://challenges.cloudflare.com"
+      : "script-src 'self' 'unsafe-inline' https://apis.google.com https://www.gstatic.com https://www.google.com https://www.gstatic.com/recaptcha/ https://www.recaptcha.net https://challenges.cloudflare.com",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    "img-src 'self' data: blob: https://*.googleusercontent.com",
+    "img-src 'self' data: blob: https://*.googleusercontent.com https://www.gstatic.com https://www.recaptcha.net",
     "font-src 'self' data: https://fonts.gstatic.com",
     isDev
-      ? "connect-src 'self' ws: wss: https://challenges.cloudflare.com https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com https://accounts.google.com"
-      : "connect-src 'self' https://challenges.cloudflare.com https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com https://accounts.google.com",
-    "frame-src 'self' https://challenges.cloudflare.com https://*.firebaseapp.com https://accounts.google.com https://www.google.com",
+      ? "connect-src 'self' ws: wss: https://challenges.cloudflare.com https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firebaseappcheck.googleapis.com https://content-firebaseappcheck.googleapis.com https://www.googleapis.com https://accounts.google.com https://www.recaptcha.net"
+      : "connect-src 'self' https://challenges.cloudflare.com https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firebaseappcheck.googleapis.com https://content-firebaseappcheck.googleapis.com https://www.googleapis.com https://accounts.google.com https://www.recaptcha.net",
+    "frame-src 'self' https://challenges.cloudflare.com https://*.firebaseapp.com https://accounts.google.com https://www.google.com https://www.recaptcha.net https://recaptcha.google.com",
     "worker-src 'self' blob:",
     "manifest-src 'self'",
     "base-uri 'self'",

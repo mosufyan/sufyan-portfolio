@@ -315,6 +315,7 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
         challengeToken?: string;
         maskedEmail?: string;
         contactSummary?: ContactMessageSummary;
+        telemetryPersistedByServer?: boolean;
       };
 
       if (!response.ok) {
@@ -352,7 +353,7 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
       }
 
       // Fallback in case server returned direct completion
-      if (data.ok === true && data.contactSummary) {
+      if (data.ok === true && data.contactSummary && !data.telemetryPersistedByServer) {
         void recordContactMessageLog(data.contactSummary).catch((err) => {
           console.warn('Firestore contact log skipped:', err);
         });
@@ -403,13 +404,14 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
         ok?: boolean;
         provider?: string;
         contactSummary?: ContactMessageSummary;
+        telemetryPersistedByServer?: boolean;
       };
 
       if (!response.ok || data.ok !== true) {
         throw new Error(data.error || 'Invalid verification code. Please check and try again.');
       }
 
-      if (data.contactSummary) {
+      if (data.contactSummary && !data.telemetryPersistedByServer) {
         void recordContactMessageLog(data.contactSummary).catch((err) => {
           console.warn('Firestore contact log skipped:', err);
         });

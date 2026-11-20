@@ -1,4 +1,5 @@
 import { initializeApp } from 'firebase/app';
+import { initializeAppCheck, ReCaptchaEnterpriseProvider } from 'firebase/app-check';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import { doc, getDocFromServer, getFirestore } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
@@ -8,6 +9,29 @@ export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
+
+/**
+ * Firebase App Check (reCAPTCHA Enterprise).
+ * Populate `recaptchaSiteKey` in firebase-applet-config.json or VITE_RECAPTCHA_SITE_KEY,
+ * then enable App Check enforcement in the Firebase Console for Firestore.
+ */
+const appCheckSiteKey = (
+  (typeof firebaseConfig.recaptchaSiteKey === 'string' && firebaseConfig.recaptchaSiteKey.trim()) ||
+  (typeof import.meta.env.VITE_RECAPTCHA_SITE_KEY === 'string' &&
+    import.meta.env.VITE_RECAPTCHA_SITE_KEY.trim()) ||
+  ''
+);
+
+if (typeof window !== 'undefined' && appCheckSiteKey) {
+  try {
+    initializeAppCheck(app, {
+      provider: new ReCaptchaEnterpriseProvider(appCheckSiteKey),
+      isTokenAutoRefreshEnabled: true,
+    });
+  } catch (error) {
+    console.warn('Firebase App Check init skipped:', error);
+  }
+}
 
 export enum OperationType {
   CREATE = 'create',

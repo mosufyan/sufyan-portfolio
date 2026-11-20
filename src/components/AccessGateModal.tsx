@@ -208,10 +208,11 @@ export async function trackSubsequentCvEvent(params: {
     const data = (await res.json().catch(() => ({}))) as {
       ok?: boolean;
       trackingSummary?: CvTrackingSummary;
+      telemetryPersistedByServer?: boolean;
     };
 
     if (data.ok && data.trackingSummary) {
-      if (params.onPersistLog) {
+      if (params.onPersistLog && !data.telemetryPersistedByServer) {
         void params.onPersistLog(data.trackingSummary).catch((err) => {
           console.warn('Firestore subsequent telemetry write skipped:', err);
         });
@@ -348,10 +349,14 @@ export default function AccessGateModal({
 
   const finalizeVerifiedSession = (
     targetAction: AccessGateAction,
-    data: { sessionReceipt?: string; trackingSummary?: CvTrackingSummary }
+    data: {
+      sessionReceipt?: string;
+      trackingSummary?: CvTrackingSummary;
+      telemetryPersistedByServer?: boolean;
+    }
   ) => {
     markAccessUnlocked(targetAction, data.sessionReceipt);
-    if (data.trackingSummary) {
+    if (data.trackingSummary && !data.telemetryPersistedByServer) {
       void recordCvDownloadLog(data.trackingSummary).catch((err) => {
         console.warn('Firestore download log skipped:', err);
       });
@@ -437,6 +442,7 @@ export default function AccessGateModal({
         provider?: string;
         sessionReceipt?: string;
         trackingSummary?: CvTrackingSummary;
+        telemetryPersistedByServer?: boolean;
         challengeId?: string;
         challengeToken?: string;
         maskedEmail?: string;
@@ -504,6 +510,7 @@ export default function AccessGateModal({
         ok?: boolean;
         sessionReceipt?: string;
         trackingSummary?: CvTrackingSummary;
+        telemetryPersistedByServer?: boolean;
       };
 
       if (!response.ok || data.ok !== true) {

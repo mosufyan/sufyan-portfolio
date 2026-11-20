@@ -9,7 +9,6 @@ import { fileURLToPath } from 'url';
 import {
   MAX_FIELD_LENGTHS,
   applySecurityHeaders,
-  createRateLimitBucket,
   escapeHtml,
   isAiStudioPreviewHost,
   isAllowedRequestOrigin,
@@ -17,10 +16,8 @@ import {
   isDisallowedFetchSite,
   isFormSubmitFallbackAllowed,
   isHoneypotTriggered,
-  isRateLimited,
   isValidEmailAddress,
   isValidPhoneNumber,
-  rateLimitRetryAfterSeconds,
   resolveAllowedOrigins,
   resolveSafeBaseUrl,
   sanitizeDisplayName,
@@ -47,6 +44,18 @@ import {
   type VerificationStatus,
   type VisitorTelemetryReport,
 } from './server/telemetry.ts';
+import {
+  checkDistributedRateLimit,
+  isDistributedStoreEnabled,
+  loadDistributedOwnerPolicy,
+  saveDistributedOwnerPolicy,
+  type RateLimitNamespace,
+} from './server/distributedStore.ts';
+import {
+  adminWriteContactMessage,
+  adminWriteCvDownload,
+  isFirebaseAdminConfigured,
+} from './server/firebaseAdmin.ts';
 import { buildDynamicSocialSvg, SHARE_CARD_TRACKS, type ShareTrackId } from './src/utils/ogShare.ts';
 import {
   evaluateAccessRules,
@@ -79,10 +88,6 @@ const OTP_SECRET =
   crypto.randomBytes(32).toString('hex');
 const FORCE_CV_OTP = (process.env.FORCE_CV_OTP || '').toLowerCase() === 'true';
 const ALLOWED_ORIGINS = resolveAllowedOrigins(process.env.APP_URL, PORT);
-const contactRateLimitMap = createRateLimitBucket();
-const cvAccessRateLimitMap = createRateLimitBucket();
-const cvEventRateLimitMap = createRateLimitBucket();
-const otpEmailRateLimitMap = createRateLimitBucket();
 const otpChallengeStore = new Map<string, OtpChallengeRecord>();
 const contactOtpChallengeStore = new Map<string, OtpChallengeRecord<ContactOtpPendingPayload>>();
 
@@ -187,6 +192,36 @@ function saveRuntimeOwnerPolicy(next: RuntimeOwnerPolicy): void {
   } catch {
     /* non-fatal in read-only filesystem */
   }
+  void saveDistributedOwnerPolicy(next);
+}
+
+async function enforceRateLimit(
+  res: Response,
+  namespace: RateLimitNamespace,
+  key: string,
+  options: { maxRequests?: number; error: string }
+): Promise<boolean> {
+  const result = await checkDistributedRateLimit(namespace, key, {
+    maxRequests: options.maxRequests,
+  });
+  if (!result.limited) return false;
+  res.setHeader('Retry-After', String(result.retryAfterSeconds));
+  res.status(429).json({ error: options.error });
+  return true;
+}
+
+async function tryPersistCvTracking(
+  summary: ReturnType<typeof buildTrackingSummaryForClient>
+): Promise<boolean> {
+  if (!isFirebaseAdminConfigured()) return false;
+  return adminWriteCvDownload(summary.downloadId, { ...summary });
+}
+
+async function tryPersistContactSummary(summary: Record<string, unknown>): Promise<boolean> {
+  if (!isFirebaseAdminConfigured()) return false;
+  const messageId = typeof summary.messageId === 'string' ? summary.messageId : '';
+  if (!messageId) return false;
+  return adminWriteContactMessage(messageId, summary);
 }
 
 let cachedFirebaseCerts: { certs: Record<string, string>; expiresAt: number } | null = null;
@@ -1211,6 +1246,8 @@ function buildTrackingSummaryForClient(
 }
 
 async function startServer() {
+  runtimeOwnerPolicy = await loadDistributedOwnerPolicy(runtimeOwnerPolicy);
+
   const app = express();
   app.disable('x-powered-by');
   // Only trust X-Forwarded-* when explicitly enabled or in production behind a reverse proxy
@@ -1317,6 +1354,8 @@ async function startServer() {
       emailTransportConfigured: isDirectEmailTransportConfigured(),
       turnstileConfigured: Boolean(TURNSTILE_SITE_KEY),
       incidentMode: runtimeOwnerPolicy.incidentMode,
+      distributedStore: isDistributedStoreEnabled() ? 'redis' : 'memory',
+      serverTelemetryWrites: isFirebaseAdminConfigured(),
     });
   });
 
@@ -1325,6 +1364,7 @@ async function startServer() {
       turnstileSiteKey: TURNSTILE_SITE_KEY,
       otpSupported: isDirectEmailTransportConfigured(),
       forceOtp: FORCE_CV_OTP || runtimeOwnerPolicy.strictOtpForAll,
+      serverTelemetryPreferred: isFirebaseAdminConfigured(),
     });
   });
 
@@ -1560,11 +1600,11 @@ async function startServer() {
       }
 
       const clientIp = extractClientIp(req);
-      if (isRateLimited(clientIp, contactRateLimitMap)) {
-        res.setHeader('Retry-After', String(rateLimitRetryAfterSeconds(clientIp, contactRateLimitMap)));
-        res.status(429).json({
+      if (
+        await enforceRateLimit(res, 'contact', clientIp, {
           error: 'Too many messages sent from this connection. Please wait a few minutes and try again.',
-        });
+        })
+      ) {
         return;
       }
 
@@ -1653,14 +1693,13 @@ async function startServer() {
       }
 
       const normalizedOtpEmail = `contact:${cleanEmail.toLowerCase()}`;
-      if (isRateLimited(normalizedOtpEmail, otpEmailRateLimitMap, { maxRequests: 5 })) {
-        res.setHeader(
-          'Retry-After',
-          String(rateLimitRetryAfterSeconds(normalizedOtpEmail, otpEmailRateLimitMap))
-        );
-        res.status(429).json({
-          error: 'Too many verification codes sent to this email. Please check your inbox or wait a few minutes.',
-        });
+      if (
+        await enforceRateLimit(res, 'otp-email', normalizedOtpEmail, {
+          maxRequests: 5,
+          error:
+            'Too many verification codes sent to this email. Please check your inbox or wait a few minutes.',
+        })
+      ) {
         return;
       }
 
@@ -1748,11 +1787,11 @@ async function startServer() {
       }
 
       const clientIp = extractClientIp(req);
-      if (isRateLimited(clientIp, contactRateLimitMap)) {
-        res.setHeader('Retry-After', String(rateLimitRetryAfterSeconds(clientIp, contactRateLimitMap)));
-        res.status(429).json({
+      if (
+        await enforceRateLimit(res, 'contact', clientIp, {
           error: 'Too many verification attempts. Please wait a few minutes and try again.',
-        });
+        })
+      ) {
         return;
       }
 
@@ -1808,32 +1847,36 @@ async function startServer() {
         telemetryNote,
       });
 
+      const contactSummary = {
+        messageId,
+        senderName: p.name.slice(0, 120),
+        senderEmail: p.email.slice(0, 254),
+        senderPhone: p.phone.slice(0, 40),
+        subject: p.subject.slice(0, 200),
+        message: p.message.slice(0, 5000),
+        theme: p.theme,
+        ipAddress: p.ip.ipAddress.slice(0, 64),
+        country: p.ip.country.slice(0, 80),
+        region: p.ip.region.slice(0, 80),
+        city: p.ip.city.slice(0, 80),
+        isp: p.ip.isp.slice(0, 120),
+        asn: p.ip.asn.slice(0, 64),
+        timezone: p.ip.timezone.slice(0, 64),
+        clientTimezone: p.clientTimezone.slice(0, 64),
+        isVpnSuspected: p.risk.isVpnSuspected,
+        riskLevel: p.risk.riskLevel,
+        riskReasons: p.risk.riskReasons.join(', ').slice(0, 240),
+        referrer: p.referrer.slice(0, 200),
+        userAgent: p.userAgent.slice(0, 220),
+      };
+      const telemetryPersistedByServer = await tryPersistContactSummary(contactSummary);
+
       res.status(200).json({
         ok: true,
         provider: result.provider,
         message: `Email verified & transmitted directly to ${DESTINATION_EMAIL}.`,
-        contactSummary: {
-          messageId,
-          senderName: p.name.slice(0, 120),
-          senderEmail: p.email.slice(0, 254),
-          senderPhone: p.phone.slice(0, 40),
-          subject: p.subject.slice(0, 200),
-          message: p.message.slice(0, 5000),
-          theme: p.theme,
-          ipAddress: p.ip.ipAddress.slice(0, 64),
-          country: p.ip.country.slice(0, 80),
-          region: p.ip.region.slice(0, 80),
-          city: p.ip.city.slice(0, 80),
-          isp: p.ip.isp.slice(0, 120),
-          asn: p.ip.asn.slice(0, 64),
-          timezone: p.ip.timezone.slice(0, 64),
-          clientTimezone: p.clientTimezone.slice(0, 64),
-          isVpnSuspected: p.risk.isVpnSuspected,
-          riskLevel: p.risk.riskLevel,
-          riskReasons: p.risk.riskReasons.join(', ').slice(0, 240),
-          referrer: p.referrer.slice(0, 200),
-          userAgent: p.userAgent.slice(0, 220),
-        },
+        contactSummary,
+        telemetryPersistedByServer,
       });
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : 'Unable to verify message OTP.';
@@ -1852,11 +1895,11 @@ async function startServer() {
       if (rejectDisallowedOrigin(req, res)) return;
 
       const clientIp = extractClientIp(req);
-      if (isRateLimited(clientIp, cvAccessRateLimitMap)) {
-        res.setHeader('Retry-After', String(rateLimitRetryAfterSeconds(clientIp, cvAccessRateLimitMap)));
-        res.status(429).json({
+      if (
+        await enforceRateLimit(res, 'cv-access', clientIp, {
           error: 'Too many requests from this connection. Please wait a few minutes and try again.',
-        });
+        })
+      ) {
         return;
       }
 
@@ -2016,14 +2059,13 @@ async function startServer() {
         }
 
         const normalizedCvOtpEmail = `cv:${cleanEmail.toLowerCase()}`;
-        if (isRateLimited(normalizedCvOtpEmail, otpEmailRateLimitMap, { maxRequests: 5 })) {
-          res.setHeader(
-            'Retry-After',
-            String(rateLimitRetryAfterSeconds(normalizedCvOtpEmail, otpEmailRateLimitMap))
-          );
-          res.status(429).json({
-            error: 'Too many verification codes sent to this email. Please wait a few minutes before requesting another code.',
-          });
+        if (
+          await enforceRateLimit(res, 'otp-email', normalizedCvOtpEmail, {
+            maxRequests: 5,
+            error:
+              'Too many verification codes sent to this email. Please wait a few minutes before requesting another code.',
+          })
+        ) {
           return;
         }
 
@@ -2109,13 +2151,17 @@ async function startServer() {
         OTP_SECRET
       );
 
+      const trackingSummary = buildTrackingSummaryForClient(accessPayload, telemetry, false);
+      const telemetryPersistedByServer = await tryPersistCvTracking(trackingSummary);
+
       res.status(200).json({
         ok: true,
         status: 'verified',
         provider: result.provider,
         verificationStatus,
         sessionReceipt,
-        trackingSummary: buildTrackingSummaryForClient(accessPayload, telemetry, false),
+        trackingSummary,
+        telemetryPersistedByServer,
         message:
           cleanAction === 'install'
             ? 'Access verified. Preparing app install.'
@@ -2138,11 +2184,11 @@ async function startServer() {
       if (rejectDisallowedOrigin(req, res)) return;
 
       const clientIp = extractClientIp(req);
-      if (isRateLimited(clientIp, cvAccessRateLimitMap)) {
-        res.setHeader('Retry-After', String(rateLimitRetryAfterSeconds(clientIp, cvAccessRateLimitMap)));
-        res.status(429).json({
+      if (
+        await enforceRateLimit(res, 'cv-access', clientIp, {
           error: 'Too many verification attempts. Please wait a few minutes and try again.',
-        });
+        })
+      ) {
         return;
       }
 
@@ -2228,13 +2274,17 @@ async function startServer() {
         OTP_SECRET
       );
 
+      const trackingSummary = buildTrackingSummaryForClient(accessPayload, telemetry, false);
+      const telemetryPersistedByServer = await tryPersistCvTracking(trackingSummary);
+
       res.status(200).json({
         ok: true,
         status: 'verified',
         provider: result.provider,
         verificationStatus,
         sessionReceipt,
-        trackingSummary: buildTrackingSummaryForClient(accessPayload, telemetry, false),
+        trackingSummary,
+        telemetryPersistedByServer,
         message:
           p.action === 'install'
             ? 'Email OTP verified. Preparing app install.'
@@ -2257,8 +2307,12 @@ async function startServer() {
       if (rejectDisallowedOrigin(req, res)) return;
 
       const clientIp = extractClientIp(req);
-      if (isRateLimited(clientIp, cvEventRateLimitMap, { maxRequests: 40 })) {
-        res.status(429).json({ error: 'Rate limit exceeded.' });
+      if (
+        await enforceRateLimit(res, 'cv-event', clientIp, {
+          maxRequests: 40,
+          error: 'Rate limit exceeded.',
+        })
+      ) {
         return;
       }
 
@@ -2360,9 +2414,13 @@ async function startServer() {
         );
       }
 
+      const trackingSummary = buildTrackingSummaryForClient(accessPayload, telemetry, true);
+      const telemetryPersistedByServer = await tryPersistCvTracking(trackingSummary);
+
       res.status(200).json({
         ok: true,
-        trackingSummary: buildTrackingSummaryForClient(accessPayload, telemetry, true),
+        trackingSummary,
+        telemetryPersistedByServer,
       });
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : 'Unable to record event.';

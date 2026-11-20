@@ -102,6 +102,8 @@ describe('CSP / headers', () => {
     expect(csp).toContain('challenges.cloudflare.com');
     expect(csp).toContain('*.googleapis.com');
     expect(csp).toContain('*.firebaseapp.com');
+    expect(csp).toContain('firebaseappcheck.googleapis.com');
+    expect(csp).toContain('recaptcha');
     expect(csp).toContain("frame-ancestors 'none'");
     expect(csp).not.toContain('unsafe-eval');
   });

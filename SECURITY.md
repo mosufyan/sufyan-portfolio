@@ -7,11 +7,14 @@ This portfolio combines a public showcase with hardened lead-capture APIs (`/api
 - **Security headers**: Strict CSP, HSTS (HTTPS), `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy`, COOP (`same-origin-allow-popups`), `X-Frame-Options` / `frame-ancestors`, and `X-Robots-Tag: noindex, nofollow, noarchive` on API routes.
 - **Validation & sanitization**: Field length caps, strict email syntax + DNS MX check, E.164 phone validation, CR/LF/control header stripping, `escapeHtml()` across HTML emails and dynamic OG tags, and validated `Host` allowlisting in `resolveSafeBaseUrl`.
 - **Mandatory Contact OTP & Adaptive CV OTP**: 6-digit single-use HMAC-signed challenges verified before dispatch or export (`10m` TTL, capped attempts).
-- **Dual Rate Limiting**: In-memory per-IP buckets (`15 / 15 min` on contact & CV access; `40 / 15 min` on repeat events) plus per-email OTP buckets (`5 / 15 min`) with `Retry-After` headers.
+- **Dual Rate Limiting**: Shared Upstash Redis counters when `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` are set; otherwise in-memory per-IP buckets (`15 / 15 min` on contact & CV access; `40 / 15 min` on repeat events) plus per-email OTP buckets (`5 / 15 min`) with `Retry-After` headers.
 - **Anti-Bot & Anti-Crawler Layers**: Honeypot fields, Cloudflare Turnstile on both Contact and CV gate forms, `Sec-Fetch-Site: cross-site` rejection, `Origin`/`Referer` allowlisting, `robots.txt` + `<meta name="robots" content="noai, noimageai, noarchive" />`, and User-Agent filtering blocking AI dataset scrapers and vulnerability scanners (`GPTBot`, `ClaudeBot`, `CCBot`, `Bytespider`, `PerplexityBot`, `Scrapy`, `sqlmap`, `nikto`, etc.).
+- **Production builds**: Vite `build.sourcemap` is disabled so public JS bundles do not ship original TypeScript sources.
 - **Firebase Auth & Firestore Security Rules**: Default-deny catch-all, PII collection isolation (`cv_downloads`, `contact_messages`, `admin_audit_logs`, `access_rules`, `admins`), strict field/type/length/timestamp validation, and zero-read owner list rules.
-- **Owner Policy Sync**: Allowlist/blocklist (`email`, `domain`, `ip`) and pause/strict-OTP toggles synced with verified Firebase RS256 ID tokens.
-- **Secret Hygiene**: Mail credentials, `SESSION_SECRET`, and `TURNSTILE_SECRET_KEY` stay strictly on the server (`.env` gitignored).
+- **Optional App Check**: Client initializes Firebase App Check (reCAPTCHA Enterprise) when `recaptchaSiteKey` / `VITE_RECAPTCHA_SITE_KEY` is set.
+- **Optional Admin telemetry writes**: When `FIREBASE_SERVICE_ACCOUNT_JSON` (or `GOOGLE_APPLICATION_CREDENTIALS`) is configured, Express persists `cv_downloads` / `contact_messages` via the Admin SDK after OTP verification and sets `telemetryPersistedByServer: true` so the browser skips the public Firestore create path.
+- **Owner Policy Sync**: Allowlist/blocklist (`email`, `domain`, `ip`) and pause/strict-OTP toggles synced with verified Firebase RS256 ID tokens; mirrored to Redis when Upstash is configured.
+- **Secret Hygiene**: Mail credentials, `SESSION_SECRET`, Turnstile keys, Redis tokens, and Firebase service-account JSON stay strictly on the server (`.env` gitignored).
 
 ## Threat model (summary)
 
@@ -23,15 +26,75 @@ This portfolio combines a public showcase with hardened lead-capture APIs (`/api
 | Email header injection | Strong (`sanitizeHeaderValue` / `sanitizeDisplayName`) |
 | Cross-site API forgery | Strong (`Origin`/`Referer` allowlist + `Sec-Fetch-Site: cross-site` block) |
 | Unauthorized Firestore PII read | Strong (strict owner-only Firestore rules + RS256 token verification) |
+| Unauthenticated Firestore create abuse | Mitigated via App Check +/or Admin SDK server writes (see below) |
 | Scraping public client portfolio copy | Expected for unauthenticated public SPAs (mitigate further with Cloudflare Bot Fight Mode / WAF) |
+| Multi-instance rate-limit bypass | Mitigated when Upstash Redis is configured |
 
 ## Reporting
 
 Email security concerns to **sufyan.net@gmail.com**. Please allow reasonable time for response before public disclosure of non-critical issues.
 
-## Operations & Hardening Recommendations
+## Operations & Hardening — how to implement each recommendation
 
-1. Enable **Cloudflare Bot Fight Mode / Managed Challenge** or **Google Cloud Armor WAF** in front of the live domain so headless browsers (`Playwright`/`Puppeteer` spoofing real Chrome UAs) are challenged at the network edge before hitting Cloud Run.
-2. Enable **Firebase App Check** (reCAPTCHA Enterprise) in Firebase Console and tighten client-side Firestore telemetry writes (`cv_downloads`, `contact_messages`) or move telemetry persistence behind server-side Firebase Admin SDK writes so unauthenticated Firestore creates can be disabled entirely.
-3. Configure `SESSION_SECRET` and Cloudflare `TURNSTILE_SECRET_KEY` + `VITE_TURNSTILE_SITE_KEY` in production environment variables.
-4. When scaling beyond a single Cloud Run instance, replace in-memory rate-limit maps and OTP challenge stores with Redis or Upstash.
+### 1. Edge WAF + no production source maps (scraper bar)
+
+**In-repo (done):** Vite production builds set `build.sourcemap: false`.
+
+**Cloudflare (recommended for the live domain):**
+
+1. Add the production hostname to Cloudflare DNS and set the orange-cloud **Proxy** status.
+2. Security → Bots → enable **Bot Fight Mode** (or Super Bot Fight Mode on paid plans).
+3. Security → WAF → Managed rules → enable the Cloudflare Managed ruleset; add a custom rule that **Managed Challenge**s suspicious ASNs / empty `Accept-Language` / known automation paths if needed.
+4. Keep `TRUST_PROXY=1` (or the hop count to Cloudflare) so Express sees the real visitor IP for rate limits.
+
+**Google Cloud Armor (if staying on Cloud Run / GCP LB only):**
+
+1. Attach a Cloud Armor security policy to the HTTPS load balancer backend service.
+2. Enable Google’s preconfigured WAF rules + adaptive protection; challenge or deny obvious bot signatures.
+3. Forward `X-Forwarded-For` and set Express `TRUST_PROXY` accordingly.
+
+### 2. Firebase App Check and/or Admin SDK telemetry writes
+
+**Path A — App Check (attest browser sessions):**
+
+1. Firebase Console → App Check → Register the web app with **reCAPTCHA Enterprise**.
+2. Copy the site key into `firebase-applet-config.json` → `recaptchaSiteKey` **or** set `VITE_RECAPTCHA_SITE_KEY` and rebuild.
+3. Enable App Check **enforcement** for Cloud Firestore once metrics look healthy.
+4. Optionally tighten `firestore.rules` creates for `cv_downloads` / `contact_messages` to require `request.app != null`.
+
+**Path B — Server-only writes (done in code; enable with credentials):**
+
+1. Create a Firebase service account with Firestore write access.
+2. Set `FIREBASE_SERVICE_ACCOUNT_JSON` to the stringified JSON key (Cloud Run secret) **or** mount the key and set `GOOGLE_APPLICATION_CREDENTIALS`.
+3. Redeploy. `/api/health` reports `serverTelemetryWrites: true`; verify/OTP responses include `telemetryPersistedByServer: true`.
+4. After confirming owner console still receives logs, change Firestore create rules for those collections to deny public creates (`allow create: if false`) so only Admin SDK can insert.
+
+### 3. Redis / Upstash for shared rate limits & owner policy
+
+**In-repo (done):** `server/distributedStore.ts` uses Upstash REST when configured; otherwise falls back to process memory.
+
+1. Create an Upstash Redis database and copy the REST URL + token.
+2. Set `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` on every Cloud Run / container replica.
+3. Redeploy. `/api/health` reports `distributedStore: "redis"`.
+4. Owner policy sync (`/api/owner/policy-sync`) now mirrors to Redis so all replicas share pause/allow/block flags.
+5. OTP challenge maps remain in-process; keep sticky sessions or migrate OTP stores to Redis before scaling OTP heavily across many replicas.
+
+### Quick env checklist
+
+```bash
+# Edge / Express
+TRUST_PROXY=1
+SESSION_SECRET=...
+TURNSTILE_SECRET_KEY=...
+VITE_TURNSTILE_SITE_KEY=...
+
+# App Check (client)
+VITE_RECAPTCHA_SITE_KEY=...   # or firebase-applet-config.json recaptchaSiteKey
+
+# Server telemetry (Admin SDK)
+FIREBASE_SERVICE_ACCOUNT_JSON='{"type":"service_account",...}'
+
+# Shared rate limits + policy (multi-instance)
+UPSTASH_REDIS_REST_URL=https://....upstash.io
+UPSTASH_REDIS_REST_TOKEN=...
+```
