@@ -65,6 +65,30 @@ describe('ownerGovernance utilities', () => {
     expect(effective.enablePortfolioChat).toBe(false);
     expect(effective.enableLiveChat).toBe(false);
     expect(effective.enableChatLlm).toBe(false);
+    expect(effective.enableAnnouncements).toBe(false);
+    expect(effective.enableResumeStudio).toBe(false);
+    expect(effective.enableDigitalCard).toBe(false);
+    expect(effective.enableCommandPalette).toBe(false);
+    expect(effective.enableTerminal).toBe(false);
+    expect(effective.enablePwaInstall).toBe(false);
+    expect(effective.enableSkillFilter).toBe(false);
+    expect(effective.enableReadingModes).toBe(false);
+    expect(effective.enableScrollHud).toBe(false);
+    expect(effective.enableSiteTelemetry).toBe(false);
+  });
+
+  it('defaults visitor feature switches to enabled', () => {
+    const sanitized = sanitizePortfolioSettings({});
+    expect(sanitized.enableAnnouncements).toBe(true);
+    expect(sanitized.enableResumeStudio).toBe(true);
+    expect(sanitized.enableDigitalCard).toBe(true);
+    expect(sanitized.enableCommandPalette).toBe(true);
+    expect(sanitized.enableTerminal).toBe(true);
+    expect(sanitized.enablePwaInstall).toBe(true);
+    expect(sanitized.enableSkillFilter).toBe(true);
+    expect(sanitized.enableReadingModes).toBe(true);
+    expect(sanitized.enableScrollHud).toBe(true);
+    expect(sanitized.enableSiteTelemetry).toBe(true);
   });
 
   it('defaults chat caps to ten questions per visitor', () => {

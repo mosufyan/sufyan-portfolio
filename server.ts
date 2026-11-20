@@ -177,6 +177,8 @@ interface RuntimeOwnerPolicy {
   strictOtpForAll: boolean;
   enableContactForm: boolean;
   enableCvDownloads: boolean;
+  enablePwaInstall: boolean;
+  enableSiteTelemetry: boolean;
   incidentMode: boolean;
   notifyOnNewInquiry: boolean;
   enablePortfolioChat: boolean;
@@ -288,6 +290,8 @@ function loadInitialOwnerPolicy(): RuntimeOwnerPolicy {
     strictOtpForAll: false,
     enableContactForm: true,
     enableCvDownloads: true,
+    enablePwaInstall: DEFAULT_PORTFOLIO_SETTINGS.enablePwaInstall,
+    enableSiteTelemetry: DEFAULT_PORTFOLIO_SETTINGS.enableSiteTelemetry,
     incidentMode: false,
     notifyOnNewInquiry: true,
     enablePortfolioChat: DEFAULT_PORTFOLIO_SETTINGS.enablePortfolioChat,
@@ -319,6 +323,14 @@ function loadInitialOwnerPolicy(): RuntimeOwnerPolicy {
       strictOtpForAll: Boolean(parsed.strictOtpForAll),
       enableContactForm: typeof parsed.enableContactForm === 'boolean' ? parsed.enableContactForm : true,
       enableCvDownloads: typeof parsed.enableCvDownloads === 'boolean' ? parsed.enableCvDownloads : true,
+      enablePwaInstall:
+        typeof parsed.enablePwaInstall === 'boolean'
+          ? parsed.enablePwaInstall
+          : DEFAULT_PORTFOLIO_SETTINGS.enablePwaInstall,
+      enableSiteTelemetry:
+        typeof parsed.enableSiteTelemetry === 'boolean'
+          ? parsed.enableSiteTelemetry
+          : DEFAULT_PORTFOLIO_SETTINGS.enableSiteTelemetry,
       incidentMode: Boolean(parsed.incidentMode),
       notifyOnNewInquiry:
         typeof parsed.notifyOnNewInquiry === 'boolean' ? parsed.notifyOnNewInquiry : true,
@@ -1723,6 +1735,10 @@ async function startServer() {
         return;
       }
       if (rejectDisallowedOrigin(req, res)) return;
+      if (!runtimeOwnerPolicy.enableSiteTelemetry || runtimeOwnerPolicy.incidentMode) {
+        res.status(204).end();
+        return;
+      }
       const clientIp = extractClientIp(req);
       if (
         await enforceRateLimit(res, 'telemetry', clientIp, {
@@ -1812,6 +1828,8 @@ async function startServer() {
         strictOtpForAll?: unknown;
         enableContactForm?: unknown;
         enableCvDownloads?: unknown;
+        enablePwaInstall?: unknown;
+        enableSiteTelemetry?: unknown;
         incidentMode?: unknown;
         notifyOnNewInquiry?: unknown;
         enablePortfolioChat?: unknown;
@@ -1871,6 +1889,16 @@ async function startServer() {
           : typeof raw.enableCvDownloads === 'boolean'
             ? raw.enableCvDownloads
             : runtimeOwnerPolicy.enableCvDownloads,
+        enablePwaInstall: incidentMode
+          ? false
+          : typeof raw.enablePwaInstall === 'boolean'
+            ? raw.enablePwaInstall
+            : runtimeOwnerPolicy.enablePwaInstall,
+        enableSiteTelemetry: incidentMode
+          ? false
+          : typeof raw.enableSiteTelemetry === 'boolean'
+            ? raw.enableSiteTelemetry
+            : runtimeOwnerPolicy.enableSiteTelemetry,
         incidentMode,
         notifyOnNewInquiry:
           typeof raw.notifyOnNewInquiry === 'boolean'
@@ -2453,6 +2481,12 @@ async function startServer() {
               ? 'install'
               : 'pdf';
 
+      if (cleanAction === 'install' && !runtimeOwnerPolicy.enablePwaInstall) {
+        res.status(503).json({
+          error: 'App install is temporarily unavailable. Please try again later.',
+        });
+        return;
+      }
       if (!runtimeOwnerPolicy.enableCvDownloads && cleanAction !== 'install') {
         res.status(503).json({
           error: 'CV exports are temporarily paused by the portfolio owner. Please check back shortly or contact directly.',
@@ -2740,6 +2774,12 @@ async function startServer() {
       }
 
       const p = verified.payload;
+      if (p.action === 'install' && !runtimeOwnerPolicy.enablePwaInstall) {
+        res.status(503).json({
+          error: 'App install is temporarily unavailable. Please try again later.',
+        });
+        return;
+      }
       if (!runtimeOwnerPolicy.enableCvDownloads && p.action !== 'install') {
         res.status(503).json({
           error: 'CV exports are temporarily paused by the portfolio owner. Please check back shortly.',
@@ -2869,6 +2909,12 @@ async function startServer() {
               ? 'install'
               : 'pdf';
 
+      if (cleanAction === 'install' && !runtimeOwnerPolicy.enablePwaInstall) {
+        res.status(503).json({
+          error: 'App install is temporarily unavailable. Please try again later.',
+        });
+        return;
+      }
       if (!runtimeOwnerPolicy.enableCvDownloads && cleanAction !== 'install') {
         res.status(503).json({
           error: 'CV exports are temporarily paused by the portfolio owner.',

@@ -516,6 +516,8 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
         strictOtpForAll: effective.strictOtpForAll,
         enableContactForm: effective.enableContactForm,
         enableCvDownloads: effective.enableCvDownloads,
+        enablePwaInstall: effective.enablePwaInstall,
+        enableSiteTelemetry: effective.enableSiteTelemetry,
         incidentMode: settings.incidentMode,
         notifyOnNewInquiry: settings.notifyOnNewInquiry,
         enablePortfolioChat: effective.enablePortfolioChat,

@@ -99,10 +99,12 @@ export default function Navbar({
     signInAsOwner,
     signOutOwner,
     portfolioSettings,
+    effectivePortfolioSettings,
     announcements,
     cvDownloadLogs,
     contactMessageLogs,
   } = useFirebase();
+  const features = effectivePortfolioSettings;
   const shouldReduceMotion = useReducedMotion();
   const { scrollYProgress } = useScroll();
   const scaleX = useSpring(scrollYProgress, {
@@ -342,42 +344,48 @@ export default function Navbar({
             <span className="hidden 2xl:inline">{isLight ? 'Light' : 'Dark'}</span>
           </button>
 
-          <button
-            type="button"
-            onClick={onOpenCommandPalette}
-            className="hidden sm:inline-flex items-center justify-center gap-1.5 h-9 px-2.5 rounded-lg border border-slate-700/90 bg-slate-900/70 text-xs font-mono text-slate-300 hover:text-cyan-300 hover:border-cyan-500/40 transition-colors whitespace-nowrap shrink-0"
-            title="Quick Jump & Search (⌘K / Ctrl+K)"
-            aria-label="Open quick navigation palette"
-          >
-            <Search className="w-3.5 h-3.5 text-cyan-400" />
-            <span className="hidden 2xl:inline text-[11px] text-slate-400">⌘K</span>
-          </button>
+          {features.enableCommandPalette && (
+            <button
+              type="button"
+              onClick={onOpenCommandPalette}
+              className="hidden sm:inline-flex items-center justify-center gap-1.5 h-9 px-2.5 rounded-lg border border-slate-700/90 bg-slate-900/70 text-xs font-mono text-slate-300 hover:text-cyan-300 hover:border-cyan-500/40 transition-colors whitespace-nowrap shrink-0"
+              title="Quick Jump & Search (⌘K / Ctrl+K)"
+              aria-label="Open quick navigation palette"
+            >
+              <Search className="w-3.5 h-3.5 text-cyan-400" />
+              <span className="hidden 2xl:inline text-[11px] text-slate-400">⌘K</span>
+            </button>
+          )}
 
-          <button
-            type="button"
-            onClick={onOpenTerminal}
-            className="hidden sm:inline-flex items-center justify-center gap-1.5 h-9 px-2.5 rounded-lg border border-slate-700/90 bg-slate-900/70 text-xs font-mono text-slate-300 hover:text-cyan-300 hover:border-cyan-500/40 transition-colors whitespace-nowrap shrink-0"
-            title="Open Interactive Terminal (sufyanctl)"
-            aria-label="Open interactive portfolio terminal"
-          >
-            <Terminal className="w-3.5 h-3.5 text-cyan-400" />
-            <span className="hidden 2xl:inline text-[11px] text-slate-400">CLI</span>
-          </button>
+          {features.enableTerminal && (
+            <button
+              type="button"
+              onClick={onOpenTerminal}
+              className="hidden sm:inline-flex items-center justify-center gap-1.5 h-9 px-2.5 rounded-lg border border-slate-700/90 bg-slate-900/70 text-xs font-mono text-slate-300 hover:text-cyan-300 hover:border-cyan-500/40 transition-colors whitespace-nowrap shrink-0"
+              title="Open Interactive Terminal (sufyanctl)"
+              aria-label="Open interactive portfolio terminal"
+            >
+              <Terminal className="w-3.5 h-3.5 text-cyan-400" />
+              <span className="hidden 2xl:inline text-[11px] text-slate-400">CLI</span>
+            </button>
+          )}
 
-          <button
-            type="button"
-            onClick={onOpenAnnouncements}
-            className="hidden md:inline-flex items-center justify-center gap-1.5 h-9 px-2.5 rounded-lg border border-slate-700 bg-slate-900/60 text-xs font-medium text-slate-300 hover:text-white hover:border-slate-600 transition-colors whitespace-nowrap shrink-0"
-            title="View Announcements"
-          >
-            <span className="hidden 2xl:inline">Announcements</span>
-            <span className="2xl:hidden">News</span>
-            {portfolioSettings.showAnnouncementsBadge && announcements.length > 0 && (
-              <span className="px-1.5 py-0.5 rounded bg-cyan-500/20 border border-cyan-400/40 text-[10px] font-mono tabular-nums text-cyan-300">
-                {announcements.length}
-              </span>
-            )}
-          </button>
+          {features.enableAnnouncements && (
+            <button
+              type="button"
+              onClick={onOpenAnnouncements}
+              className="hidden md:inline-flex items-center justify-center gap-1.5 h-9 px-2.5 rounded-lg border border-slate-700 bg-slate-900/60 text-xs font-medium text-slate-300 hover:text-white hover:border-slate-600 transition-colors whitespace-nowrap shrink-0"
+              title="View Announcements"
+            >
+              <span className="hidden 2xl:inline">Announcements</span>
+              <span className="2xl:hidden">News</span>
+              {portfolioSettings.showAnnouncementsBadge && announcements.length > 0 && (
+                <span className="px-1.5 py-0.5 rounded bg-cyan-500/20 border border-cyan-400/40 text-[10px] font-mono tabular-nums text-cyan-300">
+                  {announcements.length}
+                </span>
+              )}
+            </button>
+          )}
 
           {/* Owner Auth / Full-Page Console Toggle */}
           {isOwner ? (
@@ -429,15 +437,17 @@ export default function Navbar({
             </button>
           )}
 
-          <button
-            type="button"
-            onClick={onOpenResume}
-            className="hidden sm:inline-flex items-center justify-center gap-1.5 h-9 px-3 rounded-lg border border-cyan-500/40 bg-cyan-950/30 hover:bg-cyan-900/50 text-xs font-semibold text-cyan-300 transition-colors whitespace-nowrap shrink-0"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span className="hidden 2xl:inline">Download CV</span>
-            <span className="2xl:hidden">CV</span>
-          </button>
+          {features.enableResumeStudio && (
+            <button
+              type="button"
+              onClick={onOpenResume}
+              className="hidden sm:inline-flex items-center justify-center gap-1.5 h-9 px-3 rounded-lg border border-cyan-500/40 bg-cyan-950/30 hover:bg-cyan-900/50 text-xs font-semibold text-cyan-300 transition-colors whitespace-nowrap shrink-0"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span className="hidden 2xl:inline">Download CV</span>
+              <span className="2xl:hidden">CV</span>
+            </button>
+          )}
 
           <a
             href="#contact"
@@ -470,21 +480,25 @@ export default function Navbar({
                 keyPrefix="nav-mobile"
               />
             </button>
-            <button
-              type="button"
-              onClick={onOpenCommandPalette}
-              className="sm:hidden inline-flex items-center justify-center h-9 w-9 rounded-lg border border-slate-700/90 bg-slate-900/70 text-slate-300 hover:text-cyan-300 hover:border-cyan-500/40 transition-colors"
-              aria-label="Open quick search"
-            >
-              <Search className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={onOpenResume}
-              className="sm:hidden inline-flex items-center justify-center h-9 px-3 rounded-lg border border-cyan-500/40 text-xs font-semibold text-cyan-300 bg-cyan-950/40 hover:bg-cyan-900/50 transition-colors"
-            >
-              CV
-            </button>
+            {features.enableCommandPalette && (
+              <button
+                type="button"
+                onClick={onOpenCommandPalette}
+                className="sm:hidden inline-flex items-center justify-center h-9 w-9 rounded-lg border border-slate-700/90 bg-slate-900/70 text-slate-300 hover:text-cyan-300 hover:border-cyan-500/40 transition-colors"
+                aria-label="Open quick search"
+              >
+                <Search className="w-4 h-4" />
+              </button>
+            )}
+            {features.enableResumeStudio && (
+              <button
+                type="button"
+                onClick={onOpenResume}
+                className="sm:hidden inline-flex items-center justify-center h-9 px-3 rounded-lg border border-cyan-500/40 text-xs font-semibold text-cyan-300 bg-cyan-950/40 hover:bg-cyan-900/50 transition-colors"
+              >
+                CV
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -630,40 +644,46 @@ export default function Navbar({
                 )}
 
                 <div className="sm:hidden flex flex-col gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMobileMenuOpen(false);
-                      onOpenTerminal();
-                    }}
-                    className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-md border border-slate-700 bg-slate-900/60 text-xs font-mono text-cyan-300"
-                  >
-                    <Terminal className="w-3.5 h-3.5 text-cyan-400" />
-                    Terminal (sufyanctl)
-                  </button>
-                  <button
-                    onClick={() => {
-                      setMobileMenuOpen(false);
-                      onOpenAnnouncements();
-                    }}
-                    className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-md border border-slate-700 bg-slate-900/60 text-xs font-medium text-slate-300"
-                  >
-                    <span>Announcements</span>
-                    {portfolioSettings.showAnnouncementsBadge && announcements.length > 0 && (
-                      <span className="px-1.5 py-0.5 rounded bg-cyan-500/20 border border-cyan-400/40 text-[10px] font-mono tabular-nums text-cyan-300">
-                        {announcements.length}
-                      </span>
-                    )}
-                  </button>
-                  <button
-                    onClick={() => {
-                      setMobileMenuOpen(false);
-                      onOpenResume();
-                    }}
-                    className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-md bg-cyan-950/50 border border-cyan-500/40 text-xs font-semibold text-cyan-300"
-                  >
-                    <Download className="w-4 h-4" /> Download Executive CV
-                  </button>
+                  {features.enableTerminal && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMobileMenuOpen(false);
+                        onOpenTerminal();
+                      }}
+                      className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-md border border-slate-700 bg-slate-900/60 text-xs font-mono text-cyan-300"
+                    >
+                      <Terminal className="w-3.5 h-3.5 text-cyan-400" />
+                      Terminal (sufyanctl)
+                    </button>
+                  )}
+                  {features.enableAnnouncements && (
+                    <button
+                      onClick={() => {
+                        setMobileMenuOpen(false);
+                        onOpenAnnouncements();
+                      }}
+                      className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-md border border-slate-700 bg-slate-900/60 text-xs font-medium text-slate-300"
+                    >
+                      <span>Announcements</span>
+                      {portfolioSettings.showAnnouncementsBadge && announcements.length > 0 && (
+                        <span className="px-1.5 py-0.5 rounded bg-cyan-500/20 border border-cyan-400/40 text-[10px] font-mono tabular-nums text-cyan-300">
+                          {announcements.length}
+                        </span>
+                      )}
+                    </button>
+                  )}
+                  {features.enableResumeStudio && (
+                    <button
+                      onClick={() => {
+                        setMobileMenuOpen(false);
+                        onOpenResume();
+                      }}
+                      className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-md bg-cyan-950/50 border border-cyan-500/40 text-xs font-semibold text-cyan-300"
+                    >
+                      <Download className="w-4 h-4" /> Download Executive CV
+                    </button>
+                  )}
                   <a
                     href="#contact"
                     onClick={(e) => scrollToSection(e, 'contact', true)}

@@ -152,8 +152,11 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, []);
 
+  const features = effectivePortfolioSettings;
+
   // Global Cmd+K / Ctrl+K shortcut for Command Palette
   useEffect(() => {
+    if (!features.enableCommandPalette) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
@@ -162,11 +165,11 @@ export default function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
+  }, [features.enableCommandPalette]);
 
   // Lightweight anonymous pageview beacon for owner SEO / funnel counters
   useEffect(() => {
-    if (ownerViewActive) return;
+    if (ownerViewActive || !features.enableSiteTelemetry) return;
     const controller = new AbortController();
     void fetch('/api/telemetry/event', {
       method: 'POST',
@@ -176,7 +179,65 @@ export default function App() {
       keepalive: true,
     }).catch(() => {});
     return () => controller.abort();
-  }, [ownerViewActive]);
+  }, [ownerViewActive, features.enableSiteTelemetry]);
+
+  // Close overlays when the owner disables the underlying feature mid-session.
+  useEffect(() => {
+    if (!features.enableResumeStudio) setResumeOpen(false);
+    if (!features.enableAnnouncements) setAnnouncementsOpen(false);
+    if (!features.enableCommandPalette) setCommandPaletteOpen(false);
+    if (!features.enableDigitalCard) setDigitalCardOpen(false);
+    if (!features.enableTerminal) setTerminalOpen(false);
+    if (!features.enableReadingModes && readingMode !== 'deep') setReadingMode('deep');
+    if (!features.enableSkillFilter && selectedSkills.length > 0) {
+      setSelectedSkillsState([]);
+      writeSkillsToUrl([]);
+    }
+  }, [
+    features.enableResumeStudio,
+    features.enableAnnouncements,
+    features.enableCommandPalette,
+    features.enableDigitalCard,
+    features.enableTerminal,
+    features.enableReadingModes,
+    features.enableSkillFilter,
+    readingMode,
+    selectedSkills.length,
+  ]);
+
+  // Honor CV share deep links only when Resume Studio is enabled.
+  useEffect(() => {
+    if (!features.enableResumeStudio && resumeOpen && initialCvShare.shouldOpen) {
+      setResumeOpen(false);
+      clearCvShareQueryFromBrowser();
+    }
+  }, [features.enableResumeStudio, resumeOpen, initialCvShare.shouldOpen]);
+
+  const openResume = useCallback(() => {
+    if (!features.enableResumeStudio) return;
+    setResumeOpen(true);
+  }, [features.enableResumeStudio]);
+  const openAnnouncements = useCallback(() => {
+    if (!features.enableAnnouncements) return;
+    setAnnouncementsOpen(true);
+  }, [features.enableAnnouncements]);
+  const openCommandPalette = useCallback(() => {
+    if (!features.enableCommandPalette) return;
+    setCommandPaletteOpen(true);
+  }, [features.enableCommandPalette]);
+  const openDigitalCard = useCallback(() => {
+    if (!features.enableDigitalCard) return;
+    setDigitalCardOpen(true);
+  }, [features.enableDigitalCard]);
+  const openTerminal = useCallback(() => {
+    if (!features.enableTerminal) return;
+    setTerminalOpen(true);
+  }, [features.enableTerminal]);
+  const skillSelect = features.enableSkillFilter ? setSelectedSkill : () => {};
+  const skillApply = features.enableSkillFilter ? applySelectedSkills : () => {};
+  const activeSkills = features.enableSkillFilter ? selectedSkills : [];
+  const activeReadingMode = features.enableReadingModes ? readingMode : 'deep';
+  const changeReadingMode = features.enableReadingModes ? setReadingMode : undefined;
 
   const handleFocusCompany = useCallback((companyName: string) => {
     setFocusedCompany((prev) => ({ name: companyName, seq: (prev?.seq ?? 0) + 1 }));
@@ -189,10 +250,10 @@ export default function App() {
         <div className="site-theme min-h-screen min-w-0 w-full overflow-x-clip bg-[#06080d] text-slate-200 selection:bg-cyan-500/30 selection:text-cyan-200 transition-colors duration-300">
           <div className={resumeOpen ? 'print:hidden' : ''}>
             <Navbar
-              onOpenResume={() => setResumeOpen(true)}
-              onOpenAnnouncements={() => setAnnouncementsOpen(true)}
-              onOpenCommandPalette={() => setCommandPaletteOpen(true)}
-              onOpenTerminal={() => setTerminalOpen(true)}
+              onOpenResume={openResume}
+              onOpenAnnouncements={openAnnouncements}
+              onOpenCommandPalette={openCommandPalette}
+              onOpenTerminal={openTerminal}
               ownerViewActive={ownerViewActive}
               onEnterOwnerConsole={handleEnterOwnerConsole}
               onExitOwnerConsole={handleExitOwnerConsole}
@@ -201,16 +262,16 @@ export default function App() {
             {ownerViewActive ? (
               <OwnerConsolePage
                 onBackToPortfolio={handleExitOwnerConsole}
-                onOpenResume={() => setResumeOpen(true)}
+                onOpenResume={openResume}
                 initialSection={ownerConsoleSection}
               />
             ) : (
               <>
-                {effectivePortfolioSettings.maintenanceMode && (
+                {features.maintenanceMode && (
                   <div
                     role="status"
                     className={`border-b print:hidden ${
-                      effectivePortfolioSettings.incidentMode
+                      features.incidentMode
                         ? 'border-rose-500/40 bg-rose-950/40 text-rose-100'
                         : 'border-amber-500/35 bg-amber-950/35 text-amber-200'
                     }`}
@@ -218,16 +279,16 @@ export default function App() {
                     <div className="page-shell py-2.5 flex flex-wrap items-center justify-center sm:justify-between gap-2 text-xs font-mono">
                       <div className="flex items-center gap-2 min-w-0">
                         <Wrench className="w-3.5 h-3.5 shrink-0" />
-                        <span className="leading-snug">{effectivePortfolioSettings.maintenanceMessage}</span>
+                        <span className="leading-snug">{features.maintenanceMessage}</span>
                       </div>
                       <span
                         className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded border shrink-0 ${
-                          effectivePortfolioSettings.incidentMode
+                          features.incidentMode
                             ? 'border-rose-500/50 bg-rose-950/70 text-rose-200'
                             : 'border-amber-500/40 bg-amber-950/60 text-amber-300'
                         }`}
                       >
-                        {effectivePortfolioSettings.incidentMode ? 'Incident Mode' : 'Maintenance Notice'}
+                        {features.incidentMode ? 'Incident Mode' : 'Maintenance Notice'}
                       </span>
                     </div>
                   </div>
@@ -235,40 +296,44 @@ export default function App() {
 
                 <main>
                   <Hero
-                    onOpenResume={() => setResumeOpen(true)}
-                    onOpenDigitalCard={() => setDigitalCardOpen(true)}
-                    onApplySkills={applySelectedSkills}
-                    readingMode={readingMode}
-                    onChangeReadingMode={setReadingMode}
+                    onOpenResume={features.enableResumeStudio ? openResume : undefined}
+                    onOpenDigitalCard={features.enableDigitalCard ? openDigitalCard : undefined}
+                    onApplySkills={features.enableSkillFilter ? skillApply : undefined}
+                    readingMode={activeReadingMode}
+                    onChangeReadingMode={changeReadingMode}
                   />
-                  <Philosophy readingMode={readingMode} />
+                  <Philosophy readingMode={activeReadingMode} />
                   <Experience
-                    selectedSkills={selectedSkills}
-                    onSelectSkill={setSelectedSkill}
-                    onApplySkills={applySelectedSkills}
+                    selectedSkills={activeSkills}
+                    onSelectSkill={skillSelect}
+                    onApplySkills={skillApply}
                     focusedCompany={focusedCompany}
-                    readingMode={readingMode}
+                    readingMode={activeReadingMode}
                   />
                   <Skills
-                    selectedSkills={selectedSkills}
-                    onSelectSkill={setSelectedSkill}
-                    onApplySkills={applySelectedSkills}
-                    readingMode={readingMode}
+                    selectedSkills={activeSkills}
+                    onSelectSkill={skillSelect}
+                    onApplySkills={skillApply}
+                    readingMode={activeReadingMode}
                   />
                   <Certifications
-                    selectedSkills={selectedSkills}
-                    onSelectSkill={setSelectedSkill}
+                    selectedSkills={activeSkills}
+                    onSelectSkill={skillSelect}
                     onSelectCertification={(cert) => setSelectedCert(cert)}
-                    readingMode={readingMode}
+                    readingMode={activeReadingMode}
                   />
-                  <Awards readingMode={readingMode} />
-                  <Education readingMode={readingMode} />
-                  <Contact onOpenDigitalCard={() => setDigitalCardOpen(true)} />
+                  <Awards readingMode={activeReadingMode} />
+                  <Education readingMode={activeReadingMode} />
+                  <Contact
+                    onOpenDigitalCard={
+                      features.enableDigitalCard ? openDigitalCard : undefined
+                    }
+                  />
                 </main>
 
                 <Footer
-                  onOpenDigitalCard={() => setDigitalCardOpen(true)}
-                  onOpenTerminal={() => setTerminalOpen(true)}
+                  onOpenDigitalCard={features.enableDigitalCard ? openDigitalCard : undefined}
+                  onOpenTerminal={features.enableTerminal ? openTerminal : undefined}
                 />
               </>
             )}
@@ -276,13 +341,15 @@ export default function App() {
 
           {!ownerViewActive && (
             <>
-              <DesktopScrollRail />
-              <UnifiedScrollHud
-                readingMode={readingMode}
-                onChangeReadingMode={setReadingMode}
-                onOpenCommandPalette={() => setCommandPaletteOpen(true)}
-              />
-              {effectivePortfolioSettings.enablePortfolioChat && <ChatWidget />}
+              {features.enableScrollHud && <DesktopScrollRail />}
+              {features.enableScrollHud && (
+                <UnifiedScrollHud
+                  readingMode={activeReadingMode}
+                  onChangeReadingMode={changeReadingMode || (() => {})}
+                  onOpenCommandPalette={openCommandPalette}
+                />
+              )}
+              {features.enablePortfolioChat && <ChatWidget />}
             </>
           )}
         </div>
@@ -293,45 +360,55 @@ export default function App() {
           onClose={() => setSelectedCert(null)}
         />
 
-        <AnnouncementsModal
-          isOpen={announcementsOpen}
-          onClose={() => setAnnouncementsOpen(false)}
-          onOpenOwnerConsole={handleEnterOwnerConsole}
-        />
+        {features.enableAnnouncements && (
+          <AnnouncementsModal
+            isOpen={announcementsOpen}
+            onClose={() => setAnnouncementsOpen(false)}
+            onOpenOwnerConsole={handleEnterOwnerConsole}
+          />
+        )}
 
-        <CommandPalette
-          isOpen={commandPaletteOpen}
-          onClose={() => setCommandPaletteOpen(false)}
-          onSelectSkill={setSelectedSkill}
-          onSelectCertification={(cert) => setSelectedCert(cert)}
-          onFocusCompany={handleFocusCompany}
-          onOpenResume={() => setResumeOpen(true)}
-          onOpenAnnouncements={() => setAnnouncementsOpen(true)}
-          onOpenDigitalCard={() => setDigitalCardOpen(true)}
-          onOpenTerminal={() => setTerminalOpen(true)}
-          onOpenOwnerConsole={handleEnterOwnerConsole}
-        />
+        {features.enableCommandPalette && (
+          <CommandPalette
+            isOpen={commandPaletteOpen}
+            onClose={() => setCommandPaletteOpen(false)}
+            onSelectSkill={skillSelect}
+            onSelectCertification={(cert) => setSelectedCert(cert)}
+            onFocusCompany={handleFocusCompany}
+            onOpenResume={openResume}
+            onOpenAnnouncements={openAnnouncements}
+            onOpenDigitalCard={openDigitalCard}
+            onOpenTerminal={openTerminal}
+            onOpenOwnerConsole={handleEnterOwnerConsole}
+          />
+        )}
 
-        <EngineeringTerminal
-          isOpen={terminalOpen}
-          onClose={() => setTerminalOpen(false)}
-          onOpenResume={() => setResumeOpen(true)}
-          onOpenDigitalCard={() => setDigitalCardOpen(true)}
-        />
+        {features.enableTerminal && (
+          <EngineeringTerminal
+            isOpen={terminalOpen}
+            onClose={() => setTerminalOpen(false)}
+            onOpenResume={openResume}
+            onOpenDigitalCard={openDigitalCard}
+          />
+        )}
 
-        <DigitalCardModal
-          isOpen={digitalCardOpen}
-          onClose={() => setDigitalCardOpen(false)}
-        />
+        {features.enableDigitalCard && (
+          <DigitalCardModal
+            isOpen={digitalCardOpen}
+            onClose={() => setDigitalCardOpen(false)}
+          />
+        )}
 
-        <ResumeModal
-          isOpen={resumeOpen}
-          initialShareConfig={initialCvShare}
-          onClose={() => {
-            setResumeOpen(false);
-            clearCvShareQueryFromBrowser();
-          }}
-        />
+        {features.enableResumeStudio && (
+          <ResumeModal
+            isOpen={resumeOpen}
+            initialShareConfig={initialCvShare}
+            onClose={() => {
+              setResumeOpen(false);
+              clearCvShareQueryFromBrowser();
+            }}
+          />
+        )}
       </div>
     </MotionConfig>
   );

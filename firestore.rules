@@ -245,6 +245,9 @@ service cloud.firestore {
       return data.keys().hasAll([
           'availabilityStatus', 'availabilityText', 'maintenanceMode', 'maintenanceMessage',
           'enableContactForm', 'enableCvDownloads', 'strictOtpForAll', 'showAnnouncementsBadge',
+          'enableAnnouncements', 'enableResumeStudio', 'enableDigitalCard', 'enableCommandPalette',
+          'enableTerminal', 'enablePwaInstall', 'enableSkillFilter', 'enableReadingModes',
+          'enableScrollHud', 'enableSiteTelemetry',
           'incidentMode', 'incidentMessage', 'notifyOnNewInquiry',
           'enablePortfolioChat', 'enableLiveChat', 'enableChatLlm',
           'chatMaxQuestionsPerVisitor', 'chatMaxLlmPerVisitor', 'chatMaxLiveSessionsPerVisitor',
@@ -257,6 +260,9 @@ service cloud.firestore {
         && data.keys().hasOnly([
           'availabilityStatus', 'availabilityText', 'maintenanceMode', 'maintenanceMessage',
           'enableContactForm', 'enableCvDownloads', 'strictOtpForAll', 'showAnnouncementsBadge',
+          'enableAnnouncements', 'enableResumeStudio', 'enableDigitalCard', 'enableCommandPalette',
+          'enableTerminal', 'enablePwaInstall', 'enableSkillFilter', 'enableReadingModes',
+          'enableScrollHud', 'enableSiteTelemetry',
           'incidentMode', 'incidentMessage', 'notifyOnNewInquiry',
           'enablePortfolioChat', 'enableLiveChat', 'enableChatLlm',
           'chatMaxQuestionsPerVisitor', 'chatMaxLlmPerVisitor', 'chatMaxLiveSessionsPerVisitor',
@@ -277,6 +283,16 @@ service cloud.firestore {
         && data.enableCvDownloads is bool
         && data.strictOtpForAll is bool
         && data.showAnnouncementsBadge is bool
+        && data.enableAnnouncements is bool
+        && data.enableResumeStudio is bool
+        && data.enableDigitalCard is bool
+        && data.enableCommandPalette is bool
+        && data.enableTerminal is bool
+        && data.enablePwaInstall is bool
+        && data.enableSkillFilter is bool
+        && data.enableReadingModes is bool
+        && data.enableScrollHud is bool
+        && data.enableSiteTelemetry is bool
         && data.incidentMode is bool
         && data.incidentMessage is string && data.incidentMessage.size() <= 300
         && data.notifyOnNewInquiry is bool

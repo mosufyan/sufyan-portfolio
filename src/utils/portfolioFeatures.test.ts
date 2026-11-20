@@ -58,6 +58,24 @@ describe('portfolio feature matrix', () => {
       expect(effective.enableChatLlm).toBe(false);
       expect(effective.enableContactForm).toBe(false);
       expect(effective.enableCvDownloads).toBe(false);
+      expect(effective.enableAnnouncements).toBe(false);
+      expect(effective.enableResumeStudio).toBe(false);
+      expect(effective.enableCommandPalette).toBe(false);
+      expect(effective.enableSiteTelemetry).toBe(false);
+    });
+
+    it('allows owner to disable individual visitor features', () => {
+      const sanitized = sanitizePortfolioSettings({
+        enableAnnouncements: false,
+        enableTerminal: false,
+        enablePwaInstall: false,
+        enableScrollHud: false,
+      });
+      expect(sanitized.enableAnnouncements).toBe(false);
+      expect(sanitized.enableTerminal).toBe(false);
+      expect(sanitized.enablePwaInstall).toBe(false);
+      expect(sanitized.enableScrollHud).toBe(false);
+      expect(sanitized.enableDigitalCard).toBe(true);
     });
 
     it('clamps chat rate window and live session caps', () => {

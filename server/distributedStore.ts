@@ -37,6 +37,8 @@ export interface RuntimeOwnerPolicyPayload {
   strictOtpForAll: boolean;
   enableContactForm: boolean;
   enableCvDownloads: boolean;
+  enablePwaInstall: boolean;
+  enableSiteTelemetry: boolean;
   incidentMode: boolean;
   notifyOnNewInquiry: boolean;
   enablePortfolioChat: boolean;
@@ -179,6 +181,12 @@ export async function loadDistributedOwnerPolicy(
         typeof raw.enableContactForm === 'boolean' ? raw.enableContactForm : fallback.enableContactForm,
       enableCvDownloads:
         typeof raw.enableCvDownloads === 'boolean' ? raw.enableCvDownloads : fallback.enableCvDownloads,
+      enablePwaInstall:
+        typeof raw.enablePwaInstall === 'boolean' ? raw.enablePwaInstall : fallback.enablePwaInstall,
+      enableSiteTelemetry:
+        typeof raw.enableSiteTelemetry === 'boolean'
+          ? raw.enableSiteTelemetry
+          : fallback.enableSiteTelemetry,
       incidentMode: Boolean(raw.incidentMode),
       notifyOnNewInquiry:
         typeof raw.notifyOnNewInquiry === 'boolean'

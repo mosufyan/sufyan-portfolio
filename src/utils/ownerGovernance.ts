@@ -107,6 +107,26 @@ export interface PortfolioSettings {
   enableCvDownloads: boolean;
   strictOtpForAll: boolean;
   showAnnouncementsBadge: boolean;
+  /** Public announcements entry + modal (badge only applies when this is on). */
+  enableAnnouncements: boolean;
+  /** Resume / CV studio modal (view + customize); exports still need enableCvDownloads. */
+  enableResumeStudio: boolean;
+  /** Digital business card / QR modal. */
+  enableDigitalCard: boolean;
+  /** Command palette (⌘K / Ctrl+K). */
+  enableCommandPalette: boolean;
+  /** Interactive engineering terminal (sufyanctl). */
+  enableTerminal: boolean;
+  /** PWA install button + OTP install gate. */
+  enablePwaInstall: boolean;
+  /** Cross-section skill filter chips and ?skill= deep links. */
+  enableSkillFilter: boolean;
+  /** Brief / Deep reading mode controls. */
+  enableReadingModes: boolean;
+  /** Desktop scroll rail + unified scroll HUD. */
+  enableScrollHud: boolean;
+  /** Anonymous pageview / OG share telemetry beacons. */
+  enableSiteTelemetry: boolean;
   /** One-click lockdown: maintenance + pause contact/CV + strict OTP. */
   incidentMode: boolean;
   incidentMessage: string;
@@ -159,6 +179,16 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
   enableCvDownloads: true,
   strictOtpForAll: false,
   showAnnouncementsBadge: true,
+  enableAnnouncements: true,
+  enableResumeStudio: true,
+  enableDigitalCard: true,
+  enableCommandPalette: true,
+  enableTerminal: true,
+  enablePwaInstall: true,
+  enableSkillFilter: true,
+  enableReadingModes: true,
+  enableScrollHud: true,
+  enableSiteTelemetry: true,
   incidentMode: false,
   incidentMessage:
     'Incident response mode is active. Public contact and CV exports are temporarily paused.',
@@ -342,6 +372,46 @@ export function sanitizePortfolioSettings(input: Partial<PortfolioSettings> | nu
       typeof input.showAnnouncementsBadge === 'boolean'
         ? input.showAnnouncementsBadge
         : DEFAULT_PORTFOLIO_SETTINGS.showAnnouncementsBadge,
+    enableAnnouncements:
+      typeof input.enableAnnouncements === 'boolean'
+        ? input.enableAnnouncements
+        : DEFAULT_PORTFOLIO_SETTINGS.enableAnnouncements,
+    enableResumeStudio:
+      typeof input.enableResumeStudio === 'boolean'
+        ? input.enableResumeStudio
+        : DEFAULT_PORTFOLIO_SETTINGS.enableResumeStudio,
+    enableDigitalCard:
+      typeof input.enableDigitalCard === 'boolean'
+        ? input.enableDigitalCard
+        : DEFAULT_PORTFOLIO_SETTINGS.enableDigitalCard,
+    enableCommandPalette:
+      typeof input.enableCommandPalette === 'boolean'
+        ? input.enableCommandPalette
+        : DEFAULT_PORTFOLIO_SETTINGS.enableCommandPalette,
+    enableTerminal:
+      typeof input.enableTerminal === 'boolean'
+        ? input.enableTerminal
+        : DEFAULT_PORTFOLIO_SETTINGS.enableTerminal,
+    enablePwaInstall:
+      typeof input.enablePwaInstall === 'boolean'
+        ? input.enablePwaInstall
+        : DEFAULT_PORTFOLIO_SETTINGS.enablePwaInstall,
+    enableSkillFilter:
+      typeof input.enableSkillFilter === 'boolean'
+        ? input.enableSkillFilter
+        : DEFAULT_PORTFOLIO_SETTINGS.enableSkillFilter,
+    enableReadingModes:
+      typeof input.enableReadingModes === 'boolean'
+        ? input.enableReadingModes
+        : DEFAULT_PORTFOLIO_SETTINGS.enableReadingModes,
+    enableScrollHud:
+      typeof input.enableScrollHud === 'boolean'
+        ? input.enableScrollHud
+        : DEFAULT_PORTFOLIO_SETTINGS.enableScrollHud,
+    enableSiteTelemetry:
+      typeof input.enableSiteTelemetry === 'boolean'
+        ? input.enableSiteTelemetry
+        : DEFAULT_PORTFOLIO_SETTINGS.enableSiteTelemetry,
     incidentMode: Boolean(input.incidentMode),
     incidentMessage:
       clampString(
@@ -455,6 +525,16 @@ export function getEffectivePortfolioSettings(settings: PortfolioSettings): Port
     enablePortfolioChat: false,
     enableLiveChat: false,
     enableChatLlm: false,
+    enableAnnouncements: false,
+    enableResumeStudio: false,
+    enableDigitalCard: false,
+    enableCommandPalette: false,
+    enableTerminal: false,
+    enablePwaInstall: false,
+    enableSkillFilter: false,
+    enableReadingModes: false,
+    enableScrollHud: false,
+    enableSiteTelemetry: false,
     maintenanceMessage: settings.incidentMessage || settings.maintenanceMessage,
   };
 }

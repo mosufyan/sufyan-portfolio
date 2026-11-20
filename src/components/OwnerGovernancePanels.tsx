@@ -4,19 +4,27 @@ import {
   Check,
   Clock,
   Download,
+  Filter,
+  Gauge,
   Globe2,
+  IdCard,
   KeyRound,
+  LayoutPanelTop,
   Loader2,
   LogIn,
   LogOut,
   Mail,
+  Megaphone,
+  MonitorSmartphone,
   Plus,
   Save,
+  Search,
   Settings2,
   ShieldAlert,
   ShieldBan,
   ShieldCheck,
   SlidersHorizontal,
+  Terminal,
   Trash2,
   Wrench,
 } from 'lucide-react';
@@ -573,7 +581,7 @@ export function SiteControlsPanel({ isLight }: { isLight: boolean }) {
               key: 'showAnnouncementsBadge' as const,
               icon: Settings2,
               title: 'Show Announcements Count',
-              desc: 'Displays live announcement count pill in the navigation bar.',
+              desc: 'Displays live announcement count pill in the navigation bar (when announcements are enabled).',
             },
           ].map((item) => {
             const Icon = item.icon;
@@ -601,6 +609,110 @@ export function SiteControlsPanel({ isLight }: { isLight: boolean }) {
               </label>
             );
           })}
+        </div>
+
+        <div className={`rounded-xl border p-3.5 space-y-3 ${rowCard}`}>
+          <div>
+            <div className={`text-xs font-semibold ${titleCls}`}>Visitor Feature Switches</div>
+            <div className={`text-[11px] mt-0.5 ${mutedCls}`}>
+              Enable or disable portfolio chrome for public visitors. Incident Mode forces these off.
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            {(
+              [
+                {
+                  key: 'enableAnnouncements' as const,
+                  icon: Megaphone,
+                  title: 'Announcements',
+                  desc: 'News button + announcements modal for visitors.',
+                },
+                {
+                  key: 'enableResumeStudio' as const,
+                  icon: LayoutPanelTop,
+                  title: 'Resume / CV Studio',
+                  desc: 'Open the CV preview modal (exports still need CV Exports).',
+                },
+                {
+                  key: 'enableDigitalCard' as const,
+                  icon: IdCard,
+                  title: 'Digital Card / QR',
+                  desc: 'Business card modal from Hero, Contact, Footer, and palette.',
+                },
+                {
+                  key: 'enableCommandPalette' as const,
+                  icon: Search,
+                  title: 'Command Palette',
+                  desc: '⌘K / Ctrl+K quick jump and search.',
+                },
+                {
+                  key: 'enableTerminal' as const,
+                  icon: Terminal,
+                  title: 'Engineering Terminal',
+                  desc: 'Interactive sufyanctl terminal overlay.',
+                },
+                {
+                  key: 'enablePwaInstall' as const,
+                  icon: MonitorSmartphone,
+                  title: 'PWA Install',
+                  desc: 'Install-app button and OTP install flow.',
+                },
+                {
+                  key: 'enableSkillFilter' as const,
+                  icon: Filter,
+                  title: 'Skill Filters',
+                  desc: 'Clickable skill chips and ?skill= deep links.',
+                },
+                {
+                  key: 'enableReadingModes' as const,
+                  icon: Gauge,
+                  title: 'Brief / Deep Reading',
+                  desc: 'Reading density toggles in Hero and scroll HUD.',
+                },
+                {
+                  key: 'enableScrollHud' as const,
+                  icon: LayoutPanelTop,
+                  title: 'Scroll HUD / Rail',
+                  desc: 'Desktop scroll rail and unified progress HUD.',
+                },
+                {
+                  key: 'enableSiteTelemetry' as const,
+                  icon: Globe2,
+                  title: 'Site Telemetry',
+                  desc: 'Anonymous pageview / OG share counters for Owner KPIs.',
+                },
+              ] as const
+            ).map((item) => {
+              const Icon = item.icon;
+              const checked = Boolean(draft[item.key]);
+              return (
+                <label
+                  key={item.key}
+                  className={`rounded-xl border p-3 flex items-start justify-between gap-3 cursor-pointer transition-colors ${
+                    isLight
+                      ? 'border-slate-200 bg-white'
+                      : 'border-slate-800 bg-[#090d16]'
+                  }`}
+                >
+                  <div className="flex items-start gap-2.5 min-w-0">
+                    <Icon className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+                    <div className="min-w-0">
+                      <div className={`text-xs font-semibold ${titleCls}`}>{item.title}</div>
+                      <div className={`text-[11px] leading-snug mt-0.5 ${mutedCls}`}>{item.desc}</div>
+                    </div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={(e) =>
+                      setDraft((prev) => ({ ...prev, [item.key]: e.target.checked }))
+                    }
+                    className="mt-0.5 h-4 w-4 rounded border-slate-600 text-cyan-500 focus:ring-cyan-500 shrink-0 cursor-pointer"
+                  />
+                </label>
+              );
+            })}
+          </div>
         </div>
 
         {/* Maintenance Message */}

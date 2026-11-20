@@ -82,6 +82,8 @@ describe('distributedStore (memory fallback)', () => {
       strictOtpForAll: false,
       enableContactForm: true,
       enableCvDownloads: true,
+      enablePwaInstall: true,
+      enableSiteTelemetry: true,
       incidentMode: false,
       notifyOnNewInquiry: true,
       enablePortfolioChat: true,

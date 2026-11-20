@@ -2,6 +2,7 @@ import { Linkedin } from './icons/Linkedin';
 import { Mail, ArrowUp, QrCode, Terminal } from 'lucide-react';
 import { motion } from 'motion/react';
 import { PERSONAL_INFO } from '../data/portfolioData';
+import { useFirebase } from '../contexts/FirebaseContext';
 import { HoverLift, Reveal } from './MotionPrimitives';
 import PWAInstallButton from './PWAInstallButton';
 
@@ -11,6 +12,7 @@ interface FooterProps {
 }
 
 export default function Footer({ onOpenDigitalCard, onOpenTerminal }: FooterProps) {
+  const { effectivePortfolioSettings } = useFirebase();
   const scrollToTop = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -100,7 +102,7 @@ export default function Footer({ onOpenDigitalCard, onOpenTerminal }: FooterProp
                 Operating out of San Jose, California (PST) · Global Deployments
               </li>
               <li className="pt-2 flex flex-wrap items-center gap-2">
-                <PWAInstallButton />
+                {effectivePortfolioSettings.enablePwaInstall && <PWAInstallButton />}
                 {onOpenDigitalCard && (
                   <button
                     type="button"

@@ -93,9 +93,13 @@ export default function PWAInstallButton() {
   const [gateAction, setGateAction] = useState<AccessGateAction | null>(null);
   const guideAlignClass = useModalPlacement(showManualGuide);
   const { isLight } = useTheme();
-  const { recordCvDownloadLog } = useFirebase();
+  const { recordCvDownloadLog, effectivePortfolioSettings } = useFirebase();
 
-  if (isInstalled || !canOfferInstall) {
+  if (
+    !effectivePortfolioSettings.enablePwaInstall ||
+    isInstalled ||
+    !canOfferInstall
+  ) {
     return null;
   }
 
