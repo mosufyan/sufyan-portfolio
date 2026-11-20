@@ -56,6 +56,20 @@ import {
   adminWriteCvDownload,
   isFirebaseAdminConfigured,
 } from './server/firebaseAdmin.ts';
+import { answerPortfolioQuestion, listChatSuggestions } from './server/chatKnowledge.ts';
+import {
+  appendChatMessage,
+  bumpBotQuestion,
+  bumpLiveRequest,
+  closeChatSession,
+  createChatSession,
+  getChatSession,
+  getChatStats,
+  isOwnerOnline,
+  listChatSessions,
+  publicSessionView,
+  touchOwnerPresence,
+} from './server/chatSessions.ts';
 import { buildDynamicSocialSvg, SHARE_CARD_TRACKS, type ShareTrackId } from './src/utils/ogShare.ts';
 import {
   evaluateAccessRules,
@@ -90,6 +104,51 @@ const FORCE_CV_OTP = (process.env.FORCE_CV_OTP || '').toLowerCase() === 'true';
 const ALLOWED_ORIGINS = resolveAllowedOrigins(process.env.APP_URL, PORT);
 const otpChallengeStore = new Map<string, OtpChallengeRecord>();
 const contactOtpChallengeStore = new Map<string, OtpChallengeRecord<ContactOtpPendingPayload>>();
+interface ChatLiveOtpPayload {
+  name: string;
+  email: string;
+  openingMessage: string;
+  theme: EmailTheme;
+  userAgent: string;
+  ipAddress: string;
+}
+const chatLiveOtpStore = new Map<string, OtpChallengeRecord<ChatLiveOtpPayload>>();
+
+function signChatSessionReceipt(sessionId: string, email: string): string {
+  const payload = Buffer.from(
+    JSON.stringify({ sessionId, email: email.toLowerCase(), iat: Date.now() }),
+    'utf8'
+  ).toString('base64url');
+  const sig = crypto.createHmac('sha256', OTP_SECRET).update(payload).digest('base64url');
+  return `${payload}.${sig}`;
+}
+
+function verifyChatSessionReceipt(
+  receipt: string | undefined,
+  sessionId: string
+): { ok: true; email: string } | { ok: false } {
+  if (!receipt || !receipt.includes('.')) return { ok: false };
+  const [payload, sig] = receipt.split('.');
+  if (!payload || !sig) return { ok: false };
+  const expected = crypto.createHmac('sha256', OTP_SECRET).update(payload).digest('base64url');
+  const a = Buffer.from(sig);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return { ok: false };
+  try {
+    const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as {
+      sessionId?: string;
+      email?: string;
+      iat?: number;
+    };
+    if (parsed.sessionId !== sessionId || typeof parsed.email !== 'string') return { ok: false };
+    if (typeof parsed.iat === 'number' && Date.now() - parsed.iat > 12 * 60 * 60 * 1000) {
+      return { ok: false };
+    }
+    return { ok: true, email: parsed.email.toLowerCase() };
+  } catch {
+    return { ok: false };
+  }
+}
 
 interface RuntimeOwnerPolicy {
   rules: CompactAccessRule[];
@@ -912,7 +971,7 @@ function buildOtpEmailHtml(
   name: string,
   code: string,
   theme: EmailTheme,
-  purpose: 'cv' | 'contact' = 'cv'
+  purpose: 'cv' | 'contact' | 'chat' = 'cv'
 ): string {
   const p = getEmailPalette(theme);
   const safeName = escapeHtml(name || 'there');
@@ -920,7 +979,15 @@ function buildOtpEmailHtml(
   const actionPhrase =
     purpose === 'contact'
       ? 'authenticate your email and transmit your message on <strong>mohammedsufyan.com</strong>'
-      : 'unlock your CV download on <strong>mohammedsufyan.com</strong>';
+      : purpose === 'chat'
+        ? 'verify your email and start a live portfolio chat on <strong>mohammedsufyan.com</strong>'
+        : 'unlock your CV download on <strong>mohammedsufyan.com</strong>';
+  const headerLabel =
+    purpose === 'contact'
+      ? 'Contact Transmission Verification'
+      : purpose === 'chat'
+        ? 'Live Chat Verification'
+        : 'Portfolio Access Verification';
 
   return `<!DOCTYPE html>
 <html lang="en" data-theme="${p.theme}">
@@ -938,7 +1005,7 @@ function buildOtpEmailHtml(
             <td style="padding:22px 26px;background-color:${p.headerBg};border-bottom:1px solid ${p.border};">
               <div style="font-size:15px;font-weight:700;color:${p.textStrong};">MOHAMMED SUFYAN</div>
               <div style="font-size:11px;font-family:monospace;color:${p.accent};text-transform:uppercase;margin-top:2px;">
-                ${purpose === 'contact' ? 'Contact Transmission Verification' : 'Portfolio Access Verification'}
+                ${headerLabel}
               </div>
             </td>
           </tr>
@@ -1214,20 +1281,22 @@ async function sendVisitorOtpEmail(params: {
   name: string;
   code: string;
   theme: EmailTheme;
-  purpose?: 'cv' | 'contact';
+  purpose?: 'cv' | 'contact' | 'chat';
 }): Promise<{ provider: string }> {
   const purpose = params.purpose ?? 'cv';
   const html = buildOtpEmailHtml(params.name, params.code, params.theme, purpose);
-  const text = `Hi ${params.name || 'there'},\n\nYour verification code for mohammedsufyan.com (${
-    purpose === 'contact' ? 'Transmit Message' : 'CV Access'
-  }) is: ${params.code}\n\nThis code expires in 10 minutes.`;
+  const purposeLabel =
+    purpose === 'contact' ? 'Transmit Message' : purpose === 'chat' ? 'Live Chat' : 'CV Access';
+  const text = `Hi ${params.name || 'there'},\n\nYour verification code for mohammedsufyan.com (${purposeLabel}) is: ${params.code}\n\nThis code expires in 10 minutes.`;
   return dispatchEmailMessage({
     to: params.email,
     fromDisplayName: 'Mohammed Sufyan Portfolio',
     subjectLine:
       purpose === 'contact'
         ? `${params.code} — Verification Code to Send Your Message`
-        : `${params.code} — Verification Code for Mohammed Sufyan's CV`,
+        : purpose === 'chat'
+          ? `${params.code} — Verification Code for Live Portfolio Chat`
+          : `${params.code} — Verification Code for Mohammed Sufyan's CV`,
     html,
     text,
   });
@@ -2515,6 +2584,366 @@ async function startServer() {
       console.error('CV subsequent event error:', errMsg);
       res.status(500).json({ error: 'Unable to record export event.' });
     }
+  });
+
+  // ——— Portfolio chatbot + OTP-gated live agent ———
+  app.get('/api/chat/status', (_req: Request, res: Response) => {
+    const stats = getChatStats();
+    res.status(200).json({
+      ok: true,
+      ownerOnline: stats.ownerOnline,
+      liveChatAvailable: isDirectEmailTransportConfigured(),
+      suggestions: listChatSuggestions(),
+    });
+  });
+
+  app.post('/api/chat/ask', async (req: Request, res: Response) => {
+    try {
+      if (!req.is('application/json')) {
+        res.status(415).json({ error: 'Content-Type must be application/json.' });
+        return;
+      }
+      if (rejectDisallowedOrigin(req, res)) return;
+      const clientIp = extractClientIp(req);
+      if (
+        await enforceRateLimit(res, 'chat', clientIp, {
+          maxRequests: 40,
+          error: 'Too many chat questions from this connection. Please wait a few minutes.',
+        })
+      ) {
+        return;
+      }
+      const raw = (req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {}) as {
+        question?: unknown;
+      };
+      const question = typeof raw.question === 'string' ? raw.question.trim() : '';
+      if (question.length < 3) {
+        res.status(400).json({ error: 'Please enter a question (at least 3 characters).' });
+        return;
+      }
+      bumpBotQuestion();
+      const answer = answerPortfolioQuestion(question);
+      res.status(200).json({ ok: true, ...answer, ownerOnline: isOwnerOnline() });
+    } catch {
+      res.status(500).json({ error: 'Unable to answer right now. Please try again.' });
+    }
+  });
+
+  app.post('/api/chat/live/start', async (req: Request, res: Response) => {
+    try {
+      if (!req.is('application/json')) {
+        res.status(415).json({ error: 'Content-Type must be application/json.' });
+        return;
+      }
+      if (rejectDisallowedOrigin(req, res)) return;
+      if (!isDirectEmailTransportConfigured()) {
+        res.status(503).json({
+          error: 'Live chat verification is temporarily unavailable. Please use the contact form instead.',
+        });
+        return;
+      }
+      const clientIp = extractClientIp(req);
+      if (
+        await enforceRateLimit(res, 'chat', `live:${clientIp}`, {
+          maxRequests: 12,
+          error: 'Too many live-chat requests. Please wait a few minutes.',
+        })
+      ) {
+        return;
+      }
+
+      const raw = (req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {}) as {
+        name?: unknown;
+        email?: unknown;
+        openingMessage?: unknown;
+        website?: unknown;
+        turnstileToken?: unknown;
+        theme?: unknown;
+      };
+      if (isHoneypotTriggered(raw.website)) {
+        res.status(200).json({
+          ok: true,
+          status: 'otp_required',
+          challengeId: 'filtered',
+          challengeToken: 'filtered',
+          maskedEmail: 'hidden@example.com',
+        });
+        return;
+      }
+      if (await rejectFailedTurnstile(req, res, raw)) return;
+
+      const name = typeof raw.name === 'string' ? sanitizeHeaderValue(raw.name).slice(0, 120) : '';
+      const email = typeof raw.email === 'string' ? sanitizeHeaderValue(raw.email).slice(0, 254) : '';
+      const openingMessage =
+        typeof raw.openingMessage === 'string' ? raw.openingMessage.trim().slice(0, 2000) : '';
+      const theme = parseEmailTheme(raw.theme);
+
+      if (!name || name.length < 2) {
+        res.status(400).json({ error: 'Please enter your name.' });
+        return;
+      }
+      if (!isValidEmailAddress(email)) {
+        res.status(400).json({ error: 'Please provide a valid email address for OTP verification.' });
+        return;
+      }
+      const mxCheck = await verifyEmailMxRecord(email);
+      if (!mxCheck.ok) {
+        res.status(400).json({ error: mxCheck.reason || 'Please provide a valid, active email domain.' });
+        return;
+      }
+
+      const accessCheck = evaluateAccessRules(runtimeOwnerPolicy.rules, {
+        email,
+        ipAddress: clientIp,
+      });
+      if (accessCheck.blocked) {
+        res.status(403).json({ error: 'This email or network address is restricted from live chat.' });
+        return;
+      }
+
+      const otpKey = `chat:${email.toLowerCase()}`;
+      if (
+        await enforceRateLimit(res, 'otp-email', otpKey, {
+          maxRequests: 5,
+          error: 'Too many verification codes sent to this email. Please wait a few minutes.',
+        })
+      ) {
+        return;
+      }
+
+      bumpLiveRequest();
+      const userAgent =
+        typeof req.headers['user-agent'] === 'string'
+          ? sanitizeHeaderValue(req.headers['user-agent']).slice(0, 220)
+          : 'Unknown';
+      const challenge = createOtpChallenge(
+        chatLiveOtpStore,
+        {
+          name,
+          email: email.toLowerCase(),
+          openingMessage,
+          theme,
+          userAgent,
+          ipAddress: clientIp,
+        },
+        OTP_SECRET
+      );
+      await sendVisitorOtpEmail({
+        email,
+        name,
+        code: challenge.code,
+        theme,
+        purpose: 'chat',
+      });
+      res.status(200).json({
+        ok: true,
+        status: 'otp_required',
+        challengeId: challenge.challengeId,
+        challengeToken: challenge.challengeToken,
+        maskedEmail: maskEmailAddress(email),
+        expiresInMinutes: 10,
+        ownerOnline: isOwnerOnline(),
+        message: `Verification code sent to ${maskEmailAddress(email)}.`,
+      });
+    } catch (error) {
+      console.error('Chat live start error:', error instanceof Error ? error.message : error);
+      res.status(500).json({ error: 'Unable to start live chat verification right now.' });
+    }
+  });
+
+  app.post('/api/chat/live/verify', async (req: Request, res: Response) => {
+    try {
+      if (!req.is('application/json')) {
+        res.status(415).json({ error: 'Content-Type must be application/json.' });
+        return;
+      }
+      if (rejectDisallowedOrigin(req, res)) return;
+      const clientIp = extractClientIp(req);
+      if (
+        await enforceRateLimit(res, 'chat', `verify:${clientIp}`, {
+          maxRequests: 20,
+          error: 'Too many verification attempts. Please wait a few minutes.',
+        })
+      ) {
+        return;
+      }
+
+      const body = (req.body && typeof req.body === 'object' && !Array.isArray(req.body)
+        ? req.body
+        : {}) as { challengeId?: unknown; challengeToken?: unknown; code?: unknown };
+      const challengeId = typeof body.challengeId === 'string' ? body.challengeId.trim() : '';
+      const challengeToken = typeof body.challengeToken === 'string' ? body.challengeToken.trim() : '';
+      const code = typeof body.code === 'string' ? body.code.trim() : '';
+      if (!challengeId || !challengeToken || !/^\d{6}$/.test(code.replace(/\s+/g, ''))) {
+        res.status(400).json({ error: 'Please enter the valid 6-digit verification code.' });
+        return;
+      }
+
+      const verified = verifyOtpChallenge(
+        chatLiveOtpStore,
+        { challengeId, challengeToken, code },
+        OTP_SECRET
+      );
+      if (!verified.ok) {
+        res.status(400).json({ error: verified.error });
+        return;
+      }
+
+      const p = verified.payload;
+      const session = createChatSession({
+        visitorName: p.name,
+        visitorEmail: p.email,
+        ipAddress: p.ipAddress || clientIp,
+        userAgent: p.userAgent,
+        openingMessage: p.openingMessage,
+      });
+      const sessionReceipt = signChatSessionReceipt(session.sessionId, p.email);
+      res.status(200).json({
+        ok: true,
+        status: 'live',
+        sessionReceipt,
+        session: publicSessionView(session),
+        ownerOnline: isOwnerOnline(),
+      });
+    } catch (error) {
+      console.error('Chat live verify error:', error instanceof Error ? error.message : error);
+      res.status(500).json({ error: 'Unable to complete live chat verification.' });
+    }
+  });
+
+  app.get('/api/chat/live/:sessionId', (req: Request, res: Response) => {
+    const sessionId = typeof req.params.sessionId === 'string' ? req.params.sessionId : '';
+    const receipt = typeof req.query.receipt === 'string' ? req.query.receipt : undefined;
+    const auth = verifyChatSessionReceipt(receipt, sessionId);
+    if (!auth.ok) {
+      res.status(401).json({ error: 'Invalid or expired chat session.' });
+      return;
+    }
+    const session = getChatSession(sessionId);
+    if (!session || session.visitorEmail !== auth.email) {
+      res.status(404).json({ error: 'Chat session not found.' });
+      return;
+    }
+    res.status(200).json({
+      ok: true,
+      session: publicSessionView(session),
+      ownerOnline: isOwnerOnline(),
+    });
+  });
+
+  app.post('/api/chat/live/:sessionId/message', async (req: Request, res: Response) => {
+    try {
+      if (!req.is('application/json')) {
+        res.status(415).json({ error: 'Content-Type must be application/json.' });
+        return;
+      }
+      if (rejectDisallowedOrigin(req, res)) return;
+      const sessionId = typeof req.params.sessionId === 'string' ? req.params.sessionId : '';
+      const body = (req.body && typeof req.body === 'object' && !Array.isArray(req.body)
+        ? req.body
+        : {}) as { receipt?: unknown; text?: unknown };
+      const receipt = typeof body.receipt === 'string' ? body.receipt : undefined;
+      const auth = verifyChatSessionReceipt(receipt, sessionId);
+      if (!auth.ok) {
+        res.status(401).json({ error: 'Invalid or expired chat session.' });
+        return;
+      }
+      const clientIp = extractClientIp(req);
+      if (
+        await enforceRateLimit(res, 'chat', `msg:${clientIp}`, {
+          maxRequests: 60,
+          error: 'Too many chat messages. Please slow down.',
+        })
+      ) {
+        return;
+      }
+      const text = typeof body.text === 'string' ? body.text : '';
+      const session = getChatSession(sessionId);
+      if (!session || session.visitorEmail !== auth.email) {
+        res.status(404).json({ error: 'Chat session not found.' });
+        return;
+      }
+      const updated = appendChatMessage(sessionId, 'visitor', text);
+      if (!updated) {
+        res.status(400).json({ error: 'Unable to send message (session may be closed).' });
+        return;
+      }
+      res.status(200).json({ ok: true, session: publicSessionView(updated), ownerOnline: isOwnerOnline() });
+    } catch {
+      res.status(500).json({ error: 'Unable to send chat message.' });
+    }
+  });
+
+  app.post('/api/owner/presence', async (req: Request, res: Response) => {
+    const authCheck = await verifyConsoleActorToken(req.headers.authorization);
+    if (!authCheck.ok) {
+      res.status(401).json({ error: authCheck.error });
+      return;
+    }
+    touchOwnerPresence();
+    res.status(200).json({ ok: true, ...getChatStats() });
+  });
+
+  app.get('/api/owner/chat/sessions', async (req: Request, res: Response) => {
+    const authCheck = await verifyConsoleActorToken(req.headers.authorization);
+    if (!authCheck.ok) {
+      res.status(401).json({ error: authCheck.error });
+      return;
+    }
+    touchOwnerPresence();
+    res.status(200).json({
+      ok: true,
+      stats: getChatStats(),
+      sessions: listChatSessions().map((s) => publicSessionView(s)),
+    });
+  });
+
+  app.post('/api/owner/chat/reply', async (req: Request, res: Response) => {
+    try {
+      if (!req.is('application/json')) {
+        res.status(415).json({ error: 'Content-Type must be application/json.' });
+        return;
+      }
+      if (rejectDisallowedOrigin(req, res)) return;
+      const authCheck = await verifyConsoleActorToken(req.headers.authorization);
+      if (!authCheck.ok) {
+        res.status(401).json({ error: authCheck.error });
+        return;
+      }
+      touchOwnerPresence();
+      const raw = (req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {}) as {
+        sessionId?: unknown;
+        text?: unknown;
+      };
+      const sessionId = typeof raw.sessionId === 'string' ? raw.sessionId.trim() : '';
+      const text = typeof raw.text === 'string' ? raw.text : '';
+      const updated = appendChatMessage(sessionId, 'owner', text);
+      if (!updated) {
+        res.status(400).json({ error: 'Unable to reply (invalid or closed session).' });
+        return;
+      }
+      res.status(200).json({ ok: true, session: publicSessionView(updated) });
+    } catch {
+      res.status(500).json({ error: 'Unable to send owner chat reply.' });
+    }
+  });
+
+  app.post('/api/owner/chat/close', async (req: Request, res: Response) => {
+    const authCheck = await verifyConsoleActorToken(req.headers.authorization);
+    if (!authCheck.ok) {
+      res.status(401).json({ error: authCheck.error });
+      return;
+    }
+    const raw = (req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {}) as {
+      sessionId?: unknown;
+    };
+    const sessionId = typeof raw.sessionId === 'string' ? raw.sessionId.trim() : '';
+    const closed = closeChatSession(sessionId);
+    if (!closed) {
+      res.status(404).json({ error: 'Chat session not found.' });
+      return;
+    }
+    res.status(200).json({ ok: true, session: publicSessionView(closed) });
   });
 
   // Express 5 / path-to-regexp require named wildcards (bare `/api/*` crashes startup).

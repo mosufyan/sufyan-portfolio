@@ -79,6 +79,12 @@ Email security concerns to **sufyan.net@gmail.com**. Please allow reasonable tim
 4. Owner policy sync (`/api/owner/policy-sync`) now mirrors to Redis so all replicas share pause/allow/block flags.
 5. OTP challenge maps remain in-process; keep sticky sessions or migrate OTP stores to Redis before scaling OTP heavily across many replicas.
 
+### Portfolio chatbot & live agent
+
+- **Bot answers** are grounded retrieval over `portfolioData` (no LLM required). Optional future: wire `CHAT_LLM_*` for generative polish on top of the same sources.
+- **Live agent** requires email OTP (same mail transport as contact/CV). Sessions live in Express memory + `.owner-chat-cache.json`; owner console `#owner/chat` replies in near-real-time while presence heartbeats mark you online.
+- Rate-limited under the `chat` bucket; allow/block rules still apply to live-chat emails.
+
 ### Quick env checklist
 
 ```bash

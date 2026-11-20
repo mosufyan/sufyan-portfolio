@@ -21,6 +21,7 @@ import EngineeringTerminal from './components/EngineeringTerminal';
 import UnifiedScrollHud, { type PortfolioReadingMode } from './components/UnifiedScrollHud';
 import DigitalCardModal from './components/DigitalCardModal';
 import OwnerConsolePage from './components/OwnerConsolePage';
+import ChatWidget from './components/ChatWidget';
 import { Certification } from './data/portfolioData';
 import { normalizeSelectedSkills, toggleSelectedSkill } from './utils/skillMatcher';
 import {
@@ -281,6 +282,7 @@ export default function App() {
                 onChangeReadingMode={setReadingMode}
                 onOpenCommandPalette={() => setCommandPaletteOpen(true)}
               />
+              <ChatWidget />
             </>
           )}
         </div>

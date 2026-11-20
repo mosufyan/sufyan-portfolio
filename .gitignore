@@ -9,3 +9,4 @@ coverage/
 !.env.example
 .owner-policy-cache.json
 .owner-telemetry-cache.json
+.owner-chat-cache.json

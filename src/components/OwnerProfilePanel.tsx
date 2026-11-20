@@ -6,6 +6,7 @@ import {
   HeartPulse,
   Link2,
   LogOut,
+  MessageSquare,
   MonitorSmartphone,
   ShieldCheck,
   UserRound,
@@ -101,6 +102,8 @@ export default function OwnerProfilePanel({
     [contactMessageLogs, cvDownloadLogs, telemetry]
   );
 
+  const openChatTracking = () => onOpenSection('chat');
+
   return (
     <div className="space-y-4">
       <div className={`rounded-xl border p-4 sm:p-5 flex flex-col sm:flex-row gap-4 ${card}`}>
@@ -164,6 +167,23 @@ export default function OwnerProfilePanel({
           </div>
         ))}
       </div>
+
+      <button
+        type="button"
+        onClick={openChatTracking}
+        className={`w-full rounded-xl border p-4 text-left transition-colors cursor-pointer ${card} ${
+          isLight ? 'hover:border-sky-300' : 'hover:border-cyan-500/40'
+        }`}
+      >
+        <div className={`text-xs font-display font-bold flex items-center gap-1.5 ${titleCls}`}>
+          <MessageSquare className="w-4 h-4 text-cyan-400" />
+          Chat & live-agent tracking
+        </div>
+        <p className={`mt-1 text-[11px] font-mono ${mutedCls}`}>
+          Open the Chat console for bot Q&A volume, OTP live sessions, and real-time visitor replies. Presence
+          stays warm while the Owner Console is open.
+        </p>
+      </button>
 
       <div className={`rounded-xl border p-4 space-y-2 ${card}`}>
         <div className={`text-xs font-display font-bold flex items-center gap-1.5 ${titleCls}`}>

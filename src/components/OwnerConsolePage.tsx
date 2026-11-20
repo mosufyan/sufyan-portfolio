@@ -15,6 +15,7 @@ import {
   UserRound,
   Users,
   Wrench,
+  Headphones,
 } from 'lucide-react';
 import { useFirebase } from '../contexts/FirebaseContext';
 import { useTheme } from '../theme/ThemeProvider';
@@ -30,6 +31,7 @@ import OwnerAlertsPanel from './OwnerAlertsPanel';
 import OwnerFunnelPanel from './OwnerFunnelPanel';
 import OwnerProfilePanel, { useOwnerOpsHealth } from './OwnerProfilePanel';
 import { DelegatesPanel } from './OwnerGovernancePanels';
+import OwnerChatPanel from './OwnerChatPanel';
 
 export type OwnerConsoleSection = OwnerConsoleSectionId;
 
@@ -58,6 +60,30 @@ export default function OwnerConsolePage({
     portfolioSettings,
     signOutOwner,
   } = useFirebase();
+
+  // Keep live-chat "owner online" presence warm while console is open
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    const beat = async () => {
+      try {
+        const token = await user.getIdToken();
+        if (cancelled) return;
+        await fetch('/api/owner/presence', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      } catch {
+        /* non-fatal */
+      }
+    };
+    void beat();
+    const id = window.setInterval(() => void beat(), 45_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [user]);
 
   const [section, setSectionState] = useState<OwnerConsoleSection>(() => {
     if (initialSection) return initialSection;
@@ -112,6 +138,7 @@ export default function OwnerConsolePage({
       items: [
         { id: 'funnel', label: 'Funnel', icon: Activity },
         { id: 'alerts', label: 'Alerts', icon: Bell },
+        { id: 'chat', label: 'Chat & Live Agent', icon: Headphones },
       ],
     },
     {
@@ -199,6 +226,11 @@ export default function OwnerConsolePage({
     alerts: {
       title: 'Alerts Center & Digests',
       subtitle: 'Watchers for new leads, overdue CRM actions, risk spikes, plus on-demand email digests.',
+    },
+    chat: {
+      title: 'Chat & Live Agent',
+      subtitle:
+        'Grounded portfolio Q&A volume, OTP-verified live sessions, and real-time visitor replies while you are online.',
     },
     delegates: {
       title: 'Secondary Admin Delegates',
@@ -491,6 +523,8 @@ export default function OwnerConsolePage({
                   onOpenSection={(next) => setSection(next)}
                   telemetry={telemetry}
                 />
+              ) : section === 'chat' ? (
+                <OwnerChatPanel isLight={isLight} />
               ) : section === 'delegates' ? (
                 <DelegatesPanel isLight={isLight} />
               ) : section === 'announcements' ? (
