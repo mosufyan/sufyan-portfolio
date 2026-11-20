@@ -15,6 +15,7 @@ import {
   X,
 } from 'lucide-react';
 import { useTheme } from '../theme/ThemeProvider';
+import { useModalPlacement } from '../hooks/useModalPlacement';
 import ModalHeaderScan from './ModalHeaderScan';
 import { EASE_OUT_EXPO } from './MotionPrimitives';
 import ShineSurface from './ShineSurface';
@@ -123,6 +124,7 @@ export default function AccessGateModal({
 }: AccessGateModalProps) {
   const { isLight: siteIsLight } = useTheme();
   const isLight = isLightProp ?? siteIsLight;
+  const alignClass = useModalPlacement(action !== null);
 
   const [form, setForm] = useState({
     name: '',
@@ -263,7 +265,7 @@ export default function AccessGateModal({
           exit={{ opacity: 0 }}
           transition={{ duration: 0.18 }}
           onClick={close}
-          className={`fixed inset-0 z-[60] flex justify-center p-4 backdrop-blur-sm overflow-y-auto print:hidden ${
+          className={`fixed inset-0 z-[60] flex ${alignClass} justify-center p-2.5 sm:p-5 pt-[max(0.75rem,env(safe-area-inset-top))] sm:pt-6 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur-sm overflow-y-auto print:hidden ${
             isLight ? 'bg-slate-900/45' : 'bg-black/80'
           }`}
         >
@@ -273,10 +275,10 @@ export default function AccessGateModal({
             exit={{ opacity: 0, scale: 0.96, y: 10 }}
             transition={{ duration: 0.22, ease: EASE_OUT_EXPO }}
             onClick={(e) => e.stopPropagation()}
-            className={`access-gate-modal w-full max-w-lg rounded-2xl border shadow-2xl overflow-hidden my-auto ${panel}`}
+            className={`access-gate-modal w-full max-w-lg 2xl:max-w-xl rounded-2xl border shadow-2xl overflow-hidden flex flex-col max-h-[min(calc(100dvh-1.5rem),35.5rem)] sm:max-h-[min(calc(100dvh-2.5rem),36rem)] lg:max-h-[min(calc(100dvh-3rem),44rem)] ${panel}`}
           >
             {/* Always-dark header — must stay outside .site-theme remapping (ported to body) */}
-            <div className={`relative flex items-start justify-between gap-3 px-5 py-4 border-b ${header}`}>
+            <div className={`relative shrink-0 flex items-start justify-between gap-3 px-5 py-4 border-b ${header}`}>
               <ModalHeaderScan active={action !== null} />
               <div className="flex items-center gap-3 min-w-0">
                 <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${lockBox}`}>
@@ -310,7 +312,7 @@ export default function AccessGateModal({
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="p-5 space-y-4">
+            <form onSubmit={handleSubmit} className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 sm:p-5 space-y-4">
               <div className="sr-only" aria-hidden="true">
                 <label htmlFor="access-gate-website">Leave this field blank</label>
                 <input

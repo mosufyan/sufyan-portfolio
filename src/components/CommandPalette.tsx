@@ -1,5 +1,6 @@
 import { Linkedin } from './icons/Linkedin';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Award,
   Briefcase,
@@ -21,6 +22,7 @@ import {
 } from 'lucide-react';
 import { downloadVCard } from '../utils/vcard';
 import { AnimatePresence, motion } from 'motion/react';
+import { useModalPlacement } from '../hooks/useModalPlacement';
 import {
   AWARDS,
   CERTIFICATIONS,
@@ -67,6 +69,7 @@ export default function CommandPalette({
   onOpenTerminal,
 }: CommandPaletteProps) {
   const { isLight } = useTheme();
+  const alignClass = useModalPlacement(isOpen);
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -416,7 +419,7 @@ export default function CommandPalette({
     : 'border-slate-800/80 bg-[#070b14] text-slate-500';
   const backdrop = isLight ? 'bg-slate-900/45' : 'bg-slate-950/80';
 
-  return (
+  const modal = (
     <AnimatePresence>
       {isOpen && (
         <motion.div
@@ -425,7 +428,7 @@ export default function CommandPalette({
           exit={{ opacity: 0 }}
           transition={{ duration: 0.16 }}
           onClick={onClose}
-          className={`fixed inset-0 z-50 flex items-start justify-center backdrop-blur-sm px-3 sm:px-4 pt-[max(4rem,env(safe-area-inset-top))] sm:pt-24 pb-[max(2rem,env(safe-area-inset-bottom))] overflow-y-auto print:hidden ${backdrop}`}
+          className={`fixed inset-0 z-50 flex ${alignClass} justify-center backdrop-blur-sm px-2.5 sm:px-5 pt-[max(0.75rem,env(safe-area-inset-top))] sm:pt-6 pb-[max(0.75rem,env(safe-area-inset-bottom))] overflow-y-auto print:hidden ${backdrop}`}
           role="dialog"
           aria-modal="true"
           aria-label="Quick command palette"
@@ -437,10 +440,10 @@ export default function CommandPalette({
             transition={{ duration: 0.18, ease: EASE_OUT_EXPO }}
             onClick={(e) => e.stopPropagation()}
             onKeyDown={handleKeyDown}
-            className={`command-palette w-full max-w-2xl rounded-2xl border overflow-hidden ${panel}`}
+            className={`command-palette w-full max-w-2xl 2xl:max-w-3xl rounded-2xl border overflow-hidden flex flex-col max-h-[min(calc(100dvh-1.5rem),35.5rem)] sm:max-h-[min(calc(100dvh-2.5rem),36rem)] lg:max-h-[min(calc(100dvh-3rem),44rem)] ${panel}`}
           >
             {/* Search bar only — always dark for brand consistency */}
-            <div className="relative flex items-center gap-3 px-4 py-3.5 border-b border-slate-800/90 bg-[#070b14]">
+            <div className="relative shrink-0 flex items-center gap-3 px-4 py-3.5 border-b border-slate-800/90 bg-[#070b14]">
               <ModalHeaderScan active={isOpen} />
               <Search className="w-4 h-4 text-cyan-400 shrink-0" />
               <input
@@ -472,7 +475,7 @@ export default function CommandPalette({
             </div>
 
             {/* Results list — follows site theme */}
-            <div ref={listRef} className="max-h-[60vh] overflow-y-auto p-2 space-y-1">
+            <div ref={listRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-2 space-y-1">
               {filteredItems.length > 0 ? (
                 filteredItems.map((item, idx) => {
                   const isActive = idx === activeIndex;
@@ -522,7 +525,7 @@ export default function CommandPalette({
             </div>
 
             {/* Footer Hints — follows site theme */}
-            <div className={`flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 border-t text-[11px] font-mono ${footer}`}>
+            <div className={`shrink-0 flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 border-t text-[11px] font-mono ${footer}`}>
               <div className="flex items-center gap-3">
                 <span>↑↓ Navigate</span>
                 <span>↵ Open / Filter</span>
@@ -535,4 +538,7 @@ export default function CommandPalette({
       )}
     </AnimatePresence>
   );
+
+  if (typeof document === 'undefined') return null;
+  return createPortal(modal, document.body);
 }

@@ -287,6 +287,7 @@ export function CvTrajectoryAndCloudStrip({ isLight, accent = 'cyan' }: ThemePro
     >
       {/* Left: 13+ Year Career Trajectory Bar */}
       <div
+        data-pdf-subblock
         className={`md:col-span-7 print:col-span-7 pdf-span-7 rounded-xl border p-4 flex flex-col justify-between ${cardCls}`}
       >
         <div>
@@ -345,6 +346,7 @@ export function CvTrajectoryAndCloudStrip({ isLight, accent = 'cyan' }: ThemePro
 
       {/* Right: Compact 5-Axis Multi-Cloud & AI Balance Mini-Radar */}
       <div
+        data-pdf-subblock
         className={`md:col-span-5 print:col-span-5 pdf-span-5 rounded-xl border p-4 flex flex-col justify-between ${cardCls}`}
       >
         <div className={`flex items-center justify-between gap-2 pb-2 border-b ${dividerCls}`}>

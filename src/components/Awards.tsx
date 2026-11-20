@@ -1,7 +1,20 @@
 import { Linkedin } from './icons/Linkedin';
-import { useEffect, useState } from 'react';
-import { Medal, Star, Trophy, Building2, Search, ChevronDown, ChevronsUpDown, ExternalLink, Quote, LayoutGrid, Radar } from 'lucide-react';
-import { AnimatePresence, motion } from 'motion/react';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  Medal,
+  Star,
+  Trophy,
+  Building2,
+  Search,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsUpDown,
+  CheckCircle2,
+  LayoutGrid,
+  Radar,
+} from 'lucide-react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Award, AWARDS_BY_ORGANIZATION, LINKEDIN_RECOMMENDATIONS } from '../data/portfolioData';
 import { useTheme } from '../theme/ThemeProvider';
 import { CollapseTimeline, CollapseTimelineNode } from './CollapseTimeline';
@@ -10,19 +23,33 @@ import CiscoName from './CiscoName';
 import { Reveal, EASE_OUT_EXPO, SpotlightCard } from './MotionPrimitives';
 import RecognitionRadar from './RecognitionRadar';
 import SectionScanLine from './SectionScanLine';
+import type { PortfolioReadingMode } from './UnifiedScrollHud';
 
-export default function Awards() {
+interface AwardsProps {
+  readingMode?: PortfolioReadingMode;
+}
+
+export default function Awards({ readingMode = 'deep' }: AwardsProps) {
   const { isLight } = useTheme();
+  const shouldReduceMotion = useReducedMotion();
   const [filterOrg, setFilterOrg] = useState<'all' | 'Cisco' | 'HCL' | 'TCS'>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'radar'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
   const [recFilter, setRecFilter] = useState<'featured' | 'all' | 'manager' | 'direct_report' | 'peer'>('featured');
-  const [recsExpanded, setRecsExpanded] = useState(false);
+  const [carouselIdx, setCarouselIdx] = useState(0);
+  const [carouselDirection, setCarouselDirection] = useState<1 | -1>(1);
+  const [showAllRecGrid, setShowAllRecGrid] = useState(false);
   const [expandedOrgs, setExpandedOrgs] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(AWARDS_BY_ORGANIZATION.map((group) => [group.organization, false]))
   );
 
   const normalizedQuery = searchQuery.trim().toLowerCase();
+
+  useEffect(() => {
+    if (readingMode === 'brief') {
+      setShowAllRecGrid(false);
+    }
+  }, [readingMode]);
 
   const filteredGroups = AWARDS_BY_ORGANIZATION.filter((group) => {
     if (filterOrg === 'all') return true;
@@ -44,10 +71,32 @@ export default function Awards() {
       );
       return {
         ...group,
-        awards: matchingAwards
+        awards: matchingAwards,
       };
     })
     .filter((group) => group.awards.length > 0);
+
+  const matchingRecs = useMemo(() => {
+    return LINKEDIN_RECOMMENDATIONS.filter((rec) => {
+      const matchesFilter =
+        recFilter === 'all'
+          ? true
+          : recFilter === 'featured'
+            ? Boolean(rec.featured)
+            : rec.relationshipType === recFilter;
+      const matchesSearch =
+        !normalizedQuery ||
+        rec.author.toLowerCase().includes(normalizedQuery) ||
+        rec.role.toLowerCase().includes(normalizedQuery) ||
+        rec.quote.toLowerCase().includes(normalizedQuery);
+      return matchesFilter && matchesSearch;
+    });
+  }, [recFilter, normalizedQuery]);
+
+  // Reset carousel to slide 0 cleanly whenever filter/search narrows or shifts
+  useEffect(() => {
+    setCarouselIdx(0);
+  }, [recFilter, normalizedQuery]);
 
   // Auto-expand organization groups & recommendations that match an active search query
   useEffect(() => {
@@ -78,7 +127,6 @@ export default function Awards() {
         rec.quote.toLowerCase().includes(normalizedQuery)
     );
     if (matchesRec) {
-      setRecsExpanded(true);
       setRecFilter('all');
     }
   }, [normalizedQuery]);
@@ -86,7 +134,7 @@ export default function Awards() {
   const toggleExpandOrg = (orgName: string) => {
     setExpandedOrgs((prev) => ({
       ...prev,
-      [orgName]: !prev[orgName]
+      [orgName]: !prev[orgName],
     }));
   };
 
@@ -106,6 +154,15 @@ export default function Awards() {
   };
 
   const totalAwardsCount = AWARDS_BY_ORGANIZATION.reduce((acc, curr) => acc + curr.awards.length, 0);
+
+  const safeIdx = matchingRecs.length > 0 ? carouselIdx % matchingRecs.length : 0;
+  const activeRec = matchingRecs[safeIdx] ?? null;
+
+  const stepCarousel = (delta: 1 | -1) => {
+    if (matchingRecs.length <= 1) return;
+    setCarouselDirection(delta);
+    setCarouselIdx((prev) => (prev + delta + matchingRecs.length) % matchingRecs.length);
+  };
 
   const renderAwardsGrid = (awards: Award[]) => (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 print:grid-cols-3 gap-5">
@@ -152,7 +209,9 @@ export default function Awards() {
           <div className="pt-3 mt-4 border-t border-slate-800/80 flex items-center justify-between text-[11px] font-mono text-slate-400">
             <span className="flex items-center gap-1.5 text-slate-400 truncate">
               <Medal className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-              <span className="truncate">{award.associatedWith ? `Associated with ${award.associatedWith}` : 'Official Citation'}</span>
+              <span className="truncate">
+                {award.associatedWith ? `Associated with ${award.associatedWith}` : 'Official Citation'}
+              </span>
             </span>
             <span className="text-emerald-400 shrink-0 ml-2">Awarded</span>
           </div>
@@ -168,21 +227,21 @@ export default function Awards() {
         {/* Section Header */}
         <Reveal className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10">
           <HeaderSpotlight className="min-w-0">
-          <div>
-            <div className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-cyan-400 tracking-wider uppercase mb-2">
-              <Trophy className="w-3.5 h-3.5" />
-              <span>OFFICIAL RECOGNITIONS &amp; HONORS</span>
+            <div>
+              <div className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-cyan-400 tracking-wider uppercase mb-2">
+                <Trophy className="w-3.5 h-3.5" />
+                <span>OFFICIAL RECOGNITIONS &amp; HONORS</span>
+              </div>
+              <h2 className="text-2xl sm:text-3xl lg:text-4xl font-display font-bold text-white tracking-tight">
+                Official Recognitions &amp; Honors
+              </h2>
+              <p className="mt-2 text-sm sm:text-base text-slate-400 max-w-3xl">
+                Peer endorsements, corporate excellence citations, and leadership awards across <CiscoName />, HCL America Inc./HCLTech, and Tata Consultancy Services.
+              </p>
             </div>
-            <h2 className="text-2xl sm:text-3xl lg:text-4xl font-display font-bold text-white tracking-tight">
-              Official Recognitions &amp; Honors
-            </h2>
-            <p className="mt-2 text-sm sm:text-base text-slate-400 max-w-3xl">
-              Peer endorsements, corporate excellence citations, and leadership awards across <CiscoName />, HCL America Inc./HCLTech, and Tata Consultancy Services.
-            </p>
-          </div>
           </HeaderSpotlight>
 
-          {/* Search Box (targeted slot) */}
+          {/* Search Box */}
           <div className="relative w-full md:w-72 shrink-0 print:hidden">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
@@ -205,27 +264,27 @@ export default function Awards() {
           </div>
         </Reveal>
 
-        {/* Featured recognition story */}
-        <Reveal className="mb-8">
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, amount: 0.2 }}
-            transition={{ duration: 0.45, ease: EASE_OUT_EXPO }}
-            className="featured-story-card rounded-2xl border border-cyan-500/35 bg-gradient-to-br from-cyan-950/40 via-[#0d121f]/90 to-[#0a0e1a] p-5 sm:p-6"
+        {/* Open Hairline Editorial Feature — rhythm breaker without heavy nested border box */}
+        <Reveal className="mb-10">
+          <div
+            className={`border-y py-6 sm:py-7 grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-8 items-start ${
+              isLight ? 'border-sky-200/90' : 'border-cyan-500/25'
+            }`}
           >
-            <div className="featured-story-eyebrow text-[10px] font-mono uppercase tracking-wider text-cyan-400 mb-2">
-              Featured story · Oct 2026
+            <div className="lg:col-span-5">
+              <div className="text-[11px] font-mono uppercase tracking-wider text-cyan-400 mb-1.5">
+                Featured Milestone · Oct 2026
+              </div>
+              <h3 className="text-lg sm:text-xl font-display font-bold text-white tracking-tight">
+                Cisco Systems Inc. STO Data Platform Launch
+              </h3>
             </div>
-            <h3 className="featured-story-title text-lg sm:text-xl font-display font-bold text-white tracking-tight">
-              Cisco Systems Inc. STO Data Platform Launch
-            </h3>
-            <p className="featured-story-body mt-2 text-sm text-slate-300 leading-relaxed max-w-3xl">
+            <p className="lg:col-span-7 text-sm text-slate-300 leading-relaxed">
               Awarded Cisco Play to Win Connected Recognition for shipping the security data platform at the
               core of Project Atlas — unifying shared services and governed data so STO teams can build,
               automate, and innovate with confidence.
             </p>
-          </motion.div>
+          </div>
         </Reveal>
 
         {/* Org Filter Pills + Expand/Collapse All */}
@@ -332,7 +391,8 @@ export default function Awards() {
               }}
               onJumpToEndorsements={(nextRecFilter) => {
                 setRecFilter(nextRecFilter);
-                setRecsExpanded(true);
+                setCarouselIdx(0);
+                setShowAllRecGrid(true);
                 requestAnimationFrame(() => {
                   document.getElementById('linkedin-recommendations')?.scrollIntoView({
                     behavior: 'smooth',
@@ -344,251 +404,373 @@ export default function Awards() {
           </div>
         )}
 
-        {/* Corporate Collapsible Grouped Lists + LinkedIn recommendations timeline */}
+        {/* Corporate Collapsible Grouped Lists + Interactive Endorsement Carousel */}
         <CollapseTimeline gapClassName="space-y-0">
-        {viewMode === 'grid' && (
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={filterOrg}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            transition={{ duration: 0.22, ease: EASE_OUT_EXPO }}
-            className="space-y-6"
-          >
-            {filteredGroups.map((group) => {
-              const isExpanded = expandedOrgs[group.organization] ?? false;
+          {viewMode === 'grid' && (
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={filterOrg}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.22, ease: EASE_OUT_EXPO }}
+                className="space-y-6"
+              >
+                {filteredGroups.map((group) => {
+                  const isExpanded = expandedOrgs[group.organization] ?? false;
 
-              return (
-                <CollapseTimelineNode key={group.organization} pulse={isExpanded}>
-                <motion.div
-                  layout
-                  initial={{ opacity: 0, y: 16 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true, amount: 0.05 }}
-                  transition={{ duration: 0.4, ease: EASE_OUT_EXPO }}
-                  className="rounded-2xl border border-slate-800 hover:border-slate-700/80 bg-[#0d121f]/70 overflow-hidden shadow-xl transition-colors"
-                >
-                  {/* Collapsible Organization Header */}
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    aria-expanded={isExpanded}
-                    onClick={() => toggleExpandOrg(group.organization)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        toggleExpandOrg(group.organization);
-                      }
-                    }}
-                    className={`pdf-keep-next print:break-inside-avoid flex flex-col sm:flex-row sm:items-center justify-between p-5 sm:p-6 bg-[#0a0e1a] ${
-                      isExpanded ? 'border-b border-slate-800/80' : ''
-                    } cursor-pointer hover:bg-[#0c1120] focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/60 transition-colors gap-3`}
-                  >
-                    <div className="flex items-start sm:items-center gap-3 min-w-0">
-                      <div className="flex h-10 w-10 sm:h-11 sm:w-11 shrink-0 items-center justify-center rounded-xl bg-cyan-950/40 border border-cyan-500/30 text-cyan-400">
-                        <Building2 className="w-5 h-5" />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2.5 flex-wrap">
-                          <h3 className="text-lg sm:text-xl font-display font-bold text-white tracking-tight">
-                            {group.organization.includes('Cisco') ? <CiscoName /> : group.organization}
-                          </h3>
-                          <span className="text-xs font-mono text-cyan-400 px-2.5 py-0.5 rounded bg-cyan-950/30 border border-cyan-500/30 shrink-0">
-                            {group.awards.length} {group.awards.length === 1 ? 'Honor Conferred' : 'Honors Conferred'}
-                          </span>
-                        </div>
-                        <div className="text-xs font-mono text-slate-400 mt-1">
-                          {group.tagline}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 self-end sm:self-auto text-xs text-slate-400 font-mono print:hidden shrink-0">
-                      <span className="hidden sm:inline">
-                        {isExpanded ? 'Collapse' : 'Expand'}
-                      </span>
-                      <motion.span
-                        animate={{ rotate: isExpanded ? 180 : 0 }}
-                        transition={{ duration: 0.25, ease: EASE_OUT_EXPO }}
-                        className="inline-flex"
+                  return (
+                    <CollapseTimelineNode key={group.organization} pulse={isExpanded}>
+                      <motion.div
+                        layout
+                        initial={{ opacity: 0, y: 16 }}
+                        whileInView={{ opacity: 1, y: 0 }}
+                        viewport={{ once: true, amount: 0.05 }}
+                        transition={{ duration: 0.4, ease: EASE_OUT_EXPO }}
+                        className="rounded-2xl border border-slate-800 hover:border-slate-700/80 bg-[#0d121f]/70 overflow-hidden shadow-xl transition-colors"
                       >
-                        <ChevronDown className={`w-4 h-4 ${isExpanded ? 'text-cyan-400' : 'text-slate-400'}`} />
-                      </motion.span>
+                        {/* Collapsible Organization Header */}
+                        <div
+                          role="button"
+                          tabIndex={0}
+                          aria-expanded={isExpanded}
+                          onClick={() => toggleExpandOrg(group.organization)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              toggleExpandOrg(group.organization);
+                            }
+                          }}
+                          className={`pdf-keep-next print:break-inside-avoid flex flex-col sm:flex-row sm:items-center justify-between p-5 sm:p-6 bg-[#0a0e1a] ${
+                            isExpanded ? 'border-b border-slate-800/80' : ''
+                          } cursor-pointer hover:bg-[#0c1120] focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/60 transition-colors gap-3`}
+                        >
+                          <div className="flex items-start sm:items-center gap-3 min-w-0">
+                            <div className="flex h-10 w-10 sm:h-11 sm:w-11 shrink-0 items-center justify-center rounded-xl bg-cyan-950/40 border border-cyan-500/30 text-cyan-400">
+                              <Building2 className="w-5 h-5" />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2.5 flex-wrap">
+                                <h3 className="text-lg sm:text-xl font-display font-bold text-white tracking-tight">
+                                  {group.organization.includes('Cisco') ? <CiscoName /> : group.organization}
+                                </h3>
+                                <span className="text-xs font-mono text-cyan-400 shrink-0">
+                                  · {group.awards.length}{' '}
+                                  {group.awards.length === 1 ? 'Honor' : 'Honors'}
+                                </span>
+                              </div>
+                              <div className="text-xs font-mono text-slate-400 mt-1">
+                                {group.tagline}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 self-end sm:self-auto text-xs text-slate-400 font-mono print:hidden shrink-0">
+                            <span className="hidden sm:inline">
+                              {isExpanded ? 'Collapse' : 'Expand'}
+                            </span>
+                            <motion.span
+                              animate={{ rotate: isExpanded ? 180 : 0 }}
+                              transition={{ duration: 0.25, ease: EASE_OUT_EXPO }}
+                              className="inline-flex"
+                            >
+                              <ChevronDown
+                                className={`w-4 h-4 ${isExpanded ? 'text-cyan-400' : 'text-slate-400'}`}
+                              />
+                            </motion.span>
+                          </div>
+                        </div>
+
+                        {/* Expanded Awards Grid */}
+                        <AnimatePresence initial={false}>
+                          {isExpanded && (
+                            <motion.div
+                              initial={{ opacity: 0, height: 0 }}
+                              animate={{ opacity: 1, height: 'auto' }}
+                              exit={{ opacity: 0, height: 0 }}
+                              transition={{ duration: 0.3, ease: EASE_OUT_EXPO }}
+                              className="overflow-hidden print:!block print:!h-auto print:!opacity-100"
+                            >
+                              <div className="p-5 sm:p-6">{renderAwardsGrid(group.awards)}</div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+
+                        {/* Print-only expanded fallback when collapsed on screen */}
+                        {!isExpanded && (
+                          <div className="hidden print:block p-5 sm:p-6">
+                            {renderAwardsGrid(group.awards)}
+                          </div>
+                        )}
+                      </motion.div>
+                    </CollapseTimelineNode>
+                  );
+                })}
+              </motion.div>
+            </AnimatePresence>
+          )}
+
+          {viewMode === 'grid' && filteredGroups.length === 0 && (
+            <div className="text-center py-12 text-slate-500 text-sm">
+              No recognitions or honors found matching &ldquo;{searchQuery}&rdquo;.
+            </div>
+          )}
+
+          {/* Interactive Endorsement Carousel + Verification Filter (All 23 Verified) */}
+          <CollapseTimelineNode className="mt-10" pulse>
+            <div
+              id="linkedin-recommendations"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'ArrowLeft') {
+                  e.preventDefault();
+                  stepCarousel(-1);
+                } else if (e.key === 'ArrowRight') {
+                  e.preventDefault();
+                  stepCarousel(1);
+                }
+              }}
+              className="rounded-2xl border border-slate-800 bg-[#0d121f]/75 overflow-hidden shadow-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/50"
+            >
+              {/* Header + Verification Link */}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 sm:p-6 bg-[#0a0e1a] border-b border-slate-800/80">
+                <div className="flex items-start sm:items-center gap-3.5 min-w-0">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-cyan-950/50 border border-cyan-500/30 text-cyan-400">
+                    <Linkedin className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2.5 flex-wrap">
+                      <h3 className="text-lg sm:text-xl font-display font-bold text-white tracking-tight">
+                        Verified LinkedIn Endorsements
+                      </h3>
+                      <span className="text-xs font-mono text-cyan-400">
+                        · {LINKEDIN_RECOMMENDATIONS.length} Verified Records
+                      </span>
+                    </div>
+                    <div className="text-xs font-mono text-slate-400 mt-1">
+                      Direct Managers · Cisco, Rubrik &amp; Apple Peers · Direct Reports
                     </div>
                   </div>
+                </div>
 
-                  {/* Expanded Awards Grid */}
-                  <AnimatePresence initial={false}>
-                    {isExpanded && (
-                      <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        exit={{ opacity: 0, height: 0 }}
-                        transition={{ duration: 0.3, ease: EASE_OUT_EXPO }}
-                        className="overflow-hidden print:!block print:!h-auto print:!opacity-100"
-                      >
-                        <div className="p-5 sm:p-6">
-                          {renderAwardsGrid(group.awards)}
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
+                <a
+                  href="https://www.linkedin.com/in/mohammed-sufyan/details/recommendations/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-950/40 border border-cyan-500/35 hover:border-cyan-400 text-xs font-mono text-cyan-300 transition-colors self-start md:self-auto shrink-0 print:hidden"
+                >
+                  <span>Verify on LinkedIn ↗</span>
+                </a>
+              </div>
 
-                  {/* Print-only expanded fallback when collapsed on screen */}
-                  {!isExpanded && (
-                    <div className="hidden print:block p-5 sm:p-6">
-                      {renderAwardsGrid(group.awards)}
+              {/* Filter Tabs + Carousel Stage */}
+              <div className="p-5 sm:p-7 space-y-6">
+                {/* Verification Relationship Filters */}
+                <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
+                  <div className="scroll-chips p-1 rounded-xl bg-[#090d16] border border-slate-800 w-full sm:w-fit sm:flex-wrap">
+                    {(
+                      [
+                        {
+                          id: 'featured',
+                          label: `Featured (${LINKEDIN_RECOMMENDATIONS.filter((r) => r.featured).length})`,
+                        },
+                        {
+                          id: 'all',
+                          label: `All (${LINKEDIN_RECOMMENDATIONS.length})`,
+                        },
+                        {
+                          id: 'manager',
+                          label: `Direct Managers (${LINKEDIN_RECOMMENDATIONS.filter((r) => r.relationshipType === 'manager').length})`,
+                        },
+                        {
+                          id: 'peer',
+                          label: `Peers & Leads (${LINKEDIN_RECOMMENDATIONS.filter((r) => r.relationshipType === 'peer').length})`,
+                        },
+                        {
+                          id: 'direct_report',
+                          label: `Direct Reports (${LINKEDIN_RECOMMENDATIONS.filter((r) => r.relationshipType === 'direct_report').length})`,
+                        },
+                      ] as const
+                    ).map((tab) => {
+                      const active = recFilter === tab.id;
+                      return (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          onClick={() => setRecFilter(tab.id)}
+                          aria-pressed={active}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                            active
+                              ? 'bg-cyan-500 text-slate-950 font-semibold shadow-sm'
+                              : 'text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          {tab.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {matchingRecs.length > 0 && (
+                    <div className="text-xs font-mono text-slate-400 tabular-nums">
+                      Endorsement{' '}
+                      <span className="text-cyan-400 font-semibold">
+                        {String(safeIdx + 1).padStart(2, '0')}
+                      </span>{' '}
+                      / {String(matchingRecs.length).padStart(2, '0')}
                     </div>
                   )}
-                </motion.div>
-                </CollapseTimelineNode>
-              );
-            })}
-          </motion.div>
-        </AnimatePresence>
-        )}
-
-        {viewMode === 'grid' && filteredGroups.length === 0 && (
-          <div className="text-center py-12 text-slate-500 text-sm">
-            No recognitions or honors found matching &ldquo;{searchQuery}&rdquo;.
-          </div>
-        )}
-
-        {/* LinkedIn Peer Recommendations & Endorsements (All 23 Verified) */}
-        <CollapseTimelineNode className="mt-10" pulse={recsExpanded}>
-        <div
-          id="linkedin-recommendations"
-          className="rounded-2xl border border-slate-800 bg-[#0d121f]/70 overflow-hidden shadow-xl"
-        >
-          {/* Collapsible Recommendations Header */}
-          <div
-            role="button"
-            tabIndex={0}
-            aria-expanded={recsExpanded}
-            onClick={() => setRecsExpanded((prev) => !prev)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                setRecsExpanded((prev) => !prev);
-              }
-            }}
-            className={`pdf-keep-next print:break-inside-avoid flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 sm:p-6 bg-[#0a0e1a] ${
-              recsExpanded ? 'border-b border-slate-800/80' : ''
-            } cursor-pointer hover:bg-[#0c1120] focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/60 transition-colors`}
-          >
-            <div className="flex items-start sm:items-center gap-3.5 min-w-0">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-cyan-950/50 border border-cyan-500/30 text-cyan-400">
-                <Linkedin className="w-5 h-5" />
-              </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-2.5 flex-wrap">
-                  <h3 className="text-lg sm:text-xl font-display font-bold text-white tracking-tight">
-                    Verified LinkedIn Recommendations
-                  </h3>
-                  <span className="text-xs font-mono text-cyan-400 px-2.5 py-0.5 rounded bg-cyan-950/30 border border-cyan-500/30 shrink-0">
-                    {LINKEDIN_RECOMMENDATIONS.length} Endorsements
-                  </span>
                 </div>
-                <div className="text-xs font-mono text-slate-400 mt-1">
-                  DIRECT MANAGERS · CISCO, RUBRIK &amp; APPLE PEERS · DIRECT REPORTS
-                </div>
-              </div>
-            </div>
 
-            <div className="flex flex-wrap items-center gap-3 self-end md:self-auto shrink-0">
-              <a
-                href="https://www.linkedin.com/in/mohammed-sufyan/details/recommendations/"
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(e) => e.stopPropagation()}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-950/40 border border-cyan-500/35 hover:border-cyan-400 text-xs font-mono text-cyan-300 transition-colors print:hidden"
-              >
-                <span>Verify on LinkedIn</span>
-                <ExternalLink className="w-3.5 h-3.5" />
-              </a>
-              <div className="flex items-center gap-2 text-xs text-slate-400 font-mono print:hidden">
-                <span className="hidden sm:inline">
-                  {recsExpanded ? 'Collapse' : 'Expand'}
-                </span>
-                <motion.span
-                  animate={{ rotate: recsExpanded ? 180 : 0 }}
-                  transition={{ duration: 0.25, ease: EASE_OUT_EXPO }}
-                  className="inline-flex"
-                >
-                  <ChevronDown className={`w-4 h-4 ${recsExpanded ? 'text-cyan-400' : 'text-slate-400'}`} />
-                </motion.span>
-              </div>
-            </div>
-          </div>
+                {/* Focused Interactive Spotlight Carousel */}
+                {activeRec ? (
+                  <div className="space-y-5 print:hidden">
+                    <div
+                      className={`rounded-2xl border p-5 sm:p-8 min-h-[210px] flex flex-col justify-between ${
+                        isLight
+                          ? 'border-slate-200 bg-slate-50/75'
+                          : 'border-slate-800/90 bg-[#090d16]/90'
+                      }`}
+                    >
+                      <AnimatePresence mode="wait" initial={false}>
+                        <motion.div
+                          key={activeRec.id}
+                          initial={
+                            shouldReduceMotion
+                              ? { opacity: 1 }
+                              : { opacity: 0, x: carouselDirection * 18 }
+                          }
+                          animate={{ opacity: 1, x: 0 }}
+                          exit={
+                            shouldReduceMotion
+                              ? { opacity: 0 }
+                              : { opacity: 0, x: carouselDirection * -18 }
+                          }
+                          transition={{ duration: 0.24, ease: EASE_OUT_EXPO }}
+                          className="space-y-5"
+                        >
+                          {/* Unboxed verification line */}
+                          <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-mono pb-3 border-b border-slate-800/80">
+                            <span className="text-cyan-400 font-semibold">{activeRec.date}</span>
+                            <span className="inline-flex items-center gap-1.5 text-emerald-400">
+                              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                              <span>
+                                Verified{' '}
+                                {activeRec.relationshipType === 'manager'
+                                  ? 'Direct Manager'
+                                  : activeRec.relationshipType === 'direct_report'
+                                    ? 'Direct Report'
+                                    : 'Peer / Technical Lead'}
+                              </span>
+                            </span>
+                          </div>
 
-          {/* Expanded Recommendations Grid */}
-          <AnimatePresence initial={false}>
-            {recsExpanded && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                transition={{ duration: 0.3, ease: EASE_OUT_EXPO }}
-                className="overflow-hidden print:!block print:!h-auto print:!opacity-100"
-              >
-                <div className="p-5 sm:p-6 space-y-5">
-                  {/* Relationship Filter Tabs */}
-                  <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
-                    <div className="flex flex-wrap items-center gap-1.5 p-1 rounded-xl bg-[#090d16] border border-slate-800">
-                      {(
-                        [
-                          { id: 'featured', label: `Featured (${LINKEDIN_RECOMMENDATIONS.filter((r) => r.featured).length})` },
-                          { id: 'all', label: `All (${LINKEDIN_RECOMMENDATIONS.length})` },
-                          { id: 'manager', label: `Managers (${LINKEDIN_RECOMMENDATIONS.filter((r) => r.relationshipType === 'manager').length})` },
-                          { id: 'direct_report', label: `Direct Reports (${LINKEDIN_RECOMMENDATIONS.filter((r) => r.relationshipType === 'direct_report').length})` },
-                          { id: 'peer', label: `Peers & Leads (${LINKEDIN_RECOMMENDATIONS.filter((r) => r.relationshipType === 'peer').length})` },
-                        ] as const
-                      ).map((tab) => {
-                        const active = recFilter === tab.id;
-                        return (
-                          <button
-                            key={tab.id}
-                            type="button"
-                            onClick={() => setRecFilter(tab.id)}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
-                              active
-                                ? 'bg-cyan-500 text-slate-950 font-semibold shadow-sm'
-                                : 'text-slate-400 hover:text-white'
+                          {/* Editorial Serif Quote */}
+                          <blockquote
+                            className={`text-base sm:text-xl font-serif font-normal leading-relaxed tracking-tight ${
+                              isLight ? 'text-slate-900' : 'text-slate-100'
                             }`}
                           >
-                            {tab.label}
-                          </button>
-                        );
-                      })}
+                            &ldquo;{activeRec.quote}&rdquo;
+                          </blockquote>
+
+                          {/* Attribution */}
+                          <div className="pt-3 border-t border-slate-800/70 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div>
+                              <div className="text-base font-display font-bold text-white">
+                                {activeRec.author}
+                              </div>
+                              <div className="text-xs font-mono text-cyan-400/90 mt-0.5">
+                                {activeRec.role}
+                              </div>
+                            </div>
+                            <div className="text-[11px] font-mono text-slate-400">
+                              {activeRec.relationship}
+                            </div>
+                          </div>
+                        </motion.div>
+                      </AnimatePresence>
+                    </div>
+
+                    {/* Carousel Controls + Pagination Dots + Expand Grid Switch */}
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => stepCarousel(-1)}
+                          disabled={matchingRecs.length <= 1}
+                          aria-label="Previous endorsement"
+                          className="p-2 rounded-xl border border-slate-800 bg-[#090d16] text-slate-300 hover:border-cyan-500/40 hover:text-cyan-300 disabled:opacity-40 transition-colors cursor-pointer"
+                        >
+                          <ChevronLeft className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => stepCarousel(1)}
+                          disabled={matchingRecs.length <= 1}
+                          aria-label="Next endorsement"
+                          className="p-2 rounded-xl border border-slate-800 bg-[#090d16] text-slate-300 hover:border-cyan-500/40 hover:text-cyan-300 disabled:opacity-40 transition-colors cursor-pointer"
+                        >
+                          <ChevronRight className="w-4 h-4" />
+                        </button>
+
+                        {matchingRecs.length > 1 && matchingRecs.length <= 12 && (
+                          <div className="hidden sm:flex items-center gap-1.5 pl-2">
+                            {matchingRecs.map((rec, idx) => {
+                              const isCurrent = idx === safeIdx;
+                              return (
+                                <button
+                                  key={rec.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setCarouselDirection(idx >= safeIdx ? 1 : -1);
+                                    setCarouselIdx(idx);
+                                  }}
+                                  aria-label={`View endorsement from ${rec.author}`}
+                                  aria-current={isCurrent ? 'true' : undefined}
+                                  className={`h-1.5 rounded-full transition-all cursor-pointer ${
+                                    isCurrent
+                                      ? 'w-5 bg-cyan-400'
+                                      : 'w-1.5 bg-slate-700 hover:bg-slate-500'
+                                  }`}
+                                />
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setShowAllRecGrid((prev) => !prev)}
+                        aria-expanded={showAllRecGrid}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-800 bg-[#090d16] hover:border-cyan-500/40 hover:text-cyan-300 text-xs font-mono text-slate-300 transition-colors cursor-pointer"
+                      >
+                        <LayoutGrid className="w-3.5 h-3.5 text-cyan-400" />
+                        <span>
+                          {showAllRecGrid
+                            ? 'Hide Grid Directory'
+                            : `Browse All ${matchingRecs.length} in Grid`}
+                        </span>
+                      </button>
                     </div>
                   </div>
+                ) : (
+                  <div className="py-8 text-center text-xs font-mono text-slate-400 print:hidden">
+                    No endorsements matching current filter.
+                  </div>
+                )}
 
-                  {(() => {
-                    const matchingRecs = LINKEDIN_RECOMMENDATIONS.filter((rec) => {
-                      const matchesFilter =
-                        recFilter === 'all'
-                          ? true
-                          : recFilter === 'featured'
-                            ? Boolean(rec.featured)
-                            : rec.relationshipType === recFilter;
-                      const matchesSearch =
-                        !normalizedQuery ||
-                        rec.author.toLowerCase().includes(normalizedQuery) ||
-                        rec.role.toLowerCase().includes(normalizedQuery) ||
-                        rec.quote.toLowerCase().includes(normalizedQuery);
-                      return matchesFilter && matchesSearch;
-                    });
-
-                    if (matchingRecs.length === 0) {
-                      return (
-                        <div className="py-8 text-center text-xs font-mono text-slate-400">
-                          No recommendations matching current filter.
-                        </div>
-                      );
-                    }
-
-                    return (
+                {/* Optional Full Multi-Column Endorsements Grid */}
+                <AnimatePresence initial={false}>
+                  {showAllRecGrid && matchingRecs.length > 0 && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      transition={{ duration: 0.3, ease: EASE_OUT_EXPO }}
+                      className="overflow-hidden pt-4 border-t border-slate-800/80 print:hidden"
+                    >
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                         {matchingRecs.map((rec, idx) => (
                           <SpotlightCard
@@ -596,10 +778,18 @@ export default function Awards() {
                             initial={{ opacity: 0, y: 10 }}
                             animate={{ opacity: 1, y: 0 }}
                             transition={{
-                              opacity: { duration: 0.28, delay: Math.min(idx * 0.025, 0.2), ease: EASE_OUT_EXPO },
-                              y: { duration: 0.28, delay: Math.min(idx * 0.025, 0.2), ease: EASE_OUT_EXPO },
+                              opacity: {
+                                duration: 0.28,
+                                delay: Math.min(idx * 0.025, 0.2),
+                                ease: EASE_OUT_EXPO,
+                              },
+                              y: {
+                                duration: 0.28,
+                                delay: Math.min(idx * 0.025, 0.2),
+                                ease: EASE_OUT_EXPO,
+                              },
                             }}
-                            className="rounded-2xl border border-slate-800 bg-[#090d16]/95 p-5 flex flex-col justify-between hover:border-cyan-500/40 transition-colors print:break-inside-avoid"
+                            className="rounded-2xl border border-slate-800 bg-[#090d16]/95 p-5 flex flex-col justify-between hover:border-cyan-500/40 transition-colors"
                           >
                             <div>
                               <div className="flex items-center justify-between gap-2 pb-3 border-b border-slate-800/80">
@@ -615,12 +805,9 @@ export default function Awards() {
                                 </span>
                               </div>
 
-                              <div className="mt-3 flex items-start gap-2">
-                                <Quote className="w-4 h-4 text-cyan-500/50 shrink-0 mt-0.5" />
-                                <p className="text-xs text-slate-300 leading-relaxed font-light">
-                                  &ldquo;{rec.quote}&rdquo;
-                                </p>
-                              </div>
+                              <p className="mt-3 text-xs text-slate-300 leading-relaxed font-light">
+                                &ldquo;{rec.quote}&rdquo;
+                              </p>
                             </div>
 
                             <div className="pt-3.5 mt-4 border-t border-slate-800/80">
@@ -637,45 +824,41 @@ export default function Awards() {
                           </SpotlightCard>
                         ))}
                       </div>
-                    );
-                  })()}
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Print-only featured endorsements fallback when collapsed on screen */}
-          {!recsExpanded && (
-            <div className="hidden print:block p-5 sm:p-6 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                {LINKEDIN_RECOMMENDATIONS.filter((r) => r.featured).map((rec) => (
-                  <div
-                    key={rec.id}
-                    className="rounded-xl border border-slate-800 bg-[#090d16]/95 p-4 flex flex-col justify-between print:break-inside-avoid"
-                  >
-                    <div>
-                      <div className="flex items-center justify-between text-[10px] font-mono pb-2 border-b border-slate-800/80">
-                        <span className="text-cyan-400 font-semibold">{rec.date}</span>
-                        <span className="text-emerald-400">{rec.relationship}</span>
-                      </div>
-                      <p className="text-[11px] text-slate-300 leading-relaxed mt-2.5 font-light">
-                        &ldquo;{rec.quote}&rdquo;
-                      </p>
-                    </div>
-                    <div className="pt-2.5 mt-3 border-t border-slate-800/80">
-                      <div className="text-xs font-display font-bold text-white">{rec.author}</div>
-                      <div className="text-[10px] font-mono text-cyan-400/90 mt-0.5">{rec.role}</div>
-                    </div>
-                  </div>
-                ))}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
-              <div className="text-xs font-mono text-cyan-300">
-                Full 23 Verified Recommendations: linkedin.com/in/mohammed-sufyan/details/recommendations
+
+              {/* Print-only featured endorsements */}
+              <div className="hidden print:block p-5 sm:p-6 space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  {LINKEDIN_RECOMMENDATIONS.filter((r) => r.featured).map((rec) => (
+                    <div
+                      key={rec.id}
+                      className="rounded-xl border border-slate-800 bg-[#090d16]/95 p-4 flex flex-col justify-between print:break-inside-avoid"
+                    >
+                      <div>
+                        <div className="flex items-center justify-between text-[10px] font-mono pb-2 border-b border-slate-800/80">
+                          <span className="text-cyan-400 font-semibold">{rec.date}</span>
+                          <span className="text-emerald-400">{rec.relationship}</span>
+                        </div>
+                        <p className="text-[11px] text-slate-300 leading-relaxed mt-2.5 font-light">
+                          &ldquo;{rec.quote}&rdquo;
+                        </p>
+                      </div>
+                      <div className="pt-2.5 mt-3 border-t border-slate-800/80">
+                        <div className="text-xs font-display font-bold text-white">{rec.author}</div>
+                        <div className="text-[10px] font-mono text-cyan-400/90 mt-0.5">{rec.role}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="text-xs font-mono text-cyan-300">
+                  Full 23 Verified Recommendations: linkedin.com/in/mohammed-sufyan/details/recommendations
+                </div>
               </div>
             </div>
-          )}
-        </div>
-        </CollapseTimelineNode>
+          </CollapseTimelineNode>
         </CollapseTimeline>
       </div>
     </section>

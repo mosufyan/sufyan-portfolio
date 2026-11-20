@@ -1,8 +1,10 @@
 import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Bell, Calendar, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { ANNOUNCEMENTS } from '../data/portfolioData';
 import { useTheme } from '../theme/ThemeProvider';
+import { useModalPlacement } from '../hooks/useModalPlacement';
 import ModalHeaderScan from './ModalHeaderScan';
 import { EASE_OUT_EXPO } from './MotionPrimitives';
 
@@ -13,6 +15,7 @@ interface AnnouncementsModalProps {
 
 export default function AnnouncementsModal({ isOpen, onClose }: AnnouncementsModalProps) {
   const { isLight } = useTheme();
+  const alignClass = useModalPlacement(isOpen);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -46,7 +49,7 @@ export default function AnnouncementsModal({ isOpen, onClose }: AnnouncementsMod
   const footer = isLight ? 'border-slate-200 bg-white' : 'border-slate-800 bg-[#0d121f]';
   const backdrop = isLight ? 'bg-slate-900/45' : 'bg-black/80';
 
-  return (
+  const modal = (
     <AnimatePresence>
       {isOpen && (
         <motion.div
@@ -58,14 +61,14 @@ export default function AnnouncementsModal({ isOpen, onClose }: AnnouncementsMod
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.2 }}
-          className={`fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm print:hidden ${backdrop}`}
+          className={`fixed inset-0 z-50 flex ${alignClass} justify-center p-2.5 sm:p-5 pt-[max(0.75rem,env(safe-area-inset-top))] sm:pt-6 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur-sm overflow-y-auto print:hidden ${backdrop}`}
         >
           <motion.div
             initial={{ opacity: 0, scale: 0.96, y: 12 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.96, y: 8 }}
             transition={{ duration: 0.28, ease: EASE_OUT_EXPO }}
-            className={`relative w-full max-w-xl max-h-[90vh] overflow-hidden rounded-2xl border shadow-2xl flex flex-col ${panel}`}
+            className={`relative w-full max-w-xl 2xl:max-w-2xl max-h-[min(calc(100dvh-1.5rem),35.5rem)] sm:max-h-[min(calc(100dvh-2.5rem),36rem)] lg:max-h-[min(calc(100dvh-3rem),46rem)] overflow-hidden rounded-2xl border shadow-2xl flex flex-col ${panel}`}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header only — always dark */}
@@ -97,7 +100,7 @@ export default function AnnouncementsModal({ isOpen, onClose }: AnnouncementsMod
             </div>
 
             {/* List — follows site theme */}
-            <div className="space-y-4 max-h-[60vh] overflow-y-auto p-5 sm:p-6 pr-4">
+            <div className="flex-1 min-h-0 space-y-4 overflow-y-auto overscroll-contain p-4 sm:p-6 pr-4">
               {ANNOUNCEMENTS.map((item, idx) => (
                 <motion.div
                   key={item.id}
@@ -142,4 +145,7 @@ export default function AnnouncementsModal({ isOpen, onClose }: AnnouncementsMod
       )}
     </AnimatePresence>
   );
+
+  if (typeof document === 'undefined') return null;
+  return createPortal(modal, document.body);
 }

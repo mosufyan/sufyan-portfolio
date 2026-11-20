@@ -16,11 +16,13 @@ import {
 import HeaderSpotlight from './HeaderSpotlight';
 import { Reveal, StaggerContainer, StaggerItem, EASE_OUT_EXPO, SpotlightCard } from './MotionPrimitives';
 import SectionScanLine from './SectionScanLine';
+import type { PortfolioReadingMode } from './UnifiedScrollHud';
 
 interface SkillsProps {
   selectedSkills: string[];
   onSelectSkill: (skill: string | null) => void;
   onApplySkills: (skills: string[]) => void;
+  readingMode?: PortfolioReadingMode;
 }
 
 function MagneticSkillTag({
@@ -76,7 +78,7 @@ function MagneticSkillTag({
   );
 }
 
-export default function Skills({ selectedSkills, onSelectSkill, onApplySkills }: SkillsProps) {
+export default function Skills({ selectedSkills, onSelectSkill, onApplySkills, readingMode = 'deep' }: SkillsProps) {
   const [linkCopied, setLinkCopied] = useState(false);
   const [countPulse, setCountPulse] = useState(0);
   const skillFilter = formatSkillFilterSummary(selectedSkills);
@@ -263,13 +265,18 @@ export default function Skills({ selectedSkills, onSelectSkill, onApplySkills }:
                     </div>
 
                     {/* Description */}
-                    <p className="text-xs sm:text-sm text-slate-300 mt-4 leading-relaxed font-light">
-                      {discipline.description}
-                    </p>
+                    {readingMode === 'deep' && (
+                      <p className="text-xs sm:text-sm text-slate-300 mt-4 leading-relaxed font-light">
+                        {discipline.description}
+                      </p>
+                    )}
 
                     {/* Skills tags — magnetic hover pull */}
-                    <div className="mt-5 flex flex-wrap gap-1.5">
-                      {discipline.technologies.map((tech, idx) => {
+                    <div className={`${readingMode === 'brief' ? 'mt-4' : 'mt-5'} flex flex-wrap gap-1.5`}>
+                      {(readingMode === 'brief'
+                        ? discipline.technologies.slice(0, 4)
+                        : discipline.technologies
+                      ).map((tech, idx) => {
                         const isHighlighted = doesTechTagMatchSkill(tech, selectedSkills);
 
                         return (

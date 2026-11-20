@@ -10,11 +10,13 @@ import HeaderSpotlight from './HeaderSpotlight';
 import IssuerMark from './IssuerMark';
 import { Reveal, EASE_OUT_EXPO, SpotlightCard } from './MotionPrimitives';
 import SectionScanLine from './SectionScanLine';
+import type { PortfolioReadingMode } from './UnifiedScrollHud';
 
 interface CertificationsProps {
   selectedSkills: string[];
   onSelectSkill: (skill: string | null) => void;
   onSelectCertification: (cert: Certification) => void;
+  readingMode?: PortfolioReadingMode;
 }
 
 const FEATURED_CERT_IDS = [
@@ -27,17 +29,25 @@ export default function Certifications({
   selectedSkills,
   onSelectSkill,
   onSelectCertification,
+  readingMode = 'deep',
 }: CertificationsProps) {
   const { theme, isLight } = useTheme();
   const [activeTab, setActiveTab] = useState<'all' | 'ai' | 'cloud' | 'data'>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'radar'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
   const [linkCopied, setLinkCopied] = useState(false);
+  const [showAllInBrief, setShowAllInBrief] = useState(false);
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(CERTIFICATION_CATEGORIES.map((cat) => [cat.id, false]))
   );
   const skillFilter = formatSkillFilterSummary(selectedSkills);
   const hasSkillFilter = skillFilter.count > 0;
+
+  useEffect(() => {
+    if (readingMode === 'brief') {
+      setShowAllInBrief(false);
+    }
+  }, [readingMode]);
 
   const copySkillLink = () => {
     navigator.clipboard?.writeText(window.location.href).then(() => {
@@ -482,6 +492,25 @@ export default function Certifications({
                 setViewMode('grid');
               }}
             />
+          </div>
+        ) : readingMode === 'brief' && !showAllInBrief && !hasSkillFilter && !normalizedSearch && activeTab === 'all' ? (
+          <div className="rounded-2xl border border-slate-800/80 bg-[#0d121f]/60 p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 print:hidden">
+            <div>
+              <div className="text-xs font-mono text-cyan-400">
+                30s Brief · 3 Pinned Signature Credentials Highlighted Above
+              </div>
+              <div className="text-sm text-slate-300 mt-1">
+                {CERTIFICATIONS.length} total verified credentials across AI &amp; Agentic Systems, Cloud Architecture, and Data Engineering.
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowAllInBrief(true)}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl border border-slate-700 bg-[#090d16] hover:border-cyan-500/40 text-xs font-mono text-cyan-300 transition-colors shrink-0 cursor-pointer"
+            >
+              <ChevronsUpDown className="w-3.5 h-3.5" />
+              <span>View All {CERTIFICATIONS.length} Credentials</span>
+            </button>
           </div>
         ) : (
         <AnimatePresence mode="wait">

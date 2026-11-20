@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Download, Menu, X, Mail, Search, Sun, Moon, Terminal } from 'lucide-react';
+import { type MouseEvent as ReactMouseEvent, useEffect, useState } from 'react';
+import { Download, Menu, X, Mail, Search, Terminal } from 'lucide-react';
 import {
   AnimatePresence,
   MotionValue,
@@ -11,6 +11,7 @@ import {
 } from 'motion/react';
 import { useTheme } from '../theme/ThemeProvider';
 import { EASE_OUT_EXPO } from './MotionPrimitives';
+import ThemeSymbol from './ThemeSymbol';
 
 const CONSTELLATION_DOTS = 14;
 
@@ -84,6 +85,31 @@ export default function Navbar({
       window.setTimeout(() => setThemeWash(null), 520);
     }
     toggleTheme();
+  };
+
+  const scrollToSection = (
+    e: ReactMouseEvent<HTMLAnchorElement>,
+    sectionId: string,
+    closeDrawer = false
+  ) => {
+    e.preventDefault();
+    if (closeDrawer) {
+      setMobileMenuOpen(false);
+    }
+
+    const target = document.getElementById(sectionId);
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    try {
+      const nextHash = `#${sectionId}`;
+      if (window.location.hash !== nextHash) {
+        window.history.replaceState({}, '', `${window.location.pathname}${window.location.search}${nextHash}`);
+      }
+    } catch {
+      /* ignore */
+    }
   };
 
   useEffect(() => {
@@ -161,6 +187,7 @@ export default function Navbar({
               <a
                 key={link.label}
                 href={link.href}
+                onClick={(e) => scrollToSection(e, link.id)}
                 className={`relative whitespace-nowrap py-1.5 transition-colors ${
                   isActive ? 'text-cyan-300' : 'hover:text-cyan-400'
                 }`}
@@ -180,11 +207,11 @@ export default function Navbar({
           })}
         </nav>
 
-        <div className="ml-auto flex items-center gap-1.5 sm:gap-2 shrink-0 min-w-0 pl-2 sm:pl-3 border-l border-slate-800/70">
+        <div className="ml-auto flex items-center gap-1.5 sm:gap-2 shrink-0 min-w-0 xl:pl-3 xl:border-l xl:border-slate-800/70">
           <button
             type="button"
             onClick={handleThemeToggle}
-            className={`hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors whitespace-nowrap overflow-hidden ${
+            className={`hidden sm:inline-flex items-center justify-center gap-1.5 h-9 px-2.5 rounded-lg border text-xs font-medium transition-colors whitespace-nowrap overflow-hidden ${
               isLight
                 ? 'border-amber-400/70 bg-amber-50 text-amber-800 hover:bg-amber-100'
                 : 'border-slate-700/90 bg-slate-900/70 text-slate-300 hover:text-cyan-300 hover:border-cyan-500/40'
@@ -192,40 +219,21 @@ export default function Navbar({
             title={isLight ? 'Switch to Dark Theme' : 'Switch to Light Theme'}
             aria-label={isLight ? 'Switch to dark theme' : 'Switch to light theme'}
           >
-            <span className="relative h-3.5 w-3.5">
-              <AnimatePresence mode="wait" initial={false}>
-                {isLight ? (
-                  <motion.span
-                    key="sun"
-                    initial={{ opacity: 0, rotate: -60, scale: 0.5 }}
-                    animate={{ opacity: 1, rotate: 0, scale: 1 }}
-                    exit={{ opacity: 0, rotate: 60, scale: 0.5 }}
-                    transition={{ duration: 0.28, ease: EASE_OUT_EXPO }}
-                    className="absolute inset-0 flex items-center justify-center"
-                  >
-                    <Sun className="w-3.5 h-3.5 text-amber-600" />
-                  </motion.span>
-                ) : (
-                  <motion.span
-                    key="moon"
-                    initial={{ opacity: 0, rotate: 60, scale: 0.5 }}
-                    animate={{ opacity: 1, rotate: 0, scale: 1 }}
-                    exit={{ opacity: 0, rotate: -60, scale: 0.5 }}
-                    transition={{ duration: 0.28, ease: EASE_OUT_EXPO }}
-                    className="absolute inset-0 flex items-center justify-center"
-                  >
-                    <Moon className="w-3.5 h-3.5 text-cyan-400" />
-                  </motion.span>
-                )}
-              </AnimatePresence>
-            </span>
+            <ThemeSymbol
+              isLight={isLight}
+              boxClassName="h-3.5 w-3.5"
+              iconClassName="w-3.5 h-3.5"
+              sunColorClass="text-amber-600"
+              moonColorClass="text-cyan-400"
+              keyPrefix="nav-desktop"
+            />
             <span className="hidden 2xl:inline">{isLight ? 'Light' : 'Dark'}</span>
           </button>
 
           <button
             type="button"
             onClick={onOpenCommandPalette}
-            className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-700/90 bg-slate-900/70 text-xs font-mono text-slate-300 hover:text-cyan-300 hover:border-cyan-500/40 transition-colors whitespace-nowrap"
+            className="hidden sm:inline-flex items-center justify-center gap-1.5 h-9 px-2.5 rounded-lg border border-slate-700/90 bg-slate-900/70 text-xs font-mono text-slate-300 hover:text-cyan-300 hover:border-cyan-500/40 transition-colors whitespace-nowrap"
             title="Quick Jump & Search (⌘K / Ctrl+K)"
             aria-label="Open quick navigation palette"
           >
@@ -236,7 +244,7 @@ export default function Navbar({
           <button
             type="button"
             onClick={onOpenTerminal}
-            className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-700/90 bg-slate-900/70 text-xs font-mono text-slate-300 hover:text-cyan-300 hover:border-cyan-500/40 transition-colors whitespace-nowrap"
+            className="hidden sm:inline-flex items-center justify-center gap-1.5 h-9 px-2.5 rounded-lg border border-slate-700/90 bg-slate-900/70 text-xs font-mono text-slate-300 hover:text-cyan-300 hover:border-cyan-500/40 transition-colors whitespace-nowrap"
             title="Open Interactive Terminal (sufyanctl)"
             aria-label="Open interactive portfolio terminal"
           >
@@ -245,18 +253,19 @@ export default function Navbar({
           </button>
 
           <button
+            type="button"
             onClick={onOpenAnnouncements}
-            className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-900/60 text-xs font-medium text-slate-300 hover:text-white hover:border-slate-600 transition-colors whitespace-nowrap"
+            className="hidden md:inline-flex items-center justify-center gap-1.5 h-9 px-2.5 rounded-lg border border-slate-700 bg-slate-900/60 text-xs font-medium text-slate-300 hover:text-white hover:border-slate-600 transition-colors whitespace-nowrap"
             title="View Announcements"
           >
-            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
             <span className="hidden xl:inline">Announcements</span>
             <span className="xl:hidden">News</span>
           </button>
 
           <button
+            type="button"
             onClick={onOpenResume}
-            className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-cyan-500/40 bg-cyan-950/30 hover:bg-cyan-900/50 text-xs font-semibold text-cyan-300 transition-colors whitespace-nowrap"
+            className="hidden sm:inline-flex items-center justify-center gap-1.5 h-9 px-3 rounded-lg border border-cyan-500/40 bg-cyan-950/30 hover:bg-cyan-900/50 text-xs font-semibold text-cyan-300 transition-colors whitespace-nowrap"
           >
             <Download className="w-3.5 h-3.5" />
             <span className="hidden md:inline">Download CV</span>
@@ -265,7 +274,8 @@ export default function Navbar({
 
           <a
             href="#contact"
-            className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-xs font-semibold text-slate-950 transition-colors whitespace-nowrap"
+            onClick={(e) => scrollToSection(e, 'contact')}
+            className="hidden sm:inline-flex items-center justify-center gap-1.5 h-9 px-3 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-xs font-semibold text-slate-950 transition-colors whitespace-nowrap"
           >
             <Mail className="w-3.5 h-3.5" />
             <span className="hidden xl:inline">Get in Touch</span>
@@ -277,58 +287,41 @@ export default function Navbar({
             <button
               type="button"
               onClick={handleThemeToggle}
-              className={`sm:hidden relative p-1.5 rounded-md border transition-colors overflow-hidden ${
+              className={`sm:hidden inline-flex items-center justify-center h-9 w-9 rounded-lg border transition-colors overflow-hidden ${
                 isLight
                   ? 'border-amber-400/70 bg-amber-50 text-amber-700'
-                  : 'border-slate-700 bg-slate-900/70 text-slate-300 hover:text-cyan-300'
+                  : 'border-slate-700/90 bg-slate-900/70 text-slate-300 hover:text-cyan-300 hover:border-cyan-500/40'
               }`}
               aria-label={isLight ? 'Switch to dark theme' : 'Switch to light theme'}
             >
-              <span className="relative block h-4 w-4">
-                <AnimatePresence mode="wait" initial={false}>
-                  {isLight ? (
-                    <motion.span
-                      key="sun-m"
-                      initial={{ opacity: 0, rotate: -50, scale: 0.5 }}
-                      animate={{ opacity: 1, rotate: 0, scale: 1 }}
-                      exit={{ opacity: 0, rotate: 50, scale: 0.5 }}
-                      transition={{ duration: 0.28, ease: EASE_OUT_EXPO }}
-                      className="absolute inset-0 flex items-center justify-center"
-                    >
-                      <Sun className="w-4 h-4" />
-                    </motion.span>
-                  ) : (
-                    <motion.span
-                      key="moon-m"
-                      initial={{ opacity: 0, rotate: 50, scale: 0.5 }}
-                      animate={{ opacity: 1, rotate: 0, scale: 1 }}
-                      exit={{ opacity: 0, rotate: -50, scale: 0.5 }}
-                      transition={{ duration: 0.28, ease: EASE_OUT_EXPO }}
-                      className="absolute inset-0 flex items-center justify-center"
-                    >
-                      <Moon className="w-4 h-4" />
-                    </motion.span>
-                  )}
-                </AnimatePresence>
-              </span>
+              <ThemeSymbol
+                isLight={isLight}
+                boxClassName="h-4 w-4"
+                iconClassName="w-4 h-4"
+                sunColorClass="text-amber-600"
+                moonColorClass="text-cyan-400"
+                keyPrefix="nav-mobile"
+              />
             </button>
             <button
               type="button"
               onClick={onOpenCommandPalette}
-              className="sm:hidden p-1.5 rounded-md border border-slate-700 bg-slate-900/70 text-slate-300 hover:text-cyan-300"
+              className="sm:hidden inline-flex items-center justify-center h-9 w-9 rounded-lg border border-slate-700/90 bg-slate-900/70 text-slate-300 hover:text-cyan-300 hover:border-cyan-500/40 transition-colors"
               aria-label="Open quick search"
             >
               <Search className="w-4 h-4" />
             </button>
             <button
+              type="button"
               onClick={onOpenResume}
-              className="sm:hidden px-2.5 py-1.5 rounded-md border border-cyan-500/40 text-[11px] font-semibold text-cyan-300 bg-cyan-950/40"
+              className="sm:hidden inline-flex items-center justify-center h-9 px-3 rounded-lg border border-cyan-500/40 text-xs font-semibold text-cyan-300 bg-cyan-950/40 hover:bg-cyan-900/50 transition-colors"
             >
               CV
             </button>
             <button
+              type="button"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 focus:outline-none"
+              className="inline-flex items-center justify-center h-9 w-9 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800/80 transition-colors focus:outline-none"
               aria-label="Toggle Navigation Menu"
               aria-expanded={mobileMenuOpen}
             >
@@ -345,9 +338,9 @@ export default function Navbar({
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
             transition={{ duration: 0.24, ease: EASE_OUT_EXPO }}
-            className="xl:hidden overflow-hidden border-b border-slate-800 bg-[#07090e]/95"
+            className="xl:hidden absolute top-full inset-x-0 z-50 overflow-hidden border-b border-slate-800 bg-[#07090e]/95 backdrop-blur-md shadow-2xl"
           >
-            <div className="page-shell pt-2 pb-4 space-y-2">
+            <div className="page-shell pt-2 pb-4 space-y-2 max-h-[calc(100dvh-4rem)] overflow-y-auto overscroll-contain">
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 py-2">
                 {NAV_LINKS.map((link) => {
                   const isActive = activeSection === link.id;
@@ -355,7 +348,7 @@ export default function Navbar({
                     <a
                       key={link.label}
                       href={link.href}
-                      onClick={() => setMobileMenuOpen(false)}
+                      onClick={(e) => scrollToSection(e, link.id, true)}
                       className={`px-3 py-2.5 text-xs font-medium rounded-md transition-colors ${
                         isActive
                           ? 'text-cyan-300 bg-cyan-950/40 border border-cyan-500/30'
@@ -386,7 +379,6 @@ export default function Navbar({
                   }}
                   className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-md border border-slate-700 bg-slate-900/60 text-xs font-medium text-slate-300"
                 >
-                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
                   Announcements
                 </button>
                 <button
@@ -400,7 +392,7 @@ export default function Navbar({
                 </button>
                 <a
                   href="#contact"
-                  onClick={() => setMobileMenuOpen(false)}
+                  onClick={(e) => scrollToSection(e, 'contact', true)}
                   className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-md bg-cyan-500 text-xs font-semibold text-slate-950"
                 >
                   <Mail className="w-4 h-4" /> Contact Mohammed

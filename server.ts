@@ -25,6 +25,7 @@ import {
   verifyTurnstileToken,
 } from './server/security.ts';
 import { getEmailPalette, parseEmailTheme, type EmailTheme } from './server/emailTheme.ts';
+import { buildDynamicSocialSvg, SHARE_CARD_TRACKS, type ShareTrackId } from './src/utils/ogShare.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -732,6 +733,21 @@ async function startServer() {
     });
   });
 
+  app.get(['/api/og-card.svg', '/og-card.svg'], (req: Request, res: Response) => {
+    const rawTrack = typeof req.query.track === 'string' ? req.query.track : undefined;
+    const track: ShareTrackId =
+      rawTrack === 'security' || rawTrack === 'platform' || rawTrack === 'ai'
+        ? rawTrack
+        : 'executive';
+    const theme = req.query.theme === 'light' ? 'light' : 'dark';
+    const skillLabel =
+      typeof req.query.skill === 'string' ? req.query.skill.slice(0, 60) : undefined;
+    const svg = buildDynamicSocialSvg({ track, theme, skillLabel });
+    res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8');
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.status(200).send(svg);
+  });
+
   app.post('/api/contact', async (req: Request, res: Response) => {
     try {
       if (!req.is('application/json')) {
@@ -954,11 +970,95 @@ async function startServer() {
     res.status(404).json({ error: 'API endpoint not found.' });
   });
 
+  const applyDynamicOgTags = (html: string, req: Request): string => {
+    const cvParam = typeof req.query.cv === 'string' ? req.query.cv.toLowerCase() : '';
+    const skillParam = typeof req.query.skill === 'string' ? req.query.skill.trim().slice(0, 60) : '';
+    const trackParam = typeof req.query.track === 'string' ? req.query.track.toLowerCase() : '';
+    const themeParam = req.query.theme === 'light' ? 'light' : 'dark';
+
+    const mappedTrack: ShareTrackId | null =
+      trackParam === 'security' || cvParam === 'security'
+        ? 'security'
+        : trackParam === 'platform' || cvParam === 'platform'
+          ? 'platform'
+          : trackParam === 'ai'
+            ? 'ai'
+            : trackParam === 'executive' || Boolean(cvParam)
+              ? 'executive'
+              : null;
+
+    if (!mappedTrack && !skillParam) return html;
+
+    const baseUrl =
+      process.env.APP_URL?.replace(/\/$/, '') ||
+      `${req.headers['x-forwarded-proto'] || req.protocol || 'https'}://${req.headers['x-forwarded-host'] || req.headers.host || 'www.mohammedsufyan.com'}`;
+
+    const trackMeta =
+      SHARE_CARD_TRACKS.find((t) => t.id === (mappedTrack ?? 'executive')) ??
+      SHARE_CARD_TRACKS[0];
+
+    const dynamicTitle = skillParam
+      ? `Mohammed Sufyan — ${escapeHtml(skillParam)} Architecture`
+      : escapeHtml(trackMeta.headline);
+    const dynamicDesc = skillParam
+      ? `Verified enterprise experience, production systems, and credentials in ${escapeHtml(skillParam)}.`
+      : escapeHtml(`${trackMeta.subline} — ${trackMeta.kicker}`);
+
+    const ogImgQuery = new URLSearchParams();
+    ogImgQuery.set('track', mappedTrack ?? 'executive');
+    ogImgQuery.set('theme', themeParam);
+    if (skillParam) ogImgQuery.set('skill', skillParam);
+    const dynamicImage = `${baseUrl}/api/og-card.svg?${ogImgQuery.toString()}`;
+
+    return html
+      .replace(/<title>[^<]*<\/title>/, `<title>${dynamicTitle}</title>`)
+      .replace(
+        /<meta property="og:title" content="[^"]*"\s*\/>/,
+        `<meta property="og:title" content="${dynamicTitle}" />`
+      )
+      .replace(
+        /<meta property="og:description" content="[^"]*"\s*\/>/,
+        `<meta property="og:description" content="${dynamicDesc}" />`
+      )
+      .replace(
+        /<meta property="og:image" content="[^"]*"\s*\/>/,
+        `<meta property="og:image" content="${dynamicImage}" />`
+      )
+      .replace(
+        /<meta property="og:image:type" content="[^"]*"\s*\/>/,
+        `<meta property="og:image:type" content="image/svg+xml" />`
+      )
+      .replace(
+        /<meta name="twitter:title" content="[^"]*"\s*\/>/,
+        `<meta name="twitter:title" content="${dynamicTitle}" />`
+      )
+      .replace(
+        /<meta name="twitter:description" content="[^"]*"\s*\/>/,
+        `<meta name="twitter:description" content="${dynamicDesc}" />`
+      )
+      .replace(
+        /<meta name="twitter:image" content="[^"]*"\s*\/>/,
+        `<meta name="twitter:image" content="${dynamicImage}" />`
+      );
+  };
+
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
+    });
+    app.get('/', async (req: Request, res: Response, next: NextFunction) => {
+      if (!req.query.cv && !req.query.skill && !req.query.track) {
+        return next();
+      }
+      try {
+        const raw = fs.readFileSync(path.resolve(__dirname, 'index.html'), 'utf-8');
+        const transformed = await vite.transformIndexHtml(req.originalUrl, applyDynamicOgTags(raw, req));
+        res.status(200).setHeader('Content-Type', 'text/html').send(transformed);
+      } catch (e) {
+        next(e);
+      }
     });
     app.use(vite.middlewares);
   } else {
@@ -967,12 +1067,13 @@ async function startServer() {
     if (fs.existsSync(distPath)) {
       app.use(express.static(distPath));
     }
-    app.get('/{*splat}', (_req: Request, res: Response) => {
+    app.get('/{*splat}', (req: Request, res: Response) => {
       if (!fs.existsSync(indexPath)) {
         res.status(503).send('Production build not found. Run npm run build first.');
         return;
       }
-      res.sendFile(indexPath);
+      const raw = fs.readFileSync(indexPath, 'utf-8');
+      res.status(200).setHeader('Content-Type', 'text/html').send(applyDynamicOgTags(raw, req));
     });
   }
 

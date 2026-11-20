@@ -1,16 +1,20 @@
 import { MouseEvent as ReactMouseEvent, ReactNode, useCallback, useEffect, useState } from 'react';
-import { Download, Mail, Share2, AtSign, Check, MonitorSmartphone, QrCode } from 'lucide-react';
+import { Download, Mail, Share2, AtSign, Check, MonitorSmartphone, QrCode, Zap, Layers } from 'lucide-react';
 import { AnimatePresence, motion, useMotionValue, useReducedMotion, useSpring } from 'motion/react';
 import { PERSONAL_INFO, STATS } from '../data/portfolioData';
 import { useTheme } from '../theme/ThemeProvider';
 import { AnimatedMetric, EASE_OUT_EXPO, SpotlightCard } from './MotionPrimitives';
 import CiscoName from './CiscoName';
+import HeroAtmosphere from './HeroAtmosphere';
 import PortraitWelcome, { PortraitWelcomePhase } from './PortraitWelcome';
+import type { PortfolioReadingMode } from './UnifiedScrollHud';
 
 interface HeroProps {
   onOpenResume?: () => void;
   onOpenDigitalCard?: () => void;
   onApplySkills?: (skills: string[]) => void;
+  readingMode?: PortfolioReadingMode;
+  onChangeReadingMode?: (mode: PortfolioReadingMode) => void;
 }
 
 const CAPABILITY_MARQUEE_ITEMS = [
@@ -39,7 +43,7 @@ function StaggerLetters({
   delay?: number;
 }) {
   return (
-    <span>
+    <span className="inline-block whitespace-nowrap">
       {text.split('').map((char, i) => (
         <motion.span
           key={`${text}-${i}-${char}`}
@@ -141,6 +145,8 @@ export default function Hero({
   onOpenResume,
   onOpenDigitalCard,
   onApplySkills,
+  readingMode = 'deep',
+  onChangeReadingMode,
 }: HeroProps) {
   const { isLight } = useTheme();
   const [copied, setCopied] = useState(false);
@@ -217,13 +223,16 @@ export default function Hero({
 
   return (
     <section id="overview" className="relative isolate pt-10 pb-14 lg:pt-16 lg:pb-20 overflow-hidden border-b border-slate-800/80 bg-[#07090e]">
+      {/* Subtle interactive topographic dot-matrix / vector constellation strictly behind Hero */}
+      <HeroAtmosphere />
+
       {/* Architectural blueprint dot/grid mask */}
       <div
         aria-hidden="true"
-        className="absolute inset-0 z-0 pointer-events-none opacity-65 print:hidden"
+        className="absolute inset-0 z-0 pointer-events-none opacity-45 print:hidden"
         style={{
           backgroundImage:
-            'radial-gradient(rgba(56, 189, 248, 0.18) 1px, transparent 1px)',
+            'radial-gradient(rgba(56, 189, 248, 0.16) 1px, transparent 1px)',
           backgroundSize: '28px 28px',
           maskImage: 'radial-gradient(ellipse 80% 70% at 50% 35%, black 20%, transparent 100%)',
           WebkitMaskImage:
@@ -254,24 +263,25 @@ export default function Hero({
         <div className="grid grid-cols-1 md:grid-cols-12 items-center gap-8 lg:gap-12">
           <div className="md:col-span-7 xl:col-span-8 flex flex-col space-y-4">
           {/* Main Headline — letter stagger unlocks with portrait reveal */}
-          <h1 className="text-[1.85rem] sm:text-5xl lg:text-6xl 2xl:text-7xl font-display font-extrabold tracking-tight text-white leading-[1.08] text-balance break-words">
+          <h1 className="text-[1.85rem] sm:text-5xl md:text-[2.45rem] lg:text-[3.15rem] xl:text-6xl 2xl:text-7xl font-display font-extrabold tracking-tight text-white leading-[1.08] text-balance">
             <span className="sr-only">Hello! I&apos;m Mohammed Sufyan</span>
             <span aria-hidden="true">
               <motion.span
                 initial={{ opacity: 0, y: 10 }}
                 animate={heroUnlocked ? { opacity: 1, y: 0 } : { opacity: 0.25, y: 6 }}
                 transition={{ duration: 0.45, ease: EASE_OUT_EXPO }}
-                className="inline-block"
+                className="inline-block whitespace-nowrap"
               >
-                Hello! I&apos;m{' '}
-              </motion.span>
+                Hello! I&apos;m
+              </motion.span>{' '}
+              <br className="hidden md:inline lg:hidden" />
               <StaggerLetters
                 text="Mohammed"
                 active={heroUnlocked}
                 delay={0.08}
                 className="bg-gradient-to-r from-[#38bdf8] via-cyan-300 to-sky-400 bg-clip-text text-transparent [-webkit-text-fill-color:transparent]"
-              />
-              <br />
+              />{' '}
+              <br className="hidden lg:inline" />
               <StaggerLetters
                 text="Sufyan"
                 active={heroUnlocked}
@@ -299,7 +309,15 @@ export default function Hero({
             transition={{ duration: 0.5, delay: 0.24, ease: EASE_OUT_EXPO }}
             className="text-slate-400 text-xs sm:text-base leading-relaxed max-w-3xl font-light pt-1"
           >
-            Architecting high-velocity security data platforms, multi-cloud vulnerability engines, and enterprise compliance systems across {PERSONAL_INFO.experienceYears} years of engineering experience with <CiscoName />, HCL America Inc./HCLTech, and Tata Consultancy Services in the United States, United Kingdom, and India.
+            {readingMode === 'brief' ? (
+              <>
+                13+ years architecting security data platforms, multi-cloud vulnerability engines, and Zero Trust governance across <CiscoName />, HCLTech, and TCS (US · UK · India).
+              </>
+            ) : (
+              <>
+                Architecting high-velocity security data platforms, multi-cloud vulnerability engines, and enterprise compliance systems across {PERSONAL_INFO.experienceYears} years of engineering experience with <CiscoName />, HCL America Inc./HCLTech, and Tata Consultancy Services in the United States, United Kingdom, and India.
+              </>
+            )}
           </motion.p>
 
           {/* Action Bar */}
@@ -409,6 +427,17 @@ export default function Hero({
                 whileHover={{ y: -2 }}
                 whileTap={{ scale: 0.94 }}
                 href="#contact"
+                onClick={(e) => {
+                  e.preventDefault();
+                  document.getElementById('contact')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  try {
+                    if (window.location.hash !== '#contact') {
+                      window.history.replaceState({}, '', `${window.location.pathname}${window.location.search}#contact`);
+                    }
+                  } catch {
+                    /* ignore */
+                  }
+                }}
                 className="p-2.5 rounded-lg border border-slate-800 bg-[#121722] text-slate-300 hover:text-white hover:border-slate-700 transition-colors"
                 aria-label="Contact"
                 title="Transmit message"
@@ -417,6 +446,64 @@ export default function Hero({
               </motion.a>
             </div>
           </motion.div>
+
+          {/* Recruiter 30-Second Brief vs Technical Deep-Dive Reading Mode */}
+          {onChangeReadingMode && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.45, delay: 0.36, ease: EASE_OUT_EXPO }}
+              className="pt-2 flex flex-wrap items-center gap-3 print:hidden"
+            >
+              <div
+                role="group"
+                aria-label="Portfolio reading depth"
+                className={`flex flex-wrap sm:inline-flex items-center gap-1 p-1 rounded-xl border w-fit max-w-full ${
+                  isLight ? 'border-slate-200 bg-slate-100/90' : 'border-slate-800 bg-[#0d121f]/85'
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => onChangeReadingMode('deep')}
+                  aria-pressed={readingMode === 'deep'}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-mono transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                    readingMode === 'deep'
+                      ? isLight
+                        ? 'bg-sky-600 text-white font-semibold shadow-sm'
+                        : 'bg-cyan-500 text-slate-950 font-semibold'
+                      : isLight
+                        ? 'text-slate-600 hover:text-slate-900'
+                        : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Layers className="w-3.5 h-3.5 shrink-0" />
+                  <span>Full Technical Deep-Dive</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onChangeReadingMode('brief')}
+                  aria-pressed={readingMode === 'brief'}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-mono transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                    readingMode === 'brief'
+                      ? isLight
+                        ? 'bg-sky-600 text-white font-semibold shadow-sm'
+                        : 'bg-cyan-500 text-slate-950 font-semibold'
+                      : isLight
+                        ? 'text-slate-600 hover:text-slate-900'
+                        : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Zap className="w-3.5 h-3.5 shrink-0" />
+                  <span>Recruiter 30s Brief</span>
+                </button>
+              </div>
+              <span className="text-[11px] font-mono text-slate-400">
+                {readingMode === 'brief'
+                  ? 'Showing top impact bullets, proof metrics & pinned credentials'
+                  : 'Complete architecture, role timeline & full 20-credential vault'}
+              </span>
+            </motion.div>
+          )}
           </div>
 
           {/* Right Column: Animated Dark Architectural Portrait */}

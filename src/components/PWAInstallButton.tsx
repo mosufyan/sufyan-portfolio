@@ -6,6 +6,7 @@ import {
   type InstallPlatform,
   type InstallSurface,
 } from '../hooks/usePWAInstall';
+import { useModalPlacement } from '../hooks/useModalPlacement';
 import AccessGateModal, { isAccessUnlocked, type AccessGateAction } from './AccessGateModal';
 
 function InstallIcon({ surface }: { surface: InstallSurface }) {
@@ -84,6 +85,7 @@ export default function PWAInstallButton() {
 
   const [showManualGuide, setShowManualGuide] = useState(false);
   const [gateAction, setGateAction] = useState<AccessGateAction | null>(null);
+  const guideAlignClass = useModalPlacement(showManualGuide);
 
   if (isInstalled || !canOfferInstall) {
     return null;
@@ -131,13 +133,13 @@ export default function PWAInstallButton() {
   const guide = (
     <div
       onClick={() => setShowManualGuide(false)}
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 print:hidden"
+      className={`fixed inset-0 z-[70] flex ${guideAlignClass} justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-5 pt-[max(0.75rem,env(safe-area-inset-top))] sm:pt-6 pb-[max(0.75rem,env(safe-area-inset-bottom))] overflow-y-auto print:hidden`}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md rounded-2xl border border-slate-700 bg-[#0d121f] p-6 shadow-2xl text-left"
+        className="w-full max-w-md 2xl:max-w-lg max-h-[min(calc(100dvh-1.5rem),35.5rem)] lg:max-h-[min(calc(100dvh-3rem),40rem)] flex flex-col overflow-hidden rounded-2xl border border-slate-700 bg-[#0d121f] shadow-2xl text-left"
       >
-        <div className="flex items-start justify-between gap-3 pb-3 border-b border-slate-800">
+        <div className="shrink-0 flex items-start justify-between gap-3 px-5 sm:px-6 pt-5 pb-3 border-b border-slate-800">
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-cyan-950/60 border border-cyan-500/40 text-cyan-400">
               <InstallIcon surface={surface} />
@@ -163,33 +165,35 @@ export default function PWAInstallButton() {
           </button>
         </div>
 
-        <ol className="mt-4 space-y-2.5 text-xs sm:text-sm text-slate-300 leading-relaxed list-decimal pl-4">
-          {steps.map((step) => (
-            <li key={step}>{step}</li>
-          ))}
-        </ol>
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 sm:px-6 py-4">
+          <ol className="space-y-2.5 text-xs sm:text-sm text-slate-300 leading-relaxed list-decimal pl-4">
+            {steps.map((step) => (
+              <li key={step}>{step}</li>
+            ))}
+          </ol>
 
-        {canDirectInstall && (
+          {canDirectInstall && (
+            <button
+              type="button"
+              onClick={handleGuideInstallNow}
+              className="mt-5 w-full rounded-xl bg-cyan-500 hover:bg-cyan-400 py-2.5 text-xs font-semibold text-slate-950 transition-colors"
+            >
+              Install now
+            </button>
+          )}
+
           <button
             type="button"
-            onClick={handleGuideInstallNow}
-            className="mt-5 w-full rounded-xl bg-cyan-500 hover:bg-cyan-400 py-2.5 text-xs font-semibold text-slate-950 transition-colors"
+            onClick={() => setShowManualGuide(false)}
+            className={`w-full rounded-xl py-2 text-xs font-semibold transition-colors ${
+              canDirectInstall
+                ? 'mt-2 border border-slate-700 bg-slate-900/70 text-slate-300 hover:text-white'
+                : 'mt-5 bg-cyan-500 hover:bg-cyan-400 text-slate-950'
+            }`}
           >
-            Install now
+            {canDirectInstall ? 'Close' : 'Got it'}
           </button>
-        )}
-
-        <button
-          type="button"
-          onClick={() => setShowManualGuide(false)}
-          className={`w-full rounded-xl py-2 text-xs font-semibold transition-colors ${
-            canDirectInstall
-              ? 'mt-2 border border-slate-700 bg-slate-900/70 text-slate-300 hover:text-white'
-              : 'mt-5 bg-cyan-500 hover:bg-cyan-400 text-slate-950'
-          }`}
-        >
-          {canDirectInstall ? 'Close' : 'Got it'}
-        </button>
+        </div>
       </div>
     </div>
   );

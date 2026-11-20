@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Check, ExternalLink, ShieldCheck, X, Calendar, Hash } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Certification, PERSONAL_INFO } from '../data/portfolioData';
 import { useTheme } from '../theme/ThemeProvider';
+import { useModalPlacement } from '../hooks/useModalPlacement';
 import IssuerMark from './IssuerMark';
 import ModalHeaderScan from './ModalHeaderScan';
 import { EASE_OUT_EXPO } from './MotionPrimitives';
@@ -15,6 +17,7 @@ interface CredentialModalProps {
 
 export default function CredentialModal({ certification, onClose }: CredentialModalProps) {
   const { theme, isLight } = useTheme();
+  const alignClass = useModalPlacement(Boolean(certification));
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -55,7 +58,7 @@ export default function CredentialModal({ certification, onClose }: CredentialMo
     : 'border-slate-800 hover:bg-slate-800 text-slate-300';
   const backdrop = isLight ? 'bg-slate-900/45' : 'bg-black/80';
 
-  return (
+  const modal = (
     <AnimatePresence>
       {certification && (
         <motion.div
@@ -67,14 +70,14 @@ export default function CredentialModal({ certification, onClose }: CredentialMo
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.2 }}
-          className={`fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm print:hidden ${backdrop}`}
+          className={`fixed inset-0 z-50 flex ${alignClass} justify-center p-2.5 sm:p-5 pt-[max(0.75rem,env(safe-area-inset-top))] sm:pt-6 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur-sm overflow-y-auto print:hidden ${backdrop}`}
         >
           <motion.div
             initial={{ opacity: 0, scale: 0.96, y: 12 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.96, y: 8 }}
             transition={{ duration: 0.28, ease: EASE_OUT_EXPO }}
-            className={`relative w-full max-w-xl max-h-[90vh] overflow-hidden rounded-2xl border shadow-2xl flex flex-col ${panel}`}
+            className={`relative w-full max-w-xl 2xl:max-w-2xl max-h-[min(calc(100dvh-1.5rem),35.5rem)] sm:max-h-[min(calc(100dvh-2.5rem),36rem)] lg:max-h-[min(calc(100dvh-3rem),46rem)] overflow-hidden rounded-2xl border shadow-2xl flex flex-col ${panel}`}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Always-dark header */}
@@ -103,7 +106,7 @@ export default function CredentialModal({ certification, onClose }: CredentialMo
               </motion.button>
             </div>
 
-            <div className="overflow-y-auto p-5 sm:p-6 space-y-5">
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 sm:p-6 space-y-5">
               <div className={`flex items-center gap-2 text-sm font-medium ${accent}`}>
                 <IssuerMark issuer={certification.issuer} size="sm" theme={theme} />
                 <span>Issued by {certification.issuer}</span>
@@ -211,4 +214,7 @@ export default function CredentialModal({ certification, onClose }: CredentialMo
       )}
     </AnimatePresence>
   );
+
+  if (typeof document === 'undefined') return null;
+  return createPortal(modal, document.body);
 }

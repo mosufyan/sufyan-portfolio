@@ -1,6 +1,18 @@
-import { useEffect, useState } from 'react';
-import { Briefcase, Building2, Calendar, Check, ChevronDown, ChevronsUpDown, Globe, MapPin, Award, Share2, X } from 'lucide-react';
-import { AnimatePresence, motion } from 'motion/react';
+import { useEffect, useRef, useState } from 'react';
+import {
+  Briefcase,
+  Building2,
+  Calendar,
+  Check,
+  ChevronDown,
+  ChevronsUpDown,
+  Globe,
+  MapPin,
+  Award,
+  Share2,
+  X,
+} from 'lucide-react';
+import { AnimatePresence, motion, useReducedMotion, useScroll, useSpring } from 'motion/react';
 import { SKILL_FILTER_PRESETS, WORK_EXPERIENCE } from '../data/portfolioData';
 import { doesRoleMatchSkill, doesTechTagMatchSkill, formatSkillFilterSummary } from '../utils/skillMatcher';
 import { CollapseTimeline, CollapseTimelineNode } from './CollapseTimeline';
@@ -8,12 +20,14 @@ import HeaderSpotlight from './HeaderSpotlight';
 import CiscoName from './CiscoName';
 import { Reveal, EASE_OUT_EXPO } from './MotionPrimitives';
 import SectionScanLine from './SectionScanLine';
+import type { PortfolioReadingMode } from './UnifiedScrollHud';
 
 interface ExperienceProps {
   selectedSkills: string[];
   onSelectSkill: (skill: string | null) => void;
   onApplySkills: (skills: string[]) => void;
   focusedCompany?: { name: string; seq: number } | null;
+  readingMode?: PortfolioReadingMode;
 }
 
 const GLOBAL_FOOTPRINT = [
@@ -52,18 +66,66 @@ const GLOBAL_FOOTPRINT = [
   },
 ];
 
+const JOURNEY_MILESTONES = [
+  {
+    step: '01',
+    years: '2013–16',
+    hub: 'Bengaluru, IN',
+    org: 'TCS · Systems Engineering',
+    company: 'Tata Consultancy Services',
+    filterKey: 'tcs' as const,
+  },
+  {
+    step: '02',
+    years: '2016–19',
+    hub: 'London, UK',
+    org: 'TCS · Enterprise Consulting',
+    company: 'Tata Consultancy Services',
+    filterKey: 'tcs' as const,
+  },
+  {
+    step: '03',
+    years: '2019–26',
+    hub: 'Bay Area & India',
+    org: 'HCL America · Cloud Security',
+    company: 'HCL America Inc./HCLTech',
+    filterKey: 'hcl' as const,
+  },
+  {
+    step: '04',
+    years: '2026–Now',
+    hub: 'San Jose, US',
+    org: 'Cisco Systems · STO CTO Ops',
+    company: 'Cisco Systems Inc.',
+    filterKey: 'cisco' as const,
+  },
+] as const;
+
 export default function Experience({
   selectedSkills,
   onSelectSkill,
   onApplySkills,
   focusedCompany,
+  readingMode = 'deep',
 }: ExperienceProps) {
+  const sectionRef = useRef<HTMLElement>(null);
+  const shouldReduceMotion = useReducedMotion();
+  const { scrollYProgress } = useScroll({
+    target: sectionRef,
+    offset: ['start 78%', 'end 58%'],
+  });
+  const smoothProgress = useSpring(scrollYProgress, {
+    stiffness: 150,
+    damping: 26,
+    restDelta: 0.001,
+  });
+
   const [activeFilter, setActiveFilter] = useState<'all' | 'cisco' | 'hcl' | 'tcs'>('all');
   const [linkCopied, setLinkCopied] = useState(false);
   const [expandedCompanies, setExpandedCompanies] = useState<Record<string, boolean>>({
     'Cisco Systems Inc.': false,
     'HCL America Inc./HCLTech': false,
-    'Tata Consultancy Services': false
+    'Tata Consultancy Services': false,
   });
   const skillFilter = formatSkillFilterSummary(selectedSkills);
   const hasSkillFilter = skillFilter.count > 0;
@@ -81,6 +143,16 @@ export default function Experience({
       return next;
     });
   }, [hasSkillFilter, selectedSkills]);
+
+  // In 30-second recruiter brief mode, auto-open the two most recent companies for instant impact scan
+  useEffect(() => {
+    if (readingMode !== 'brief' || hasSkillFilter) return;
+    setExpandedCompanies((prev) => ({
+      ...prev,
+      'Cisco Systems Inc.': true,
+      'HCL America Inc./HCLTech': true,
+    }));
+  }, [readingMode, hasSkillFilter]);
 
   useEffect(() => {
     if (!focusedCompany) return;
@@ -109,7 +181,7 @@ export default function Experience({
   const toggleExpand = (companyName: string) => {
     setExpandedCompanies((prev) => ({
       ...prev,
-      [companyName]: !prev[companyName]
+      [companyName]: !prev[companyName],
     }));
   };
 
@@ -147,34 +219,38 @@ export default function Experience({
   const totalMatchingRoles = filteredExperience.reduce((acc, comp) => acc + comp.roles.length, 0);
 
   return (
-    <section id="experience" className="relative py-16 lg:py-24 border-b border-slate-800/80 bg-[#07090e]">
+    <section
+      ref={sectionRef}
+      id="experience"
+      className="relative py-16 lg:py-24 border-b border-slate-800/80 bg-[#07090e]"
+    >
       <SectionScanLine />
       <div className="page-shell">
         {/* Section Header */}
         <Reveal className="flex flex-col gap-6 mb-10">
           <HeaderSpotlight>
-          <div>
-            <div className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-cyan-400 tracking-wider uppercase mb-2">
-              <Briefcase className="w-3.5 h-3.5" />
-              <span>PROFESSIONAL TIMELINE</span>
+            <div>
+              <div className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-cyan-400 tracking-wider uppercase mb-2">
+                <Briefcase className="w-3.5 h-3.5" />
+                <span>PROFESSIONAL TIMELINE</span>
+              </div>
+              <h2 className="text-2xl sm:text-3xl lg:text-4xl font-display font-bold text-white tracking-tight">
+                Professional Experience &amp; Leadership
+              </h2>
+              <p className="mt-2 text-sm sm:text-base text-slate-400 max-w-3xl">
+                Comprehensive timeline spanning enterprise systems engineering, cloud architecture, SRE, and consulting engagements across <CiscoName />, HCL America Inc./HCLTech, and Tata Consultancy Services — spanning the US, UK, and India.
+              </p>
             </div>
-            <h2 className="text-2xl sm:text-3xl lg:text-4xl font-display font-bold text-white tracking-tight">
-              Professional Experience &amp; Leadership
-            </h2>
-            <p className="mt-2 text-sm sm:text-base text-slate-400 max-w-3xl">
-              Comprehensive timeline spanning enterprise systems engineering, cloud architecture, SRE, and consulting engagements across <CiscoName />, HCL America Inc./HCLTech, and Tata Consultancy Services — spanning the US, UK, and India.
-            </p>
-          </div>
           </HeaderSpotlight>
 
-          {/* Global Career & Delivery Footprint Strip (US · UK · India) */}
-          <div className="rounded-2xl border border-slate-800/90 bg-[#0a0f1c]/90 p-4 sm:p-5 print:break-inside-avoid">
-            <div className="flex flex-wrap items-center justify-between gap-2 pb-3 mb-4 border-b border-slate-800/80">
+          {/* Global Career & Delivery Footprint Strip + Scroll-Linked Journey Track */}
+          <div className="rounded-2xl border border-slate-800/90 bg-[#0a0f1c]/90 p-4 sm:p-6 print:break-inside-avoid">
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-3 mb-5 border-b border-slate-800/80">
               <div className="inline-flex items-center gap-2 text-xs font-mono uppercase tracking-wider text-cyan-400">
                 <Globe className="w-3.5 h-3.5 shrink-0" />
                 <span>Career Trajectory Matrix (2013 → 2026) · US · UK · India</span>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-3">
                 {activeFilter !== 'all' && (
                   <button
                     type="button"
@@ -185,56 +261,58 @@ export default function Experience({
                   </button>
                 )}
                 <span className="text-[11px] font-mono text-slate-400">
-                  Select any era to filter &amp; expand
+                  Scroll-linked · Select any stop to filter
                 </span>
               </div>
             </div>
 
-            {/* Proportional 13+ Year Span Bar */}
-            <div className="mb-4 space-y-2 print:hidden">
-              <div className="flex h-3 w-full rounded-full overflow-hidden border border-slate-800 bg-[#060911] p-0.5 gap-0.5">
-                {GLOBAL_FOOTPRINT.map((stage) => {
-                  const isSelected = activeFilter === stage.filterKey;
-                  const isAnySelected = activeFilter !== 'all';
-                  const barTone =
-                    stage.filterKey === 'tcs'
-                      ? 'bg-sky-500/75 hover:bg-sky-400'
-                      : stage.filterKey === 'hcl'
-                        ? 'bg-cyan-500/85 hover:bg-cyan-400'
-                        : 'bg-emerald-400 hover:bg-emerald-300';
+            {/* Animated Scroll-Linked 4-Stop Career Journey Track */}
+            <div className="mb-6 print:hidden">
+              <div className="relative mb-3">
+                <div className="h-1.5 w-full rounded-full bg-[#060911] border border-slate-800 overflow-hidden">
+                  <motion.div
+                    aria-hidden="true"
+                    style={
+                      shouldReduceMotion
+                        ? { scaleX: 1, transformOrigin: '0% 50%' }
+                        : { scaleX: smoothProgress, transformOrigin: '0% 50%' }
+                    }
+                    className="h-full w-full rounded-full bg-gradient-to-r from-sky-500 via-cyan-400 to-emerald-400"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+                {JOURNEY_MILESTONES.map((stop) => {
+                  const isActiveStop = activeFilter === stop.filterKey;
                   return (
                     <button
-                      key={stage.company}
+                      key={`${stop.step}-${stop.hub}`}
                       type="button"
-                      onClick={() => handleFootprintSelect(stage.company, stage.filterKey)}
-                      style={{ width: `${stage.spanWeight}%` }}
-                      title={`${stage.shortName} (${stage.period}) — ${stage.focusDomain}`}
-                      aria-label={`Jump to ${stage.company} (${stage.period})`}
-                      className={`h-full rounded-full transition-all cursor-pointer ${barTone} ${
-                        isSelected
-                          ? 'ring-2 ring-white/80 opacity-100'
-                          : isAnySelected
-                            ? 'opacity-45 hover:opacity-90'
-                            : 'opacity-90 hover:opacity-100'
+                      onClick={() => handleFootprintSelect(stop.company, stop.filterKey)}
+                      aria-pressed={isActiveStop}
+                      className={`text-left rounded-xl border px-3 py-2.5 transition-colors cursor-pointer ${
+                        isActiveStop
+                          ? 'border-cyan-500/60 bg-cyan-950/35'
+                          : 'border-slate-800/80 bg-[#070b14]/75 hover:border-cyan-500/35'
                       }`}
-                    />
+                    >
+                      <div className="flex items-center justify-between gap-2 text-[10px] font-mono">
+                        <span className="text-cyan-400 font-semibold tabular-nums">
+                          {stop.step} · {stop.years}
+                        </span>
+                        <span className="text-slate-400 truncate">{stop.hub}</span>
+                      </div>
+                      <div className="mt-1 text-xs font-display font-semibold text-white truncate">
+                        {stop.org}
+                      </div>
+                    </button>
                   );
                 })}
               </div>
-              <div className="flex items-center justify-between text-[10px] font-mono text-slate-400">
-                <span>2013 · TCS Foundation</span>
-                <span className="hidden sm:inline text-slate-500">
-                  {activeFilter === 'all'
-                    ? '13+ Years Continuous Enterprise Delivery'
-                    : GLOBAL_FOOTPRINT.find((g) => g.filterKey === activeFilter)?.focusDomain}
-                </span>
-                <span>
-                  2026 · <span className="sm:hidden">Cisco</span>
-                  <span className="hidden sm:inline">Cisco Systems Inc.</span> STO
-                </span>
-              </div>
             </div>
 
+            {/* Proportional 13+ Year Era Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 print:grid-cols-3 gap-3">
               {GLOBAL_FOOTPRINT.map((stage, idx) => {
                 const isSelected = activeFilter === stage.filterKey;
@@ -262,9 +340,11 @@ export default function Experience({
                     <div className="mt-1 text-[11px] font-mono text-slate-300">
                       {stage.regions}
                     </div>
-                    <div className="mt-1 text-[11px] text-slate-400 leading-snug">
-                      {stage.summary}
-                    </div>
+                    {readingMode === 'deep' && (
+                      <div className="mt-1 text-[11px] text-slate-400 leading-snug">
+                        {stage.summary}
+                      </div>
+                    )}
                   </button>
                 );
               })}
@@ -385,276 +465,293 @@ export default function Experience({
 
         {/* Timeline Stack */}
         <CollapseTimeline gapClassName="space-y-8">
-            {filteredExperience.map((comp) => {
-              const isExpanded = expandedCompanies[comp.company] ?? false;
+          {filteredExperience.map((comp) => {
+            const isExpanded = expandedCompanies[comp.company] ?? false;
 
-              return (
-                <CollapseTimelineNode key={comp.company} pulse={isExpanded}>
-                  <motion.div
-                    layout
-                    initial={{ opacity: 0, y: 18 }}
-                    whileInView={{ opacity: 1, y: 0 }}
-                    viewport={{ once: true, amount: 0.05 }}
-                    transition={{ duration: 0.45, ease: EASE_OUT_EXPO }}
-                    className="rounded-2xl border border-slate-800 hover:border-slate-700/80 bg-[#0d121f]/70 overflow-hidden shadow-xl transition-colors"
-                  >
-                {/* Company Header Banner */}
-                <div
-                  role="button"
-                  tabIndex={0}
-                  aria-expanded={isExpanded}
-                  onClick={() => toggleExpand(comp.company)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      toggleExpand(comp.company);
-                    }
-                  }}
-                  className="pdf-keep-next print:break-inside-avoid flex flex-col sm:flex-row sm:items-center justify-between p-5 sm:p-6 bg-[#0a0e1a] border-b border-slate-800/80 cursor-pointer hover:bg-[#0c1120] focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/60 transition-colors gap-3"
+            return (
+              <CollapseTimelineNode key={comp.company} pulse={isExpanded}>
+                <motion.div
+                  layout
+                  initial={{ opacity: 0, y: 18 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true, amount: 0.05 }}
+                  transition={{ duration: 0.45, ease: EASE_OUT_EXPO }}
+                  className="rounded-2xl border border-slate-800 hover:border-slate-700/80 bg-[#0d121f]/70 overflow-hidden shadow-xl transition-colors"
                 >
-                  <div className="flex items-start sm:items-center gap-3 min-w-0">
-                    <div className="flex h-10 w-10 sm:h-11 sm:w-11 shrink-0 items-center justify-center rounded-xl bg-slate-900 border border-slate-700/80 text-cyan-400">
-                      <Building2 className="w-5 h-5" />
+                  {/* Company Header Banner */}
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    aria-expanded={isExpanded}
+                    onClick={() => toggleExpand(comp.company)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        toggleExpand(comp.company);
+                      }
+                    }}
+                    className="pdf-keep-next print:break-inside-avoid flex flex-col sm:flex-row sm:items-center justify-between p-5 sm:p-6 bg-[#0a0e1a] border-b border-slate-800/80 cursor-pointer hover:bg-[#0c1120] focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/60 transition-colors gap-3"
+                  >
+                    <div className="flex items-start sm:items-center gap-3 min-w-0">
+                      <div className="flex h-10 w-10 sm:h-11 sm:w-11 shrink-0 items-center justify-center rounded-xl bg-slate-900 border border-slate-700/80 text-cyan-400">
+                        <Building2 className="w-5 h-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="text-lg sm:text-xl font-display font-bold text-white">
+                            {comp.company.includes('Cisco') ? <CiscoName /> : comp.company}
+                          </h3>
+                          <span className="text-[11px] font-mono font-semibold tracking-wider text-cyan-400">
+                            · {comp.companyTag}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-mono text-slate-400 mt-1">
+                          <span className="flex items-center gap-1">
+                            <MapPin className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                            <span>{comp.location}</span>
+                          </span>
+                          <span className="hidden sm:inline">·</span>
+                          <span className="flex items-center gap-1 text-slate-300">
+                            <Calendar className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                            <span>{comp.tenure}</span>
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="text-lg sm:text-xl font-display font-bold text-white">
-                          {comp.company.includes('Cisco') ? <CiscoName /> : comp.company}
-                        </h3>
-                        <span className="px-2 py-0.5 rounded text-[10px] font-mono font-semibold tracking-wider bg-cyan-950/60 border border-cyan-500/40 text-cyan-300">
-                          {comp.companyTag}
-                        </span>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-mono text-slate-400 mt-1">
-                        <span className="flex items-center gap-1">
-                          <MapPin className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                          <span>{comp.location}</span>
-                        </span>
-                        <span className="hidden sm:inline">·</span>
-                        <span className="flex items-center gap-1 text-slate-300">
-                          <Calendar className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-                          <span>{comp.tenure}</span>
-                        </span>
-                      </div>
+
+                    <div className="flex items-center gap-2 self-end sm:self-auto text-xs text-slate-400 font-mono print:hidden">
+                      <span className="hidden sm:inline">
+                        {isExpanded ? 'Collapse' : 'Expand'}
+                      </span>
+                      <motion.span
+                        animate={{ rotate: isExpanded ? 180 : 0 }}
+                        transition={{ duration: 0.25, ease: EASE_OUT_EXPO }}
+                        className="inline-flex"
+                      >
+                        <ChevronDown className={`w-4 h-4 ${isExpanded ? 'text-cyan-400' : 'text-slate-400'}`} />
+                      </motion.span>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 self-end sm:self-auto text-xs text-slate-400 font-mono print:hidden">
-                    <span className="hidden sm:inline">
-                      {isExpanded ? 'Collapse' : 'Expand'}
-                    </span>
-                    <motion.span
-                      animate={{ rotate: isExpanded ? 180 : 0 }}
-                      transition={{ duration: 0.25, ease: EASE_OUT_EXPO }}
-                      className="inline-flex"
-                    >
-                      <ChevronDown className={`w-4 h-4 ${isExpanded ? 'text-cyan-400' : 'text-slate-400'}`} />
-                    </motion.span>
-                  </div>
-                </div>
+                  {/* Sub-Roles Content — clean horizontal divide-y hairlines (no left accent stripe) */}
+                  <AnimatePresence initial={false}>
+                    {isExpanded && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ duration: 0.36, ease: EASE_OUT_EXPO }}
+                        className="overflow-hidden print:!block print:!h-auto print:!opacity-100"
+                      >
+                        <div className="p-5 sm:p-7 space-y-8 divide-y divide-slate-800/80">
+                          {comp.roles.map((role, rIdx) => {
+                            const visibleHighlights =
+                              readingMode === 'brief' ? role.highlights.slice(0, 2) : role.highlights;
+                            const visibleTechs =
+                              readingMode === 'brief' ? role.technologies.slice(0, 5) : role.technologies;
 
-                {/* Sub-Roles Content */}
-                <AnimatePresence initial={false}>
-                  {isExpanded && (
-                    <motion.div
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      exit={{ opacity: 0, height: 0 }}
-                      transition={{ duration: 0.36, ease: EASE_OUT_EXPO }}
-                      className="overflow-hidden border-l-2 border-cyan-500/40 print:!block print:!h-auto print:!opacity-100 print:border-l-0"
-                    >
-                      <div className="p-5 sm:p-6 space-y-8 divide-y divide-slate-800/80">
-                        {comp.roles.map((role, rIdx) => (
-                          <motion.div
-                            key={rIdx}
-                            initial={{ opacity: 0, y: 8 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ duration: 0.28, delay: rIdx * 0.04, ease: EASE_OUT_EXPO }}
-                            className={`${rIdx > 0 ? 'pt-8' : ''} print:break-inside-avoid`}
-                          >
-                            {/* Role Title and Meta — domain stays full-width so long names don't crush */}
-                            <div className="mb-2 space-y-1.5">
-                              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                                <h4 className="min-w-0 text-base sm:text-lg font-display font-semibold text-white text-balance">
-                                  {role.role}
-                                </h4>
-                                <div className="flex flex-wrap items-center gap-2 font-mono text-xs text-slate-400 sm:justify-end sm:max-w-[min(100%,22rem)]">
-                                  <span className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-300 whitespace-nowrap">
-                                    {role.period}
-                                  </span>
-                                  <span className="text-slate-500 hidden sm:inline">|</span>
-                                  <span className="min-w-0 leading-snug">{role.location}</span>
+                            return (
+                              <motion.div
+                                key={rIdx}
+                                initial={{ opacity: 0, y: 8 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ duration: 0.28, delay: rIdx * 0.04, ease: EASE_OUT_EXPO }}
+                                className={`${rIdx > 0 ? 'pt-8' : ''} print:break-inside-avoid`}
+                              >
+                                {/* Role Title and Meta */}
+                                <div className="mb-2 space-y-1.5">
+                                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                    <h4 className="min-w-0 text-base sm:text-lg font-display font-semibold text-white text-balance">
+                                      {role.role}
+                                    </h4>
+                                    <div className="flex flex-wrap items-center gap-2 font-mono text-xs text-slate-400 sm:justify-end sm:max-w-[min(100%,22rem)]">
+                                      <span className="text-slate-300 whitespace-nowrap">
+                                        {role.period}
+                                      </span>
+                                      <span className="text-slate-600">·</span>
+                                      <span className="min-w-0 leading-snug">{role.location}</span>
+                                    </div>
+                                  </div>
+                                  {role.domain && (
+                                    <div className="text-xs font-mono text-cyan-400/90 leading-relaxed max-w-prose sm:max-w-none">
+                                      {role.domain}
+                                    </div>
+                                  )}
+                                  {role.proofMetric && (
+                                    <div className="pt-1 text-[11px] font-mono text-cyan-300 leading-snug">
+                                      <span className="uppercase tracking-wider text-cyan-400/80">Proof · </span>
+                                      {role.proofMetric}
+                                    </div>
+                                  )}
                                 </div>
+
+                                {/* Bullet Highlights */}
+                                <ul className="space-y-2.5 text-xs sm:text-sm text-slate-300 pl-1 my-4">
+                                  {visibleHighlights.map((bullet, bIdx) => (
+                                    <li key={bIdx} className="flex items-start gap-2.5 leading-relaxed">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 mt-2 shrink-0"></span>
+                                      <span>{bullet}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+
+                                {readingMode === 'brief' && role.highlights.length > 2 && (
+                                  <div className="text-[11px] font-mono text-slate-400 mb-3 print:hidden">
+                                    30s Brief · Top 2 of {role.highlights.length} impact highlights shown
+                                  </div>
+                                )}
+
+                                {/* In-role recognition citation */}
+                                {role.recognitionBadge && (
+                                  <div className="my-3 inline-flex items-start sm:items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-950/40 border border-cyan-500/30 text-xs font-mono text-cyan-300 max-w-full">
+                                    <Award className="w-3.5 h-3.5 text-cyan-400 shrink-0 mt-0.5 sm:mt-0" />
+                                    <span>Honor: {role.recognitionBadge}</span>
+                                  </div>
+                                )}
+
+                                {/* Tech tags (clickable interactive filter controls) */}
+                                {visibleTechs.length > 0 && (
+                                  <div className="pt-2 flex flex-wrap items-center gap-1.5">
+                                    <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider mr-1">
+                                      Stack:
+                                    </span>
+                                    {visibleTechs.map((tech, tIdx) => {
+                                      const isMatch = doesTechTagMatchSkill(tech, selectedSkills);
+                                      return (
+                                        <motion.button
+                                          key={tIdx}
+                                          type="button"
+                                          initial={{ opacity: 0, y: 4 }}
+                                          animate={{ opacity: 1, y: 0 }}
+                                          transition={{
+                                            duration: 0.22,
+                                            delay: 0.08 + tIdx * 0.02,
+                                            ease: EASE_OUT_EXPO,
+                                          }}
+                                          onClick={() => onSelectSkill(tech)}
+                                          title={
+                                            isMatch
+                                              ? `Remove ${tech} from skill filters`
+                                              : `Add ${tech} to skill filters`
+                                          }
+                                          aria-pressed={isMatch}
+                                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 ${
+                                            isMatch
+                                              ? 'skill-chip-active bg-cyan-500 border border-cyan-500 text-slate-950 font-semibold'
+                                              : 'bg-[#090d16] border border-slate-800 text-slate-300 hover:border-cyan-500/40 hover:text-cyan-200'
+                                          }`}
+                                        >
+                                          {tech}
+                                          {isMatch && <X className="w-3 h-3 shrink-0 opacity-80" aria-hidden="true" />}
+                                        </motion.button>
+                                      );
+                                    })}
+                                    {readingMode === 'brief' && role.technologies.length > visibleTechs.length && (
+                                      <span className="text-[10px] font-mono text-slate-500 pl-1">
+                                        +{role.technologies.length - visibleTechs.length} more
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                              </motion.div>
+                            );
+                          })}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  {/* Print-only expanded fallback when collapsed on screen */}
+                  {!isExpanded && (
+                    <div className="hidden print:block p-5 sm:p-6 space-y-6 divide-y divide-slate-800/80">
+                      {comp.roles.map((role, rIdx) => (
+                        <div key={rIdx} className={`${rIdx > 0 ? 'pt-6' : ''} print:break-inside-avoid`}>
+                          <div className="mb-2 space-y-1.5">
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                              <h4 className="min-w-0 text-base font-display font-semibold text-white">
+                                {role.role}
+                              </h4>
+                              <div className="flex flex-wrap items-center gap-2 font-mono text-xs text-slate-400">
+                                <span className="text-slate-300 whitespace-nowrap">{role.period}</span>
+                                <span className="text-slate-500">·</span>
+                                <span>{role.location}</span>
                               </div>
-                              {role.domain && (
-                                <div className="text-xs font-mono text-cyan-400/90 leading-relaxed max-w-prose sm:max-w-none">
-                                  {role.domain}
-                                </div>
-                              )}
-                              {role.proofMetric && (
-                                <div className="inline-flex max-w-full items-start gap-2 rounded-lg border border-cyan-500/30 bg-cyan-950/35 px-2.5 py-1.5 text-[11px] font-mono text-cyan-200">
-                                  <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-cyan-400" aria-hidden="true" />
-                                  <span className="leading-snug">
-                                    <span className="uppercase tracking-wider text-cyan-400/80">Proof · </span>
-                                    {role.proofMetric}
-                                  </span>
-                                </div>
-                              )}
                             </div>
-
-                            {/* Bullet Highlights */}
-                            <ul className="space-y-2.5 text-xs sm:text-sm text-slate-300 pl-1 my-4">
-                              {role.highlights.map((bullet, bIdx) => (
-                                <li key={bIdx} className="flex items-start gap-2.5 leading-relaxed">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 mt-2 shrink-0"></span>
-                                  <span>{bullet}</span>
-                                </li>
-                              ))}
-                            </ul>
-
-                            {/* In-role recognition citation tag if present */}
-                            {role.recognitionBadge && (
-                              <div className="my-3 inline-flex items-start sm:items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-950/40 border border-cyan-500/30 text-xs font-mono text-cyan-300 max-w-full">
-                                <Award className="w-3.5 h-3.5 text-cyan-400 shrink-0 mt-0.5 sm:mt-0" />
-                                <span>Honor: {role.recognitionBadge}</span>
+                            {role.domain && (
+                              <div className="text-xs font-mono text-cyan-400/90 leading-relaxed">
+                                {role.domain}
                               </div>
                             )}
-
-                            {/* Tech tags (clickable for bidirectional cross-filtering) */}
-                            {role.technologies.length > 0 && (
-                              <div className="pt-2 flex flex-wrap items-center gap-1.5">
-                                <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider mr-1">
-                                  Stack:
-                                </span>
-                                {role.technologies.map((tech, tIdx) => {
-                                  const isMatch = doesTechTagMatchSkill(tech, selectedSkills);
-                                  return (
-                                    <motion.button
-                                      key={tIdx}
-                                      type="button"
-                                      initial={{ opacity: 0, y: 4 }}
-                                      animate={{ opacity: 1, y: 0 }}
-                                      transition={{ duration: 0.22, delay: 0.08 + tIdx * 0.02, ease: EASE_OUT_EXPO }}
-                                      onClick={() => onSelectSkill(tech)}
-                                      title={
-                                        isMatch
-                                          ? `Remove ${tech} from skill filters`
-                                          : `Add ${tech} to skill filters`
-                                      }
-                                      aria-pressed={isMatch}
-                                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 ${
-                                        isMatch
-                                          ? 'skill-chip-active bg-cyan-500 border border-cyan-500 text-slate-950 font-semibold'
-                                          : 'bg-[#090d16] border border-slate-800 text-slate-300 hover:border-cyan-500/40 hover:text-cyan-200'
-                                      }`}
-                                    >
-                                      {tech}
-                                      {isMatch && <X className="w-3 h-3 shrink-0 opacity-80" aria-hidden="true" />}
-                                    </motion.button>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </motion.div>
-                        ))}
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-
-                {/* Print-only expanded fallback when collapsed on screen */}
-                {!isExpanded && (
-                  <div className="hidden print:block p-5 sm:p-6 space-y-6 divide-y divide-slate-800/80">
-                    {comp.roles.map((role, rIdx) => (
-                      <div key={rIdx} className={`${rIdx > 0 ? 'pt-6' : ''} print:break-inside-avoid`}>
-                        <div className="mb-2 space-y-1.5">
-                          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                            <h4 className="min-w-0 text-base font-display font-semibold text-white">
-                              {role.role}
-                            </h4>
-                            <div className="flex flex-wrap items-center gap-2 font-mono text-xs text-slate-400">
-                              <span className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-300 whitespace-nowrap">
-                                {role.period}
-                              </span>
-                              <span className="text-slate-500">|</span>
-                              <span>{role.location}</span>
-                            </div>
                           </div>
-                          {role.domain && (
-                            <div className="text-xs font-mono text-cyan-400/90 leading-relaxed">
-                              {role.domain}
+
+                          <ul className="space-y-2 text-xs text-slate-300 pl-1 my-3">
+                            {role.highlights.map((bullet, bIdx) => (
+                              <li key={bIdx} className="flex items-start gap-2 leading-relaxed">
+                                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 mt-1.5 shrink-0"></span>
+                                <span>{bullet}</span>
+                              </li>
+                            ))}
+                          </ul>
+
+                          {role.recognitionBadge && (
+                            <div className="my-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-cyan-950/40 border border-cyan-500/30 text-xs font-mono text-cyan-300">
+                              <Award className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                              <span>Honor: {role.recognitionBadge}</span>
+                            </div>
+                          )}
+
+                          {role.technologies.length > 0 && (
+                            <div className="pt-2 flex flex-wrap items-center gap-1.5">
+                              <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider mr-1">
+                                Stack:
+                              </span>
+                              {role.technologies.map((tech, tIdx) => (
+                                <span
+                                  key={tIdx}
+                                  className="px-2 py-0.5 rounded text-[10px] font-mono bg-[#090d16] border border-slate-800 text-slate-300"
+                                >
+                                  {tech}
+                                </span>
+                              ))}
                             </div>
                           )}
                         </div>
+                      ))}
+                    </div>
+                  )}
+                </motion.div>
+              </CollapseTimelineNode>
+            );
+          })}
 
-                        <ul className="space-y-2 text-xs text-slate-300 pl-1 my-3">
-                          {role.highlights.map((bullet, bIdx) => (
-                            <li key={bIdx} className="flex items-start gap-2 leading-relaxed">
-                              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 mt-1.5 shrink-0"></span>
-                              <span>{bullet}</span>
-                            </li>
-                          ))}
-                        </ul>
-
-                        {role.recognitionBadge && (
-                          <div className="my-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-cyan-950/40 border border-cyan-500/30 text-xs font-mono text-cyan-300">
-                            <Award className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-                            <span>Honor: {role.recognitionBadge}</span>
-                          </div>
-                        )}
-
-                        {role.technologies.length > 0 && (
-                          <div className="pt-2 flex flex-wrap items-center gap-1.5">
-                            <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider mr-1">
-                              Stack:
-                            </span>
-                            {role.technologies.map((tech, tIdx) => (
-                              <span
-                                key={tIdx}
-                                className="px-2 py-0.5 rounded text-[10px] font-mono bg-[#090d16] border border-slate-800 text-slate-300"
-                              >
-                                {tech}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+          {filteredExperience.length === 0 && (
+            <div className="rounded-2xl border border-slate-800 bg-[#0d121f]/60 p-8 text-center space-y-3">
+              <p className="text-sm text-slate-400">
+                No roles found in this company filter matching{' '}
+                <strong className="text-cyan-300">{skillFilter.names || 'selected skills'}</strong>.
+              </p>
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                {activeFilter !== 'all' && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveFilter('all')}
+                    className="px-3 py-1.5 rounded-lg bg-cyan-500 text-slate-950 text-xs font-semibold hover:bg-cyan-400 transition-colors"
+                  >
+                    Show All Companies
+                  </button>
                 )}
-                  </motion.div>
-                </CollapseTimelineNode>
-              );
-            })}
-
-            {filteredExperience.length === 0 && (
-              <div className="rounded-2xl border border-slate-800 bg-[#0d121f]/60 p-8 text-center space-y-3">
-                <p className="text-sm text-slate-400">
-                  No roles found in this company filter matching{' '}
-                  <strong className="text-cyan-300">{skillFilter.names || 'selected skills'}</strong>.
-                </p>
-                <div className="flex flex-wrap items-center justify-center gap-2">
-                  {activeFilter !== 'all' && (
-                    <button
-                      type="button"
-                      onClick={() => setActiveFilter('all')}
-                      className="px-3 py-1.5 rounded-lg bg-cyan-500 text-slate-950 text-xs font-semibold hover:bg-cyan-400 transition-colors"
-                    >
-                      Show All Companies
-                    </button>
-                  )}
-                  {hasSkillFilter && (
-                    <button
-                      type="button"
-                      onClick={() => onSelectSkill(null)}
-                      className="px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-900 text-xs text-slate-300 hover:text-white transition-colors"
-                    >
-                      {skillFilter.count > 1 ? 'Clear Skill Filters' : 'Clear Skill Filter'}
-                    </button>
-                  )}
-                </div>
+                {hasSkillFilter && (
+                  <button
+                    type="button"
+                    onClick={() => onSelectSkill(null)}
+                    className="px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-900 text-xs text-slate-300 hover:text-white transition-colors"
+                  >
+                    {skillFilter.count > 1 ? 'Clear Skill Filters' : 'Clear Skill Filter'}
+                  </button>
+                )}
               </div>
-            )}
+            </div>
+          )}
         </CollapseTimeline>
       </div>
     </section>

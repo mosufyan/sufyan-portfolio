@@ -16,9 +16,7 @@ import CredentialModal from './components/CredentialModal';
 import CommandPalette from './components/CommandPalette';
 import DesktopScrollRail from './components/DesktopScrollRail';
 import EngineeringTerminal from './components/EngineeringTerminal';
-import FloatingBackToTop from './components/FloatingBackToTop';
-import MobileSectionToc from './components/MobileSectionToc';
-import OfflineIndicator from './components/OfflineIndicator';
+import UnifiedScrollHud, { type PortfolioReadingMode } from './components/UnifiedScrollHud';
 import DigitalCardModal from './components/DigitalCardModal';
 import { Certification } from './data/portfolioData';
 import { normalizeSelectedSkills, toggleSelectedSkill } from './utils/skillMatcher';
@@ -61,6 +59,10 @@ export default function App() {
   const [selectedCert, setSelectedCert] = useState<Certification | null>(null);
   const [selectedSkills, setSelectedSkillsState] = useState<string[]>(() => readSkillsFromUrl());
   const [focusedCompany, setFocusedCompany] = useState<{ name: string; seq: number } | null>(null);
+  const [readingMode, setReadingMode] = useState<PortfolioReadingMode>(() => {
+    if (typeof window === 'undefined') return 'deep';
+    return new URLSearchParams(window.location.search).get('mode') === 'brief' ? 'brief' : 'deep';
+  });
 
   const setSelectedSkill = useCallback((skill: string | null) => {
     setSelectedSkillsState((prev) => {
@@ -131,26 +133,31 @@ export default function App() {
                 onOpenResume={() => setResumeOpen(true)}
                 onOpenDigitalCard={() => setDigitalCardOpen(true)}
                 onApplySkills={applySelectedSkills}
+                readingMode={readingMode}
+                onChangeReadingMode={setReadingMode}
               />
-              <Philosophy />
+              <Philosophy readingMode={readingMode} />
               <Experience
                 selectedSkills={selectedSkills}
                 onSelectSkill={setSelectedSkill}
                 onApplySkills={applySelectedSkills}
                 focusedCompany={focusedCompany}
+                readingMode={readingMode}
               />
               <Skills
                 selectedSkills={selectedSkills}
                 onSelectSkill={setSelectedSkill}
                 onApplySkills={applySelectedSkills}
+                readingMode={readingMode}
               />
               <Certifications
                 selectedSkills={selectedSkills}
                 onSelectSkill={setSelectedSkill}
                 onSelectCertification={(cert) => setSelectedCert(cert)}
+                readingMode={readingMode}
               />
-              <Awards />
-              <Education />
+              <Awards readingMode={readingMode} />
+              <Education readingMode={readingMode} />
               <Contact onOpenDigitalCard={() => setDigitalCardOpen(true)} />
             </main>
 
@@ -161,9 +168,11 @@ export default function App() {
           </div>
 
           <DesktopScrollRail />
-          <MobileSectionToc />
-          <FloatingBackToTop />
-          <OfflineIndicator />
+          <UnifiedScrollHud
+            readingMode={readingMode}
+            onChangeReadingMode={setReadingMode}
+            onOpenCommandPalette={() => setCommandPaletteOpen(true)}
+          />
         </div>
 
         {/* Outside site-theme so light remapping cannot wash out dark chrome */}

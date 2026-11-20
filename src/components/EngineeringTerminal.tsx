@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Terminal, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
@@ -10,6 +11,7 @@ import {
 } from '../data/portfolioData';
 import { downloadVCard } from '../utils/vcard';
 import { useTheme } from '../theme/ThemeProvider';
+import { useModalPlacement } from '../hooks/useModalPlacement';
 import { EASE_OUT_EXPO } from './MotionPrimitives';
 
 interface EngineeringTerminalProps {
@@ -42,6 +44,7 @@ export default function EngineeringTerminal({
   onOpenDigitalCard,
 }: EngineeringTerminalProps) {
   const { isLight } = useTheme();
+  const alignClass = useModalPlacement(isOpen);
   const [input, setInput] = useState('');
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
@@ -265,7 +268,7 @@ export default function EngineeringTerminal({
     executeCommand(current);
   };
 
-  return (
+  const modal = (
     <AnimatePresence>
       {isOpen && (
         <motion.div
@@ -274,7 +277,7 @@ export default function EngineeringTerminal({
           exit={{ opacity: 0 }}
           transition={{ duration: 0.18 }}
           onClick={onClose}
-          className={`fixed inset-0 z-50 flex items-end sm:items-center justify-center backdrop-blur-sm p-3 sm:p-6 print:hidden ${
+          className={`fixed inset-0 z-50 flex ${alignClass} justify-center backdrop-blur-sm p-2.5 sm:p-5 pt-[max(0.75rem,env(safe-area-inset-top))] sm:pt-6 pb-[max(0.75rem,env(safe-area-inset-bottom))] overflow-y-auto print:hidden ${
             isLight ? 'bg-slate-900/45' : 'bg-black/75'
           }`}
           role="dialog"
@@ -282,19 +285,19 @@ export default function EngineeringTerminal({
           aria-label="Engineering Terminal"
         >
           <motion.div
-            initial={{ opacity: 0, y: 20, scale: 0.98 }}
+            initial={{ opacity: 0, y: 16, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 14, scale: 0.98 }}
+            exit={{ opacity: 0, y: 12, scale: 0.98 }}
             transition={{ duration: 0.22, ease: EASE_OUT_EXPO }}
             onClick={(e) => e.stopPropagation()}
-            className={`w-full max-w-3xl rounded-2xl border shadow-2xl overflow-hidden flex flex-col max-h-[82vh] ${
+            className={`w-full max-w-3xl 2xl:max-w-4xl rounded-2xl border shadow-2xl overflow-hidden flex flex-col max-h-[min(calc(100dvh-1.5rem),35.5rem)] sm:max-h-[min(calc(100dvh-2.5rem),36rem)] lg:max-h-[min(calc(100dvh-3rem),46rem)] ${
               isLight
                 ? 'border-slate-300 bg-white text-slate-800'
                 : 'border-slate-700/90 bg-[#070b14] text-slate-200'
             }`}
           >
             {/* Header Bar (fixed dark brand chrome in both light and dark modes) */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800 bg-[#0a0f1c]">
+            <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-slate-800 bg-[#0a0f1c]">
               <div className="flex items-center gap-2 text-xs font-mono text-cyan-300">
                 <Terminal className="w-4 h-4 text-cyan-400" />
                 <span>sufyanctl · interactive portfolio shell</span>
@@ -311,7 +314,7 @@ export default function EngineeringTerminal({
 
             {/* Clickable Preset Commands */}
             <div
-              className={`px-4 py-2 border-b flex items-center gap-1.5 ${
+              className={`shrink-0 px-4 py-2 border-b flex items-center gap-1.5 ${
                 isLight
                   ? 'border-slate-200 bg-slate-50'
                   : 'border-slate-800/80 bg-[#080d18]'
@@ -342,7 +345,7 @@ export default function EngineeringTerminal({
             <div
               ref={scrollRef}
               onClick={() => inputRef.current?.focus()}
-              className={`flex-1 overflow-y-auto p-4 font-mono text-xs leading-relaxed space-y-3 min-h-[260px] ${
+              className={`flex-1 min-h-[160px] overflow-y-auto overscroll-contain p-4 font-mono text-xs leading-relaxed space-y-3 ${
                 isLight ? 'bg-[#f8fafc]' : 'bg-[#070b14]'
               }`}
             >
@@ -385,7 +388,7 @@ export default function EngineeringTerminal({
             {/* Prompt Input */}
             <form
               onSubmit={handleSubmit}
-              className={`flex items-center gap-2 px-4 py-3 border-t font-mono text-xs ${
+              className={`shrink-0 flex items-center gap-2 px-4 py-3 border-t font-mono text-xs ${
                 isLight
                   ? 'border-slate-200 bg-white'
                   : 'border-slate-800 bg-[#090d16]'
@@ -443,4 +446,7 @@ export default function EngineeringTerminal({
       )}
     </AnimatePresence>
   );
+
+  if (typeof document === 'undefined') return null;
+  return createPortal(modal, document.body);
 }

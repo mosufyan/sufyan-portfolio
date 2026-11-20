@@ -1,11 +1,14 @@
 import { Linkedin } from './icons/Linkedin';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import html2canvas from 'html2canvas-pro';
 import { jsPDF } from 'jspdf';
 import { AnimatePresence, motion } from 'motion/react';
+import { useModalPlacement } from '../hooks/useModalPlacement';
 import ModalHeaderScan from './ModalHeaderScan';
 import { EASE_OUT_EXPO } from './MotionPrimitives';
 import ShineSurface from './ShineSurface';
+import ThemeSymbol from './ThemeSymbol';
 import {
   X,
   Printer,
@@ -35,8 +38,6 @@ import {
   Loader2,
   Check,
   SlidersHorizontal,
-  Sun,
-  Moon,
   Quote,
   Copy,
   ArrowUp,
@@ -327,6 +328,7 @@ export default function ResumeModal({
   initialShareConfig,
 }: ResumeModalProps) {
   const { theme: siteTheme } = useTheme();
+  const alignClass = useModalPlacement(isOpen);
   const modalScrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const measureRef = useRef<HTMLDivElement>(null);
@@ -543,7 +545,7 @@ export default function ResumeModal({
     }
 
     const containerRect = innerEl.getBoundingClientRect();
-    const effectiveWidth = Math.max(widthOverride ?? containerRect.width, 320);
+    const effectiveWidth = Math.max(widthOverride ?? containerRect.width, 820);
 
     // Match handleDownloadPdf A4 layout constants (210x297mm, marginX=8, marginY=9, footerReserve=7)
     const marginX = 8;
@@ -628,25 +630,34 @@ export default function ResumeModal({
         }
 
         if (blockHeightMm > maxContentHeightMm) {
-          const chunks: Array<{ startPx: number; endPx: number }> = [];
+          const chunks: Array<{ startPx: number; endPx: number; gapMidPx: number }> = [];
           if (block.subblocks.length > 0) {
             let chunkStart = 0;
             let chunkEnd = 0;
+            let chunkGapMidPx = 0;
             for (const sub of block.subblocks) {
               const subEnd = Math.min(block.heightPx, sub.relTopPx + sub.heightPx);
               if ((subEnd - chunkStart) * pxToMm > maxContentHeightMm && chunkEnd > chunkStart) {
-                chunks.push({ startPx: chunkStart, endPx: chunkEnd });
+                chunks.push({ startPx: chunkStart, endPx: chunkEnd, gapMidPx: chunkGapMidPx });
+                chunkGapMidPx =
+                  sub.relTopPx >= chunkEnd
+                    ? chunkEnd + (sub.relTopPx - chunkEnd) / 2
+                    : Math.max(0, sub.relTopPx - 4);
                 chunkStart = sub.relTopPx;
               }
-              chunkEnd = subEnd;
+              chunkEnd = Math.max(chunkEnd, subEnd);
             }
             if (chunkEnd > chunkStart) {
-              chunks.push({ startPx: chunkStart, endPx: block.heightPx });
+              chunks.push({ startPx: chunkStart, endPx: block.heightPx, gapMidPx: chunkGapMidPx });
             }
           } else {
             const stepPx = maxContentHeightMm / pxToMm;
             for (let pos = 0; pos < block.heightPx; pos += stepPx) {
-              chunks.push({ startPx: pos, endPx: Math.min(block.heightPx, pos + stepPx) });
+              chunks.push({
+                startPx: pos,
+                endPx: Math.min(block.heightPx, pos + stepPx),
+                gapMidPx: pos,
+              });
             }
           }
 
@@ -656,7 +667,7 @@ export default function ResumeModal({
             if (currentY + chMm > maxPageY && currentY > marginY + 1) {
               guides.push({
                 page: pageCount,
-                topPx: Math.round(block.topPx + Math.max(0, ch.startPx - 4)),
+                topPx: Math.round(block.topPx + ch.gapMidPx),
               });
               pageCount++;
               currentY = marginY;
@@ -708,7 +719,7 @@ export default function ResumeModal({
       observer?.disconnect();
       window.removeEventListener('resize', measure);
     };
-  }, [isOpen, config, sectionOrder, showInfographics, inspectedCert, cvTheme, printDensity, cvAccent]);
+  }, [isOpen, config, sectionOrder, showInfographics, inspectedCert, cvTheme, printDensity, cvAccent, showPageGuides, controlsOpen]);
 
   const pageTelemetry = useMemo(() => {
     if (selectedSectionCount === 0) {
@@ -1643,7 +1654,7 @@ export default function ResumeModal({
     portraitFrame: accentTokens.portraitFrame
   };
 
-  return (
+  const modal = (
     <AnimatePresence>
       {isOpen && (
         <motion.div
@@ -1654,7 +1665,7 @@ export default function ResumeModal({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.2 }}
-          className={`fixed inset-0 z-50 flex justify-center p-2 sm:p-4 bg-black/85 backdrop-blur-md overflow-y-auto print:static print:inset-auto print:block print:p-0 print:overflow-visible print-no-blur print-reset-motion ${
+          className={`fixed inset-0 z-50 flex ${alignClass} justify-center p-2 sm:p-4 pt-[max(0.75rem,env(safe-area-inset-top))] sm:pt-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] bg-black/85 backdrop-blur-md overflow-y-auto print:static print:inset-auto print:block print:p-0 print:overflow-visible print-no-blur print-reset-motion ${
             isLight ? 'print:bg-white' : 'print:bg-[#06080d]'
           }`}
           onClick={onClose}
@@ -1664,7 +1675,7 @@ export default function ResumeModal({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.97, y: 10 }}
             transition={{ duration: 0.28, ease: EASE_OUT_EXPO }}
-            className={`relative w-full max-w-6xl max-h-[95vh] lg:max-h-[92vh] flex flex-col print:block rounded-2xl border border-slate-700 bg-[#07090e] shadow-2xl overflow-hidden my-auto print:max-w-none print:max-h-none print:rounded-none print:border-0 print:shadow-none print:overflow-visible print-reset-motion ${
+            className={`relative w-full max-w-6xl 2xl:max-w-7xl max-h-[min(calc(100dvh-1.5rem),37rem)] sm:max-h-[min(calc(100dvh-2rem),38rem)] lg:max-h-[calc(100dvh-2.5rem)] flex flex-col print:block rounded-2xl border border-slate-700 bg-[#07090e] shadow-2xl overflow-hidden print:max-w-none print:max-h-none print:rounded-none print:border-0 print:shadow-none print:overflow-visible print-reset-motion ${
               isLight ? 'print:bg-white' : 'print:bg-[#06080d]'
             }`}
             onClick={(e) => e.stopPropagation()}
@@ -1763,33 +1774,14 @@ export default function ResumeModal({
                 }`}
                 title={isLight ? 'Switch CV preview & export to Dark Theme' : 'Switch CV preview & export to Light Paper (ink-friendly)'}
               >
-                <span className="relative h-3.5 w-3.5">
-                  <AnimatePresence mode="wait" initial={false}>
-                    {isLight ? (
-                      <motion.span
-                        key="cv-sun"
-                        initial={{ opacity: 0, rotate: -50, scale: 0.5 }}
-                        animate={{ opacity: 1, rotate: 0, scale: 1 }}
-                        exit={{ opacity: 0, rotate: 50, scale: 0.5 }}
-                        transition={{ duration: 0.25, ease: EASE_OUT_EXPO }}
-                        className="absolute inset-0 flex items-center justify-center"
-                      >
-                        <Sun className="w-3.5 h-3.5 text-amber-300" />
-                      </motion.span>
-                    ) : (
-                      <motion.span
-                        key="cv-moon"
-                        initial={{ opacity: 0, rotate: 50, scale: 0.5 }}
-                        animate={{ opacity: 1, rotate: 0, scale: 1 }}
-                        exit={{ opacity: 0, rotate: -50, scale: 0.5 }}
-                        transition={{ duration: 0.25, ease: EASE_OUT_EXPO }}
-                        className="absolute inset-0 flex items-center justify-center"
-                      >
-                        <Moon className="w-3.5 h-3.5 text-cyan-400" />
-                      </motion.span>
-                    )}
-                  </AnimatePresence>
-                </span>
+                <ThemeSymbol
+                  isLight={isLight}
+                  boxClassName="h-3.5 w-3.5"
+                  iconClassName="w-3.5 h-3.5"
+                  sunColorClass="text-amber-300"
+                  moonColorClass="text-cyan-400"
+                  keyPrefix="cv"
+                />
                 <span>{isLight ? 'Light Paper' : 'Dark Theme'}</span>
               </button>
 
@@ -2221,28 +2213,41 @@ export default function ResumeModal({
           {showPageGuides && selectedSectionCount > 0 && (
             <div
               data-pdf-ignore
-              className={`sticky top-0 z-30 border-b px-3 sm:px-6 py-1.5 sm:py-2 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-1.5 sm:gap-2 text-[11px] font-mono backdrop-blur-md print:hidden ${
+              className={`sticky top-0 z-30 border-b px-3 sm:px-6 py-2 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-1.5 sm:gap-2 text-[11px] font-mono backdrop-blur-md print:hidden ${
                 isLight
                   ? 'bg-sky-50/95 border-sky-200 text-sky-900'
                   : 'bg-[#08101d]/95 border-cyan-500/35 text-cyan-200'
               }`}
             >
-              <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-                <Ruler className={`w-3.5 h-3.5 shrink-0 ${t.accent}`} />
-                <span className="truncate">
-                  <strong>Smart A4 Guides</strong> · {pageTelemetry.estPages}{' '}
-                  {pageTelemetry.estPages === 1 ? 'page' : 'pages'}
-                  <span className="hidden sm:inline"> · auto-snapped between cards</span>
-                </span>
+              <div className="flex items-center justify-between gap-2 min-w-0">
+                <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                  <Ruler className={`w-3.5 h-3.5 shrink-0 ${t.accent}`} />
+                  <span className="truncate text-[10px] sm:text-[11px]">
+                    <strong>Smart A4 Guides</strong> · {pageTelemetry.estPages}{' '}
+                    {pageTelemetry.estPages === 1 ? 'page' : 'pages'}
+                    <span className="hidden md:inline"> · auto-snapped between cards</span>
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowPageGuides(false)}
+                  aria-label="Hide Smart A4 Guides"
+                  className={`lg:hidden shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[10px] font-mono cursor-pointer ${t.accentBadge}`}
+                >
+                  <X className="w-2.5 h-2.5" />
+                  <span>Hide</span>
+                </button>
               </div>
 
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 lg:pb-0 lg:flex-wrap lg:overflow-visible">
+              <div className="flex flex-wrap items-center gap-1.5">
                 <button
                   type="button"
                   onClick={scrollToPreviewTop}
                   className={`shrink-0 px-2 py-0.5 rounded border text-[10px] cursor-pointer ${t.accentBadge}`}
                 >
-                  Page 1 Top
+                  <span className="sm:hidden">Top</span>
+                  <span className="hidden sm:inline">Page 1 Top</span>
                 </button>
                 {pageTelemetry.guides.map((guide) => (
                   <button
@@ -2251,7 +2256,8 @@ export default function ResumeModal({
                     onClick={() => scrollToPreviewY(guide.topPx)}
                     className={`shrink-0 px-2 py-0.5 rounded border text-[10px] cursor-pointer ${t.accentBadgeStrong}`}
                   >
-                    Break {guide.page} → {guide.page + 1}
+                    <span className="sm:hidden">P{guide.page}→{guide.page + 1}</span>
+                    <span className="hidden sm:inline">Break {guide.page} → {guide.page + 1}</span>
                   </button>
                 ))}
               </div>
@@ -2270,13 +2276,16 @@ export default function ResumeModal({
                 }`}
               >
                 <span
-                  className={`absolute right-4 -top-3 px-2.5 py-0.5 rounded text-[10px] font-mono font-semibold border shadow-sm ${
+                  className={`absolute left-1/2 -translate-x-1/2 sm:left-auto sm:translate-x-0 sm:right-4 -top-2.5 sm:-top-3 px-2 sm:px-2.5 py-0.5 rounded text-[9px] sm:text-[10px] font-mono font-semibold border shadow-sm whitespace-nowrap ${
                     isLight
                       ? 'bg-sky-50 border-sky-400 text-sky-900'
                       : 'bg-[#08101d] border-cyan-400/60 text-cyan-200'
                   }`}
                 >
-                  Clean Page {guide.page} End ↓ Next Card Starts on Page {guide.page + 1}
+                  <span className="sm:hidden">Page {guide.page} End ↓ Page {guide.page + 1}</span>
+                  <span className="hidden sm:inline">
+                    Clean Page {guide.page} End ↓ Next Card Starts on Page {guide.page + 1}
+                  </span>
                 </span>
               </div>
             ))}
@@ -2364,6 +2373,7 @@ export default function ResumeModal({
                   {STATS.map((stat, idx) => (
                     <div
                       key={idx}
+                      data-pdf-subblock
                       className={`rounded-xl border p-4 ${t.card}`}
                     >
                       <div className={`flex items-baseline gap-1 font-display font-extrabold text-2xl sm:text-3xl tabular-nums tracking-tight ${t.heading}`}>
@@ -2617,6 +2627,7 @@ export default function ResumeModal({
                       {row.map((discipline) => (
                         <div
                           key={discipline.id}
+                          data-pdf-subblock
                           className={`rounded-2xl border p-5 flex flex-col justify-between ${t.cardSubtle}`}
                         >
                           <div>
@@ -2795,6 +2806,7 @@ export default function ResumeModal({
                               return (
                               <div
                                 key={cert.id}
+                                data-pdf-subblock
                                 className={`rounded-xl border p-4 flex flex-col justify-between transition-colors ${t.cardSubtle} ${
                                   isInspected
                                     ? isLight
@@ -2949,6 +2961,7 @@ export default function ResumeModal({
                             {row.map((award) => (
                               <div
                                 key={award.id}
+                                data-pdf-subblock
                                 className={`rounded-xl border p-4 flex flex-col justify-between ${t.cardSubtle}`}
                               >
                                 <div>
@@ -3051,6 +3064,7 @@ export default function ResumeModal({
                         return (
                           <div
                             key={rec.id}
+                            data-pdf-subblock
                             className={`rounded-xl border p-4 flex flex-col justify-between ${t.cardSubtle}`}
                           >
                             <div>
@@ -3150,6 +3164,7 @@ export default function ResumeModal({
                   {EDUCATION.map((edu, idx) => (
                     <div
                       key={idx}
+                      data-pdf-subblock
                       className={`rounded-2xl border p-5 sm:p-6 flex flex-col justify-between ${t.cardSubtle}`}
                     >
                       <div>
@@ -3256,4 +3271,7 @@ export default function ResumeModal({
       />
     </AnimatePresence>
   );
+
+  if (typeof document === 'undefined') return null;
+  return createPortal(modal, document.body);
 }

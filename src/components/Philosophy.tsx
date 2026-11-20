@@ -5,23 +5,28 @@ import { useTheme } from '../theme/ThemeProvider';
 import HeaderSpotlight from './HeaderSpotlight';
 import { Reveal, EASE_OUT_EXPO } from './MotionPrimitives';
 import SectionScanLine from './SectionScanLine';
+import type { PortfolioReadingMode } from './UnifiedScrollHud';
 
-export default function Philosophy() {
+interface PhilosophyProps {
+  readingMode?: PortfolioReadingMode;
+}
+
+export default function Philosophy({ readingMode = 'deep' }: PhilosophyProps) {
   const { isLight } = useTheme();
   const shouldReduceMotion = useReducedMotion();
   const pillars = [
-    'SECURITY DATA PLATFORMS',
-    'MULTI-CLOUD & ZERO TRUST',
-    'RESILIENT SERVICES',
-    'APPLIED AI / AGENTS',
-    'DEVOPS & OBSERVABILITY',
+    'Security Data Platforms',
+    'Multi-Cloud & Zero Trust',
+    'Resilient Services',
+    'Applied AI / Agents',
+    'DevOps & Observability',
   ];
 
   return (
     <section id="philosophy" className="py-16 lg:py-24 border-b border-slate-800/80 bg-[#06080d] relative overflow-hidden">
       <SectionScanLine />
       <div className="page-shell">
-        <Reveal className="mb-10">
+        <Reveal className="mb-10 lg:mb-12">
           <HeaderSpotlight>
             <div className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-cyan-400 tracking-wider uppercase mb-2">
               <Compass className="w-3.5 h-3.5" />
@@ -33,52 +38,60 @@ export default function Philosophy() {
           </HeaderSpotlight>
         </Reveal>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 print:grid-cols-12 gap-8 items-stretch">
+        <div className="grid grid-cols-1 lg:grid-cols-12 print:grid-cols-12 gap-10 lg:gap-14 items-stretch">
+          {/* Open editorial left column — breathes cleanly without nested dark box */}
           <motion.div
             initial={shouldReduceMotion ? false : { opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true, amount: 0.12 }}
             transition={{ duration: 0.55, ease: EASE_OUT_EXPO }}
-            className="lg:col-span-7 print:col-span-7 rounded-2xl border border-slate-800 hover:border-slate-700/90 bg-[#0d121f]/80 p-6 sm:p-8 flex flex-col justify-between shadow-xl transition-colors print:break-inside-avoid"
+            className="lg:col-span-7 print:col-span-7 flex flex-col justify-between py-2 print:break-inside-avoid"
           >
-            <div className="space-y-5">
+            <div className="space-y-6">
               <motion.blockquote
-                initial={shouldReduceMotion ? false : { opacity: 0, x: -12 }}
-                whileInView={{ opacity: 1, x: 0 }}
+                initial={shouldReduceMotion ? false : { opacity: 0, y: 10 }}
+                whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true, amount: 0.4 }}
                 transition={{ duration: 0.5, delay: 0.08, ease: EASE_OUT_EXPO }}
-                className="text-base sm:text-lg font-medium text-slate-100 leading-relaxed italic border-l-2 border-cyan-400/80 pl-4"
+                className={`text-xl sm:text-2xl font-serif font-normal leading-relaxed tracking-tight ${
+                  isLight ? 'text-slate-900' : 'text-white'
+                }`}
               >
                 &ldquo;{PERSONAL_INFO.philosophy.quote1}&rdquo;
               </motion.blockquote>
 
-              <motion.p
-                initial={shouldReduceMotion ? false : { opacity: 0, y: 10 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, amount: 0.4 }}
-                transition={{ duration: 0.45, delay: 0.14, ease: EASE_OUT_EXPO }}
-                className="text-slate-300 text-sm sm:text-base leading-relaxed font-light"
-              >
-                {PERSONAL_INFO.philosophy.body}
-              </motion.p>
+              {readingMode === 'deep' && (
+                <motion.p
+                  initial={shouldReduceMotion ? false : { opacity: 0, y: 10 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true, amount: 0.4 }}
+                  transition={{ duration: 0.45, delay: 0.14, ease: EASE_OUT_EXPO }}
+                  className="text-slate-300 text-sm sm:text-base leading-relaxed font-light max-w-2xl"
+                >
+                  {PERSONAL_INFO.philosophy.body}
+                </motion.p>
+              )}
             </div>
 
-            <div className="pt-6 mt-6 border-t border-slate-800/80">
-              <div className="text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-3">
-                Focus areas
+            <div className="pt-8 mt-8 border-t border-slate-800/80">
+              <div className="text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-3.5">
+                Core Architectural Focus
               </div>
-              <div className="flex flex-wrap gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2.5">
                 {pillars.map((pillar, idx) => (
-                  <motion.span
+                  <motion.div
                     key={pillar}
                     initial={shouldReduceMotion ? false : { opacity: 0, y: 6 }}
                     whileInView={{ opacity: 1, y: 0 }}
                     viewport={{ once: true }}
                     transition={{ duration: 0.3, delay: 0.05 + idx * 0.04, ease: EASE_OUT_EXPO }}
-                    className="inline-flex items-center px-2.5 py-1 rounded text-[11px] font-mono tracking-wide bg-[#090d16] border border-slate-700/80 text-cyan-300/90 focus-within:ring-2 focus-within:ring-cyan-400/50"
+                    className="flex items-baseline gap-2.5 text-xs sm:text-sm font-mono py-1 border-b border-slate-800/50"
                   >
-                    {pillar}
-                  </motion.span>
+                    <span className="text-[11px] text-cyan-400 tabular-nums">0{idx + 1}.</span>
+                    <span className={isLight ? 'text-slate-800 font-medium' : 'text-slate-200'}>
+                      {pillar}
+                    </span>
+                  </motion.div>
                 ))}
               </div>
             </div>
