@@ -513,6 +513,72 @@ export function sanitizePortfolioSettings(input: Partial<PortfolioSettings> | nu
   };
 }
 
+/** UX-only subset safe to expose on `portfolio_settings/public` (no caps/alerts/LLM). */
+export type PublicPortfolioSettings = Pick<
+  PortfolioSettings,
+  | 'availabilityStatus'
+  | 'availabilityText'
+  | 'maintenanceMode'
+  | 'maintenanceMessage'
+  | 'enableContactForm'
+  | 'enableCvDownloads'
+  | 'showAnnouncementsBadge'
+  | 'enableAnnouncements'
+  | 'enableResumeStudio'
+  | 'enableDigitalCard'
+  | 'enableCommandPalette'
+  | 'enableTerminal'
+  | 'enablePwaInstall'
+  | 'enableSkillFilter'
+  | 'enableReadingModes'
+  | 'enableScrollHud'
+  | 'enableSiteTelemetry'
+  | 'incidentMode'
+  | 'incidentMessage'
+  | 'enablePortfolioChat'
+  | 'enableLiveChat'
+  | 'chatShowSuggestions'
+  | 'chatOfferLiveAgent'
+>;
+
+export function toPublicPortfolioSettings(settings: PortfolioSettings): PublicPortfolioSettings {
+  return {
+    availabilityStatus: settings.availabilityStatus,
+    availabilityText: settings.availabilityText,
+    maintenanceMode: settings.maintenanceMode,
+    maintenanceMessage: settings.maintenanceMessage,
+    enableContactForm: settings.enableContactForm,
+    enableCvDownloads: settings.enableCvDownloads,
+    showAnnouncementsBadge: settings.showAnnouncementsBadge,
+    enableAnnouncements: settings.enableAnnouncements,
+    enableResumeStudio: settings.enableResumeStudio,
+    enableDigitalCard: settings.enableDigitalCard,
+    enableCommandPalette: settings.enableCommandPalette,
+    enableTerminal: settings.enableTerminal,
+    enablePwaInstall: settings.enablePwaInstall,
+    enableSkillFilter: settings.enableSkillFilter,
+    enableReadingModes: settings.enableReadingModes,
+    enableScrollHud: settings.enableScrollHud,
+    enableSiteTelemetry: settings.enableSiteTelemetry,
+    incidentMode: settings.incidentMode,
+    incidentMessage: settings.incidentMessage,
+    enablePortfolioChat: settings.enablePortfolioChat,
+    enableLiveChat: settings.enableLiveChat,
+    chatShowSuggestions: settings.chatShowSuggestions,
+    chatOfferLiveAgent: settings.chatOfferLiveAgent,
+  };
+}
+
+/** Merge a public UX snapshot onto defaults (private caps/alerts stay default until owner loads global). */
+export function mergePublicPortfolioSettings(
+  publicSlice: Partial<PublicPortfolioSettings> | null | undefined
+): PortfolioSettings {
+  return sanitizePortfolioSettings({
+    ...DEFAULT_PORTFOLIO_SETTINGS,
+    ...publicSlice,
+  });
+}
+
 /** Visitor-facing effective settings when incident mode is active. */
 export function getEffectivePortfolioSettings(settings: PortfolioSettings): PortfolioSettings {
   if (!settings.incidentMode) return settings;

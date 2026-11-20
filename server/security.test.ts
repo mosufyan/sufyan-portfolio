@@ -118,6 +118,9 @@ describe('CSP / headers', () => {
     expect(headers['X-Frame-Options']).toBe('DENY');
     expect(headers['Strict-Transport-Security']).toContain('max-age=31536000');
     expect(headers['Content-Security-Policy']).toContain("default-src 'self'");
+    expect(headers['Content-Security-Policy']).toContain('report-uri /api/csp-report');
+    expect(headers['Content-Security-Policy-Report-Only']).toContain("script-src 'self'");
+    expect(headers['Content-Security-Policy-Report-Only']).not.toContain("script-src 'self' 'unsafe-inline'");
   });
 
   it('allows AI Studio preview iframe in dev or on *.run.app while staying strict for custom domain prod', () => {

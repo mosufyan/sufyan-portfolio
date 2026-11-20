@@ -288,6 +288,14 @@ export function evaluateGoldPathHardening(): {
       ok: !isProd || process.env.TRUST_PROXY !== '0',
       label: 'Trust proxy enabled for production edge',
     },
+    {
+      id: 'app_check',
+      ok: Boolean(
+        (process.env.VITE_RECAPTCHA_SITE_KEY || '').trim() ||
+          (process.env.RECAPTCHA_SITE_KEY || '').trim()
+      ),
+      label: 'Firebase App Check site key configured',
+    },
   ];
   const okCount = items.filter((i) => i.ok).length;
   const strict = (process.env.STRICT_PROD_HARDENING || '').toLowerCase() === 'true';

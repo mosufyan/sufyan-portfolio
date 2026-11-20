@@ -355,53 +355,7 @@ export async function lookupIpIntelligence(ipAddress: string): Promise<IpIntelli
     ipGeoCache.set(ipAddress, { value, expiresAt: now + IP_CACHE_TTL_MS });
   };
 
-  // Primary lookup: ip-api.com provides native proxy/hosting/mobile flags
-  try {
-    const res = await fetch(
-      `http://ip-api.com/json/${encodeURIComponent(ipAddress)}?fields=status,country,countryCode,regionName,city,timezone,isp,org,as,proxy,hosting,mobile`,
-      { signal: AbortSignal.timeout(2500) }
-    );
-    if (res.ok) {
-      const data = (await res.json()) as {
-        status?: string;
-        country?: string;
-        countryCode?: string;
-        regionName?: string;
-        city?: string;
-        timezone?: string;
-        isp?: string;
-        org?: string;
-        as?: string;
-        proxy?: boolean;
-        hosting?: boolean;
-        mobile?: boolean;
-      };
-      if (data.status === 'success') {
-        const intel: IpIntelligence = {
-          ipAddress,
-          isPrivate: false,
-          country: sanitizeHeaderValue(data.country || 'Unknown').slice(0, 80),
-          countryCode: sanitizeHeaderValue(data.countryCode || '').slice(0, 12),
-          region: sanitizeHeaderValue(data.regionName || '').slice(0, 80),
-          city: sanitizeHeaderValue(data.city || '').slice(0, 80),
-          isp: sanitizeHeaderValue(data.isp || 'Unknown').slice(0, 120),
-          asn: sanitizeHeaderValue((data.as || '').split(' ')[0] || '').slice(0, 64),
-          org: sanitizeHeaderValue(data.org || data.isp || '').slice(0, 120),
-          timezone: sanitizeHeaderValue(data.timezone || '').slice(0, 64),
-          isProxy: Boolean(data.proxy),
-          isHosting: Boolean(data.hosting),
-          isMobile: Boolean(data.mobile),
-          lookupProvider: 'ip-api',
-        };
-        saveCache(intel);
-        return intel;
-      }
-    }
-  } catch {
-    // Fall back to ipwho.is below
-  }
-
-  // Fallback lookup: ipwho.is over HTTPS
+  // Primary lookup: ipwho.is over HTTPS (integrity of risk signals).
   try {
     const res = await fetch(`https://ipwho.is/${encodeURIComponent(ipAddress)}`, {
       signal: AbortSignal.timeout(2500),
@@ -415,6 +369,7 @@ export async function lookupIpIntelligence(ipAddress: string): Promise<IpIntelli
         city?: string;
         timezone?: { id?: string };
         connection?: { asn?: number; org?: string; isp?: string };
+        security?: { vpn?: boolean; proxy?: boolean; tor?: boolean; hosting?: boolean };
       };
       if (data.success) {
         const isp = sanitizeHeaderValue(data.connection?.isp || data.connection?.org || 'Unknown').slice(0, 120);
@@ -428,9 +383,54 @@ export async function lookupIpIntelligence(ipAddress: string): Promise<IpIntelli
           region: sanitizeHeaderValue(data.region || '').slice(0, 80),
           city: sanitizeHeaderValue(data.city || '').slice(0, 80),
           isp,
-          asn: asn.slice(0, 64),
+          asn: sanitizeHeaderValue(asn).slice(0, 64),
           org,
           timezone: sanitizeHeaderValue(data.timezone?.id || '').slice(0, 64),
+          isProxy: Boolean(data.security?.proxy || data.security?.vpn || data.security?.tor),
+          isHosting: Boolean(data.security?.hosting) || isHostingOrVpnAsn(isp, org, asn),
+          isMobile: false,
+          lookupProvider: 'ipwho.is',
+        };
+        saveCache(intel);
+        return intel;
+      }
+    }
+  } catch {
+    // Fall back below
+  }
+
+  // Fallback: ipapi.co HTTPS (no API key required for light traffic)
+  try {
+    const res = await fetch(`https://ipapi.co/${encodeURIComponent(ipAddress)}/json/`, {
+      signal: AbortSignal.timeout(2500),
+      headers: { Accept: 'application/json' },
+    });
+    if (res.ok) {
+      const data = (await res.json()) as {
+        error?: boolean;
+        country_name?: string;
+        country_code?: string;
+        region?: string;
+        city?: string;
+        timezone?: string;
+        org?: string;
+        asn?: string;
+      };
+      if (!data.error) {
+        const org = sanitizeHeaderValue(data.org || 'Unknown').slice(0, 120);
+        const isp = org;
+        const asn = sanitizeHeaderValue(data.asn || '').slice(0, 64);
+        const intel: IpIntelligence = {
+          ipAddress,
+          isPrivate: false,
+          country: sanitizeHeaderValue(data.country_name || 'Unknown').slice(0, 80),
+          countryCode: sanitizeHeaderValue(data.country_code || '').slice(0, 12),
+          region: sanitizeHeaderValue(data.region || '').slice(0, 80),
+          city: sanitizeHeaderValue(data.city || '').slice(0, 80),
+          isp,
+          asn,
+          org,
+          timezone: sanitizeHeaderValue(data.timezone || '').slice(0, 64),
           isProxy: false,
           isHosting: isHostingOrVpnAsn(isp, org, asn),
           isMobile: false,

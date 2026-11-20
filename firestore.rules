@@ -12,6 +12,12 @@ service cloud.firestore {
       return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
+    // App Check attestation (pair with Firebase Console enforcement for Firestore).
+    // Admin SDK / trusted server writes bypass rules entirely.
+    function hasAppCheck() {
+      return request.app != null;
+    }
+
     function incoming() {
       return request.resource.data;
     }
@@ -384,6 +390,9 @@ service cloud.firestore {
       allow get: if isValidId(announcementId) && (isAdmin() || isPubliclyVisibleAnnouncement());
       allow list: if isAdmin() || isPubliclyVisibleAnnouncement();
 
+      // hasAppCheck() is available for Console-enforced App Check; client init is
+      // optional via VITE_RECAPTCHA_SITE_KEY. Do not hard-require here so local
+      // deploys without App Check keep working; enable Enforcement in Firebase Console.
       allow create: if isVerifiedUser()
         && isValidId(announcementId)
         && isValidAnnouncement(incoming())
@@ -407,40 +416,22 @@ service cloud.firestore {
         && isAdmin();
     }
 
-    // CV Download & Export Audit Telemetry (PII-isolated: owner-only read/list/delete; immutable create)
+    // CV Download telemetry — client creates denied (Admin SDK / server writes only).
     match /cv_downloads/{downloadId} {
       allow get: if isVerifiedUser() && isValidId(downloadId) && isAdmin();
       allow list: if isAdmin();
-
-      allow create: if isValidId(downloadId)
-        && isValidCvDownloadLog(incoming(), downloadId)
-        && incoming().createdAt == request.time;
-
+      allow create: if false;
       allow update: if false;
-
       allow delete: if isVerifiedUser()
         && isValidId(downloadId)
         && isAdmin();
     }
 
-    // Contact / Transmit Message Inquiry Logs (PII-isolated: owner-only read/list/triage/delete; public create)
+    // Contact inquiry logs — client creates denied (Admin SDK / server writes only).
     match /contact_messages/{messageId} {
       allow get: if isVerifiedUser() && isValidId(messageId) && isAdmin();
       allow list: if isAdmin();
-
-      allow create: if isValidId(messageId)
-        && isValidContactMessageLog(incoming(), messageId)
-        && !('triageStatus' in incoming())
-        && !('ownerNote' in incoming())
-        && !('triagedAt' in incoming())
-        && !('leadCompany' in incoming())
-        && !('leadRole' in incoming())
-        && !('leadSource' in incoming())
-        && !('leadPriority' in incoming())
-        && !('leadNextAction' in incoming())
-        && !('leadNextActionDueAtMs' in incoming())
-        && !('leadOutcome' in incoming())
-        && incoming().createdAt == request.time;
+      allow create: if false;
 
       allow update: if isVerifiedUser()
         && isValidId(messageId)
@@ -477,23 +468,75 @@ service cloud.firestore {
         && isAdmin();
     }
 
-    // Portfolio Feature & Maintenance Settings
-    // Public get of the singleton is intentional for UX flags (maintenance, contact/CV toggles,
-    // announcement badge). No secrets live here — email API keys, OTP secrets, Redis, and
-    // Cursor credentials stay in server env. Rate caps are also enforced server-side.
+    // Portfolio settings split:
+    // - `public`: UX flags only (visitor-readable; no alert routing / rate caps / LLM model)
+    // - `global`: full owner policy (primary-owner read/write only)
+    function isValidPublicPortfolioSettings(data) {
+      return data.keys().hasAll([
+          'availabilityStatus', 'availabilityText', 'maintenanceMode', 'maintenanceMessage',
+          'enableContactForm', 'enableCvDownloads', 'showAnnouncementsBadge',
+          'enableAnnouncements', 'enableResumeStudio', 'enableDigitalCard', 'enableCommandPalette',
+          'enableTerminal', 'enablePwaInstall', 'enableSkillFilter', 'enableReadingModes',
+          'enableScrollHud', 'enableSiteTelemetry',
+          'incidentMode', 'incidentMessage',
+          'enablePortfolioChat', 'enableLiveChat',
+          'chatShowSuggestions', 'chatOfferLiveAgent',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'availabilityStatus', 'availabilityText', 'maintenanceMode', 'maintenanceMessage',
+          'enableContactForm', 'enableCvDownloads', 'showAnnouncementsBadge',
+          'enableAnnouncements', 'enableResumeStudio', 'enableDigitalCard', 'enableCommandPalette',
+          'enableTerminal', 'enablePwaInstall', 'enableSkillFilter', 'enableReadingModes',
+          'enableScrollHud', 'enableSiteTelemetry',
+          'incidentMode', 'incidentMessage',
+          'enablePortfolioChat', 'enableLiveChat',
+          'chatShowSuggestions', 'chatOfferLiveAgent',
+          'updatedByUid', 'updatedAt'
+        ])
+        && data.availabilityStatus is string
+        && data.availabilityStatus in ['open', 'advisory', 'unavailable']
+        && data.availabilityText is string && data.availabilityText.size() <= 140
+        && data.maintenanceMode is bool
+        && data.maintenanceMessage is string && data.maintenanceMessage.size() <= 300
+        && data.enableContactForm is bool
+        && data.enableCvDownloads is bool
+        && data.showAnnouncementsBadge is bool
+        && data.enableAnnouncements is bool
+        && data.enableResumeStudio is bool
+        && data.enableDigitalCard is bool
+        && data.enableCommandPalette is bool
+        && data.enableTerminal is bool
+        && data.enablePwaInstall is bool
+        && data.enableSkillFilter is bool
+        && data.enableReadingModes is bool
+        && data.enableScrollHud is bool
+        && data.enableSiteTelemetry is bool
+        && data.incidentMode is bool
+        && data.incidentMessage is string && data.incidentMessage.size() <= 300
+        && data.enablePortfolioChat is bool
+        && data.enableLiveChat is bool
+        && data.chatShowSuggestions is bool
+        && data.chatOfferLiveAgent is bool
+        && (!('updatedByUid' in data) || (data.updatedByUid is string && data.updatedByUid.size() <= 128))
+        && data.updatedAt is timestamp;
+    }
+
     match /portfolio_settings/{settingsId} {
-      allow get: if settingsId == 'global';
+      // Visitors: public UX flags only. Owners: full global policy.
+      allow get: if (settingsId == 'public')
+        || (settingsId == 'global' && isVerifiedOwnerEmail());
       allow list: if false;
 
-      allow create: if isVerifiedOwnerEmail()
-        && settingsId == 'global'
-        && isValidPortfolioSettings(incoming())
-        && incoming().updatedAt == request.time;
-
-      allow update: if isVerifiedOwnerEmail()
-        && settingsId == 'global'
-        && isValidPortfolioSettings(incoming())
-        && incoming().updatedAt == request.time;
+      allow create, update: if isVerifiedOwnerEmail()
+        && (
+          (settingsId == 'global'
+            && isValidPortfolioSettings(incoming())
+            && incoming().updatedAt == request.time)
+          || (settingsId == 'public'
+            && isValidPublicPortfolioSettings(incoming())
+            && incoming().updatedAt == request.time)
+        );
 
       allow delete: if false;
     }

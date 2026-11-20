@@ -5,6 +5,7 @@ import {
   getEffectivePortfolioSettings,
   sanitizeAdminAuditPayload,
   sanitizePortfolioSettings,
+  toPublicPortfolioSettings,
   validateAccessRuleDraft,
   validateAdminDelegateDraft,
 } from './ownerGovernance';
@@ -75,6 +76,24 @@ describe('ownerGovernance utilities', () => {
     expect(effective.enableReadingModes).toBe(false);
     expect(effective.enableScrollHud).toBe(false);
     expect(effective.enableSiteTelemetry).toBe(false);
+  });
+
+  it('strips private policy fields from the public settings slice', () => {
+    const full = sanitizePortfolioSettings({
+      chatMaxQuestionsPerVisitor: 42,
+      enableChatLlm: true,
+      chatLlmModel: 'secret-model',
+      alertEmailEnabled: true,
+      alertClassLiveChat: 'urgent',
+      enablePortfolioChat: true,
+    });
+    const pub = toPublicPortfolioSettings(full);
+    expect(pub.enablePortfolioChat).toBe(true);
+    expect(pub).not.toHaveProperty('chatMaxQuestionsPerVisitor');
+    expect(pub).not.toHaveProperty('enableChatLlm');
+    expect(pub).not.toHaveProperty('chatLlmModel');
+    expect(pub).not.toHaveProperty('alertEmailEnabled');
+    expect(pub).not.toHaveProperty('alertClassLiveChat');
   });
 
   it('defaults visitor feature switches to enabled', () => {

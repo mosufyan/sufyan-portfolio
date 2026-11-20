@@ -40,6 +40,7 @@ describe('observability', () => {
     vi.stubEnv('RESEND_API_KEY', 're_test');
     vi.stubEnv('SENTRY_DSN', 'https://key@o0.ingest.sentry.io/1');
     vi.stubEnv('SLACK_ALERT_WEBHOOK_URL', 'https://hooks.slack.com/services/T/B/X');
+    vi.stubEnv('VITE_RECAPTCHA_SITE_KEY', 'recaptcha-site');
     vi.stubEnv('NODE_ENV', 'production');
     vi.stubEnv('STRICT_PROD_HARDENING', 'true');
 

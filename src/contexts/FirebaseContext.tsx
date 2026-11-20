@@ -68,6 +68,7 @@ import {
   getEffectivePortfolioSettings,
   sanitizeAdminAuditPayload,
   sanitizePortfolioSettings,
+  toPublicPortfolioSettings,
   validateAccessRuleDraft,
   validateAdminDelegateDraft,
   type AccessRuleDraft,
@@ -180,19 +181,44 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
     return () => unsubscribe();
   }, []);
 
-  // Public singleton portfolio_settings/global subscription
+  const isPrimaryOwner = isPortfolioOwner(user);
+
+  // Visitors subscribe to portfolio_settings/public (UX flags only).
   useEffect(() => {
     if (!authReady) return;
 
-    const path = 'portfolio_settings/global';
-    const ref = doc(db, 'portfolio_settings', 'global');
     const unsubscribe = onSnapshot(
-      ref,
+      doc(db, 'portfolio_settings', 'public'),
+      (docSnap) => {
+        if (docSnap.exists()) {
+          setPortfolioSettings((prev) =>
+            sanitizePortfolioSettings({
+              ...prev,
+              ...(docSnap.data() as Partial<PortfolioSettings>),
+            })
+          );
+        }
+        setLoadingSettings(false);
+      },
+      (error) => {
+        setLoadingSettings(false);
+        console.warn('Public portfolio settings unavailable:', error);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [authReady]);
+
+  // Primary owner also loads portfolio_settings/global (full policy including caps/alerts).
+  useEffect(() => {
+    if (!authReady || !isPrimaryOwner) return;
+
+    const path = 'portfolio_settings/global';
+    const unsubscribe = onSnapshot(
+      doc(db, 'portfolio_settings', 'global'),
       (docSnap) => {
         if (docSnap.exists()) {
           setPortfolioSettings(sanitizePortfolioSettings(docSnap.data() as Partial<PortfolioSettings>));
-        } else {
-          setPortfolioSettings({ ...DEFAULT_PORTFOLIO_SETTINGS });
         }
         setLoadingSettings(false);
       },
@@ -203,9 +229,7 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
     );
 
     return () => unsubscribe();
-  }, [authReady]);
-
-  const isPrimaryOwner = isPortfolioOwner(user);
+  }, [authReady, isPrimaryOwner]);
 
   // Secondary admin: listen to admins/{uid} for console access when not primary owner
   useEffect(() => {
@@ -866,14 +890,20 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
     const sanitized = sanitizeCvDownloadLogPayload(summary);
     if (!sanitized) return;
 
-    const docPath = `cv_downloads/${sanitized.downloadId}`;
+    // Client creates are denied — Admin SDK / server persists after OTP.
+    // Keep this as a soft no-op fallback for older clients.
     try {
       await setDoc(doc(db, 'cv_downloads', sanitized.downloadId), {
         ...sanitized,
         createdAt: serverTimestamp(),
       });
     } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, docPath);
+      const code =
+        error && typeof error === 'object' && 'code' in error
+          ? String((error as { code?: string }).code || '')
+          : '';
+      if (code.includes('permission-denied')) return;
+      console.warn('CV download log client write skipped:', error);
     }
   }, []);
 
@@ -892,14 +922,19 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
     const sanitized = sanitizeContactMessageLogPayload(summary);
     if (!sanitized) return;
 
-    const docPath = `contact_messages/${sanitized.messageId}`;
+    // Client creates are denied — Admin SDK / server persists after OTP.
     try {
       await setDoc(doc(db, 'contact_messages', sanitized.messageId), {
         ...sanitized,
         createdAt: serverTimestamp(),
       });
     } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, docPath);
+      const code =
+        error && typeof error === 'object' && 'code' in error
+          ? String((error as { code?: string }).code || '')
+          : '';
+      if (code.includes('permission-denied')) return;
+      console.warn('Contact message log client write skipped:', error);
     }
   }, []);
 
@@ -1028,6 +1063,12 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
       try {
         await setDoc(doc(db, 'portfolio_settings', 'global'), {
           ...clean,
+          updatedByUid: currentUser.uid,
+          updatedAt: serverTimestamp(),
+        });
+        // Visitor-readable UX slice (no alert routing / rate caps / LLM model).
+        await setDoc(doc(db, 'portfolio_settings', 'public'), {
+          ...toPublicPortfolioSettings(clean),
           updatedByUid: currentUser.uid,
           updatedAt: serverTimestamp(),
         });

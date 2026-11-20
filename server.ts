@@ -1773,10 +1773,49 @@ async function startServer() {
         sentry: Boolean((process.env.SENTRY_DSN || '').trim()),
         slackAlerts: Boolean((process.env.SLACK_ALERT_WEBHOOK_URL || '').trim()),
         sessionSecret: Boolean(process.env.SESSION_SECRET?.trim()),
+        appCheck: Boolean(
+          (process.env.VITE_RECAPTCHA_SITE_KEY || '').trim() ||
+            (process.env.RECAPTCHA_SITE_KEY || '').trim()
+        ),
+        piiClientCreatesDenied: true,
+        cspReporting: true,
+        httpsIpIntel: true,
       },
       goldPathScore: `${gold.score}/${gold.max}`,
     });
   });
+
+  /** Lightweight probe for external uptime monitors (Better Stack / UptimeRobot / Cloud Monitoring). */
+  app.get('/api/uptime', (_req: Request, res: Response) => {
+    const gold = evaluateGoldPathHardening();
+    const strict =
+      (process.env.STRICT_PROD_HARDENING || '').toLowerCase() === 'true' &&
+      process.env.NODE_ENV === 'production';
+    const ready = !strict || gold.productionReady;
+    res.status(ready ? 200 : 503).json({
+      ok: ready,
+      service: 'sufyan-portfolio',
+      ts: Date.now(),
+      redis: isDistributedStoreEnabled(),
+      mail: isDirectEmailTransportConfigured(),
+    });
+  });
+
+  app.post(
+    '/api/csp-report',
+    express.json({
+      type: ['application/csp-report', 'application/reports+json', 'application/json'],
+      limit: '16kb',
+    }),
+    (req: Request, res: Response) => {
+      const report = req.body;
+      structuredLog('warn', 'csp_violation', {
+        requestId: req.requestId,
+        report: typeof report === 'object' ? report : String(report).slice(0, 500),
+      });
+      res.status(204).end();
+    }
+  );
 
   app.get('/.well-known/security.txt', (_req: Request, res: Response) => {
     const expires = new Date();

@@ -160,7 +160,19 @@ export function buildContentSecurityPolicy(
     "form-action 'self'",
     frameAncestors,
     "object-src 'none'",
+    "report-uri /api/csp-report",
   ].join('; ');
+}
+
+/** Stricter report-only policy (no unsafe-inline scripts) to measure nonce migration readiness. */
+export function buildContentSecurityPolicyReportOnly(
+  isDev: boolean,
+  options: { allowPreviewIframe?: boolean } = {}
+): string {
+  const enforced = buildContentSecurityPolicy(isDev, options);
+  return enforced
+    .replace("script-src 'self' 'unsafe-inline' 'unsafe-eval'", "script-src 'self'")
+    .replace("script-src 'self' 'unsafe-inline'", "script-src 'self'");
 }
 
 export function applySecurityHeaders(
@@ -178,6 +190,10 @@ export function applySecurityHeaders(
   setHeader(
     'Content-Security-Policy',
     buildContentSecurityPolicy(options.isDev, { allowPreviewIframe })
+  );
+  setHeader(
+    'Content-Security-Policy-Report-Only',
+    buildContentSecurityPolicyReportOnly(options.isDev, { allowPreviewIframe })
   );
   if (options.isHttps) {
     setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');

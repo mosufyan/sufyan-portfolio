@@ -23,6 +23,10 @@ interface ControlStatus {
   sentry: boolean;
   slackAlerts: boolean;
   sessionSecret: boolean;
+  appCheck?: boolean;
+  piiClientCreatesDenied?: boolean;
+  cspReporting?: boolean;
+  httpsIpIntel?: boolean;
 }
 
 interface StatusPayload {
@@ -214,8 +218,33 @@ export default function SecurityArchitectureModal({
                   <StatusPill ok={Boolean(controls?.sessionSecret)} label="SESSION_SECRET" />
                   <StatusPill ok={Boolean(controls?.sentry)} label="Sentry" />
                   <StatusPill ok={Boolean(controls?.slackAlerts)} label="Slack alerts" />
+                  <StatusPill ok={Boolean(controls?.appCheck)} label="App Check key" />
+                  <StatusPill
+                    ok={Boolean(controls?.piiClientCreatesDenied)}
+                    label="PII creates denied"
+                  />
+                  <StatusPill ok={Boolean(controls?.cspReporting)} label="CSP reporting" />
+                  <StatusPill ok={Boolean(controls?.httpsIpIntel)} label="HTTPS IP intel" />
                   <StatusPill ok={Boolean(controls?.incidentMode)} label="Incident mode" />
                 </div>
+              </section>
+
+              <section className="rounded-xl border border-slate-800 bg-[#0a101c] p-4 space-y-3">
+                <h3 className="font-display font-semibold text-white text-sm">Case notes</h3>
+                <ul className="space-y-2 text-[11px] text-slate-400 leading-relaxed">
+                  <li>
+                    <span className="text-cyan-300/90 font-mono">OTP design</span> — HMAC-bound
+                    challenges, MX verification, Redis-shared across Cloud Run replicas.
+                  </li>
+                  <li>
+                    <span className="text-cyan-300/90 font-mono">Fail-closed Redis</span> — rate
+                    limits, chat quotas, and policy load deny or lock down when Upstash is unreachable.
+                  </li>
+                  <li>
+                    <span className="text-cyan-300/90 font-mono">Firestore rules</span> — deny-by-default
+                    schemas; PII collections are Admin-SDK-write-only; public settings are a UX-only slice.
+                  </li>
+                </ul>
               </section>
 
               <div className="grid gap-3 sm:grid-cols-2">
