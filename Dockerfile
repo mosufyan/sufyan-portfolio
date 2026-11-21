@@ -27,7 +27,12 @@ ENV PORT=8080
 ENV HUSKY=0
 
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev && npm cache clean --force
+# Install app deps, then remove the base image's npm/corepack toolchain so Trivy
+# (and the runtime) are not blocked by CVEs in unused package-manager packages.
+RUN npm ci --omit=dev \
+  && npm cache clean --force \
+  && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+  && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 
 COPY --from=build /app/dist ./dist
 COPY server.ts ./server.ts
