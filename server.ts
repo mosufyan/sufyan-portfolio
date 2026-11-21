@@ -241,20 +241,23 @@ interface SiteTelemetryState {
   updatedAtIso: string;
 }
 
-const SHARE_TRACK_IDS = new Set<ShareTrackId>(['executive', 'security', 'platform', 'ai']);
-
 function normalizeShareTrack(track?: string): ShareTrackId {
-  return track && SHARE_TRACK_IDS.has(track as ShareTrackId) ? (track as ShareTrackId) : 'executive';
+  // Literal returns so static analysis cannot treat the key as user-controlled.
+  if (track === 'security') return 'security';
+  if (track === 'platform') return 'platform';
+  if (track === 'ai') return 'ai';
+  return 'executive';
 }
 
-function sanitizeOgByTrack(raw: unknown): Record<ShareTrackId, number> {
-  const out: Record<string, number> = {};
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out as Record<ShareTrackId, number>;
-  for (const id of SHARE_TRACK_IDS) {
-    const n = Number((raw as Record<string, unknown>)[id]);
+function sanitizeOgByTrack(raw: unknown): Record<string, number> {
+  const out: Record<string, number> = Object.create(null);
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  const src = raw as Record<string, unknown>;
+  for (const id of ['executive', 'security', 'platform', 'ai'] as const) {
+    const n = Number(src[id]);
     if (Number.isFinite(n) && n > 0) out[id] = Math.floor(n);
   }
-  return out as Record<ShareTrackId, number>;
+  return out;
 }
 
 function loadSiteTelemetry(): SiteTelemetryState {
@@ -305,8 +308,21 @@ function bumpSiteTelemetry(kind: 'pageview' | 'og_share', track?: string): void 
     updatedAtIso: new Date().toISOString(),
   };
   if (kind === 'og_share') {
-    const key = normalizeShareTrack(track);
-    next.ogByTrack[key] = (next.ogByTrack[key] || 0) + 1;
+    // Assign via literal property names (avoids remote-property-injection).
+    switch (normalizeShareTrack(track)) {
+      case 'security':
+        next.ogByTrack.security = (next.ogByTrack.security || 0) + 1;
+        break;
+      case 'platform':
+        next.ogByTrack.platform = (next.ogByTrack.platform || 0) + 1;
+        break;
+      case 'ai':
+        next.ogByTrack.ai = (next.ogByTrack.ai || 0) + 1;
+        break;
+      default:
+        next.ogByTrack.executive = (next.ogByTrack.executive || 0) + 1;
+        break;
+    }
   }
   siteTelemetry = next;
   scheduleSiteTelemetryFlush();
