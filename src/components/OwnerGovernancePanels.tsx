@@ -573,10 +573,22 @@ export function SiteControlsPanel({ isLight }: { isLight: boolean }) {
               desc: 'Controls whether visitors can download PDF, print, or copy ATS CV.',
             },
             {
-              key: 'strictOtpForAll' as const,
+              key: 'requireOtpForChat' as const,
               icon: KeyRound,
-              title: 'Strict OTP for All CV Exports',
-              desc: 'Requires 6-digit email verification for every CV download unless allowlisted.',
+              title: 'Require OTP for portfolio chat',
+              desc: 'Email OTP before live chat. Turn off for local testing (weakens visitor verification).',
+            },
+            {
+              key: 'requireOtpForContact' as const,
+              icon: KeyRound,
+              title: 'Require OTP for contact submissions',
+              desc: 'Email OTP before transmitting inquiries. Turn off for local testing.',
+            },
+            {
+              key: 'requireOtpForCv' as const,
+              icon: KeyRound,
+              title: 'Require OTP for CV exports',
+              desc: 'Email OTP for every CV download unless allowlisted. Replaces the old strict-CV-OTP switch.',
             },
             {
               key: 'showAnnouncementsBadge' as const,
@@ -611,6 +623,19 @@ export function SiteControlsPanel({ isLight }: { isLight: boolean }) {
             );
           })}
         </div>
+
+        {(!draft.requireOtpForChat || !draft.requireOtpForContact || !draft.requireOtpForCv) && (
+          <div
+            className={`rounded-lg border px-3 py-2 text-[11px] font-mono ${
+              isLight
+                ? 'border-amber-300 bg-amber-50 text-amber-900'
+                : 'border-amber-500/40 bg-amber-950/40 text-amber-200'
+            }`}
+          >
+            One or more OTP requirements are off. Visitors can complete those flows without email
+            verification — including in production once saved.
+          </div>
+        )}
 
         <div className={`rounded-xl border p-3.5 space-y-3 ${rowCard}`}>
           <div>

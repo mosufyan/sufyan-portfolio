@@ -256,13 +256,16 @@ service cloud.firestore {
     function isValidPortfolioSettings(data) {
       return data.keys().hasAll([
           'availabilityStatus', 'availabilityText', 'maintenanceMode', 'maintenanceMessage',
-          'enableContactForm', 'enableCvDownloads', 'strictOtpForAll', 'showAnnouncementsBadge',
+          'enableContactForm', 'enableCvDownloads', 'strictOtpForAll',
+          'requireOtpForChat', 'requireOtpForContact', 'requireOtpForCv',
+          'showAnnouncementsBadge',
           'enableAnnouncements', 'enableResumeStudio', 'enableDigitalCard', 'enableCommandPalette',
           'enableTerminal', 'enablePwaInstall', 'enableSkillFilter', 'enableReadingModes',
           'enableScrollHud', 'enableSiteTelemetry',
           'incidentMode', 'incidentMessage', 'notifyOnNewInquiry',
-          'enablePortfolioChat', 'enableLiveChat', 'enableChatLlm',
+          'enablePortfolioChat', 'enableLiveChat', 'enableChatLlm', 'enableVoiceAgent',
           'chatMaxQuestionsPerVisitor', 'chatMaxLlmPerVisitor', 'chatMaxLiveSessionsPerVisitor',
+          'chatMaxVoiceTurnsPerVisitor',
           'chatRateWindowHours', 'chatLlmModel', 'chatShowSuggestions', 'chatOfferLiveAgent',
           'alertEmailEnabled', 'alertEmailUrgent', 'alertEmailWarning', 'alertEmailDigest',
           'alertClassNewInquiry', 'alertClassLiveChat', 'alertClassRiskDownload',
@@ -271,13 +274,16 @@ service cloud.firestore {
         ])
         && data.keys().hasOnly([
           'availabilityStatus', 'availabilityText', 'maintenanceMode', 'maintenanceMessage',
-          'enableContactForm', 'enableCvDownloads', 'strictOtpForAll', 'showAnnouncementsBadge',
+          'enableContactForm', 'enableCvDownloads', 'strictOtpForAll',
+          'requireOtpForChat', 'requireOtpForContact', 'requireOtpForCv',
+          'showAnnouncementsBadge',
           'enableAnnouncements', 'enableResumeStudio', 'enableDigitalCard', 'enableCommandPalette',
           'enableTerminal', 'enablePwaInstall', 'enableSkillFilter', 'enableReadingModes',
           'enableScrollHud', 'enableSiteTelemetry',
           'incidentMode', 'incidentMessage', 'notifyOnNewInquiry',
-          'enablePortfolioChat', 'enableLiveChat', 'enableChatLlm',
+          'enablePortfolioChat', 'enableLiveChat', 'enableChatLlm', 'enableVoiceAgent',
           'chatMaxQuestionsPerVisitor', 'chatMaxLlmPerVisitor', 'chatMaxLiveSessionsPerVisitor',
+          'chatMaxVoiceTurnsPerVisitor',
           'chatRateWindowHours', 'chatLlmModel', 'chatShowSuggestions', 'chatOfferLiveAgent',
           'alertEmailEnabled', 'alertEmailUrgent', 'alertEmailWarning', 'alertEmailDigest',
           'alertClassNewInquiry', 'alertClassLiveChat', 'alertClassRiskDownload',
@@ -294,6 +300,9 @@ service cloud.firestore {
         && data.enableContactForm is bool
         && data.enableCvDownloads is bool
         && data.strictOtpForAll is bool
+        && data.requireOtpForChat is bool
+        && data.requireOtpForContact is bool
+        && data.requireOtpForCv is bool
         && data.showAnnouncementsBadge is bool
         && data.enableAnnouncements is bool
         && data.enableResumeStudio is bool
@@ -311,6 +320,7 @@ service cloud.firestore {
         && data.enablePortfolioChat is bool
         && data.enableLiveChat is bool
         && data.enableChatLlm is bool
+        && data.enableVoiceAgent is bool
         && isWholeNumber(data.chatMaxQuestionsPerVisitor)
         && data.chatMaxQuestionsPerVisitor >= 1
         && data.chatMaxQuestionsPerVisitor <= 200
@@ -320,6 +330,9 @@ service cloud.firestore {
         && isWholeNumber(data.chatMaxLiveSessionsPerVisitor)
         && data.chatMaxLiveSessionsPerVisitor >= 0
         && data.chatMaxLiveSessionsPerVisitor <= 50
+        && isWholeNumber(data.chatMaxVoiceTurnsPerVisitor)
+        && data.chatMaxVoiceTurnsPerVisitor >= 0
+        && data.chatMaxVoiceTurnsPerVisitor <= 50
         && isWholeNumber(data.chatRateWindowHours)
         && data.chatRateWindowHours >= 1
         && data.chatRateWindowHours <= 168

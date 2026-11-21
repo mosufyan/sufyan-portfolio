@@ -159,6 +159,7 @@ export default function ChatWidget() {
   const [open, setOpen] = useState(false);
   const [enabled, setEnabled] = useState(true);
   const [otpAvailable, setOtpAvailable] = useState(true);
+  const [requireOtpForChat, setRequireOtpForChat] = useState(true);
   const [voiceAgentAvailable, setVoiceAgentAvailable] = useState(false);
   const [voiceMode, setVoiceMode] = useState(false);
   const [voiceMuted, setVoiceMuted] = useState(false);
@@ -304,6 +305,7 @@ export default function ChatWidget() {
                 ownerOnline?: boolean;
                 suggestions?: string[];
                 liveChatAvailable?: boolean;
+                requireOtpForChat?: boolean;
                 voiceAgentAvailable?: boolean;
               })
             : null
@@ -312,6 +314,9 @@ export default function ChatWidget() {
           if (cancelled || !data) return;
           setEnabled(data.enabled !== false);
           setOtpAvailable(data.liveChatAvailable !== false);
+          if (typeof data.requireOtpForChat === 'boolean') {
+            setRequireOtpForChat(data.requireOtpForChat);
+          }
           setVoiceAgentAvailable(Boolean(data.voiceAgentAvailable));
           if (!data.voiceAgentAvailable) setVoiceMode(false);
           setOwnerOnline(Boolean(data.ownerOnline));
@@ -325,9 +330,17 @@ export default function ChatWidget() {
     const id = window.setInterval(refreshStatus, pollMs);
     if (!turnstileSiteKey) {
       void fetch('/api/access-config')
-        .then(async (r) => (r.ok ? ((await r.json()) as { turnstileSiteKey?: string }) : null))
+        .then(async (r) =>
+          r.ok
+            ? ((await r.json()) as { turnstileSiteKey?: string; requireOtpForChat?: boolean })
+            : null
+        )
         .then((cfg) => {
-          if (!cancelled && cfg?.turnstileSiteKey) setTurnstileSiteKey(cfg.turnstileSiteKey);
+          if (cancelled || !cfg) return;
+          if (cfg.turnstileSiteKey) setTurnstileSiteKey(cfg.turnstileSiteKey);
+          if (typeof cfg.requireOtpForChat === 'boolean') {
+            setRequireOtpForChat(cfg.requireOtpForChat);
+          }
         })
         .catch(() => {});
     }
@@ -801,7 +814,7 @@ export default function ChatWidget() {
   const startRegistration = async (e: FormEvent) => {
     e.preventDefault();
     if (busy) return;
-    if (!otpAvailable) {
+    if (requireOtpForChat && !otpAvailable) {
       setError('Email verification is temporarily unavailable. Please use the contact form instead.');
       return;
     }
@@ -827,13 +840,27 @@ export default function ChatWidget() {
       });
       const data = (await res.json().catch(() => ({}))) as {
         error?: string;
+        status?: string;
         challengeId?: string;
         challengeToken?: string;
         maskedEmail?: string;
         ownerOnline?: boolean;
+        sessionReceipt?: string;
+        session?: LiveSession;
+        suggestions?: string[];
       };
       if (!res.ok) throw new Error(data.error || 'Unable to start verification.');
       if (typeof data.ownerOnline === 'boolean') setOwnerOnline(data.ownerOnline);
+      if (data.status === 'live' && data.sessionReceipt && data.session) {
+        enterVerifiedChat({
+          session: data.session,
+          receipt: data.sessionReceipt,
+          name: form.name.trim() || data.session.visitorName || 'there',
+          email: form.email.trim() || data.session.visitorEmail || '',
+          starterSuggestions: data.suggestions,
+        });
+        return;
+      }
       if (!data.challengeId || !data.challengeToken) throw new Error('OTP challenge missing.');
       setOtpStep({
         challengeId: data.challengeId,
@@ -1211,11 +1238,6 @@ export default function ChatWidget() {
                         }`}
                       >
                         {b.text}
-                        {b.sources && b.sources.length > 0 && (
-                          <div className={`mt-1.5 text-[10px] font-mono ${muted}`}>
-                            Sources: {b.sources.join(' · ')}
-                          </div>
-                        )}
                       </div>
                     </div>
                   </div>
@@ -1234,7 +1256,9 @@ export default function ChatWidget() {
                   className={`p-3 border-t space-y-2 shrink-0 ${isLight ? 'border-slate-200' : 'border-slate-800'}`}
                 >
                   <p className={`text-[11px] ${muted}`}>
-                    Tell us who you are. We’ll email a 6-digit code to create your chat profile.
+                    {requireOtpForChat
+                      ? 'Tell us who you are. We’ll email a 6-digit code to create your chat profile.'
+                      : 'Tell us who you are to start chatting (email verification is currently off).'}
                   </p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <input
@@ -1295,10 +1319,16 @@ export default function ChatWidget() {
                     </button>
                     <button
                       type="submit"
-                      disabled={busy || !otpAvailable}
+                      disabled={busy || (requireOtpForChat && !otpAvailable)}
                       className="flex-[1.4] rounded-xl bg-cyan-500 text-slate-950 font-semibold text-xs py-2 disabled:opacity-50 cursor-pointer"
                     >
-                      {busy ? 'Sending code…' : 'Send OTP'}
+                      {busy
+                        ? requireOtpForChat
+                          ? 'Sending code…'
+                          : 'Starting…'
+                        : requireOtpForChat
+                          ? 'Send OTP'
+                          : 'Start chat'}
                     </button>
                   </div>
                 </form>

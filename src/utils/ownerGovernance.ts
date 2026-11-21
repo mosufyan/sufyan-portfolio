@@ -107,7 +107,14 @@ export interface PortfolioSettings {
   maintenanceMessage: string;
   enableContactForm: boolean;
   enableCvDownloads: boolean;
+  /** @deprecated Prefer requireOtpForCv; kept mirrored for migration. */
   strictOtpForAll: boolean;
+  /** Require email OTP before live chat session (default true). */
+  requireOtpForChat: boolean;
+  /** Require email OTP before contact message transmit (default true). */
+  requireOtpForContact: boolean;
+  /** Require email OTP for every CV export (default true; mirrors strictOtpForAll). */
+  requireOtpForCv: boolean;
   showAnnouncementsBadge: boolean;
   /** Public announcements entry + modal (badge only applies when this is on). */
   enableAnnouncements: boolean;
@@ -183,7 +190,10 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
     'Scheduled portfolio enhancements are currently in progress. Direct email outreach remains active.',
   enableContactForm: true,
   enableCvDownloads: true,
-  strictOtpForAll: false,
+  strictOtpForAll: true,
+  requireOtpForChat: true,
+  requireOtpForContact: true,
+  requireOtpForCv: true,
   showAnnouncementsBadge: true,
   enableAnnouncements: true,
   enableResumeStudio: true,
@@ -384,7 +394,27 @@ export function sanitizePortfolioSettings(input: Partial<PortfolioSettings> | nu
       typeof input.enableCvDownloads === 'boolean'
         ? input.enableCvDownloads
         : DEFAULT_PORTFOLIO_SETTINGS.enableCvDownloads,
-    strictOtpForAll: Boolean(input.strictOtpForAll),
+    requireOtpForChat:
+      typeof input.requireOtpForChat === 'boolean'
+        ? input.requireOtpForChat
+        : DEFAULT_PORTFOLIO_SETTINGS.requireOtpForChat,
+    requireOtpForContact:
+      typeof input.requireOtpForContact === 'boolean'
+        ? input.requireOtpForContact
+        : DEFAULT_PORTFOLIO_SETTINGS.requireOtpForContact,
+    requireOtpForCv:
+      typeof input.requireOtpForCv === 'boolean'
+        ? input.requireOtpForCv
+        : typeof input.strictOtpForAll === 'boolean'
+          ? input.strictOtpForAll
+          : DEFAULT_PORTFOLIO_SETTINGS.requireOtpForCv,
+    // Mirrored for older servers / rules during migration.
+    strictOtpForAll:
+      typeof input.requireOtpForCv === 'boolean'
+        ? input.requireOtpForCv
+        : typeof input.strictOtpForAll === 'boolean'
+          ? input.strictOtpForAll
+          : DEFAULT_PORTFOLIO_SETTINGS.strictOtpForAll,
     showAnnouncementsBadge:
       typeof input.showAnnouncementsBadge === 'boolean'
         ? input.showAnnouncementsBadge
@@ -615,6 +645,9 @@ export function getEffectivePortfolioSettings(settings: PortfolioSettings): Port
     enableContactForm: false,
     enableCvDownloads: false,
     strictOtpForAll: true,
+    requireOtpForChat: true,
+    requireOtpForContact: true,
+    requireOtpForCv: true,
     enablePortfolioChat: false,
     enableLiveChat: false,
     enableChatLlm: false,

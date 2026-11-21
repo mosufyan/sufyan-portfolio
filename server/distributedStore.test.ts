@@ -79,7 +79,10 @@ describe('distributedStore (memory fallback)', () => {
     const mod = await import('./distributedStore.ts');
     const fallback = {
       rules: [],
-      strictOtpForAll: false,
+      strictOtpForAll: true,
+      requireOtpForChat: true,
+      requireOtpForContact: true,
+      requireOtpForCv: true,
       enableContactForm: true,
       enableCvDownloads: true,
       enablePwaInstall: true,
@@ -139,6 +142,9 @@ describe('distributedStore (memory fallback)', () => {
     const fallback = {
       rules: [],
       strictOtpForAll: false,
+      requireOtpForChat: false,
+      requireOtpForContact: false,
+      requireOtpForCv: false,
       enableContactForm: true,
       enableCvDownloads: true,
       enablePwaInstall: true,
@@ -176,6 +182,9 @@ describe('distributedStore (memory fallback)', () => {
     expect(locked.enableLiveChat).toBe(false);
     expect(locked.enableChatLlm).toBe(false);
     expect(locked.strictOtpForAll).toBe(true);
+    expect(locked.requireOtpForChat).toBe(true);
+    expect(locked.requireOtpForContact).toBe(true);
+    expect(locked.requireOtpForCv).toBe(true);
     vi.doUnmock('@upstash/redis');
   });
 

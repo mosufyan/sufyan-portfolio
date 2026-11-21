@@ -319,7 +319,7 @@ export default function OwnerConsolePage({
                   <span>Maintenance Active</span>
                 </span>
               )}
-              {portfolioSettings.strictOtpForAll && (
+              {portfolioSettings.requireOtpForCv && (
                 <span
                   className={`px-2 py-0.5 rounded border text-[10px] font-semibold ${
                     isLight
@@ -327,7 +327,20 @@ export default function OwnerConsolePage({
                       : 'border-emerald-500/40 bg-emerald-950/40 text-emerald-300'
                   }`}
                 >
-                  Strict OTP Global
+                  CV OTP Required
+                </span>
+              )}
+              {(!portfolioSettings.requireOtpForChat ||
+                !portfolioSettings.requireOtpForContact ||
+                !portfolioSettings.requireOtpForCv) && (
+                <span
+                  className={`px-2 py-0.5 rounded border text-[10px] font-semibold ${
+                    isLight
+                      ? 'border-amber-300 bg-amber-50 text-amber-900'
+                      : 'border-amber-500/40 bg-amber-950/40 text-amber-200'
+                  }`}
+                >
+                  OTP relaxed
                 </span>
               )}
             </div>

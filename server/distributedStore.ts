@@ -35,6 +35,9 @@ export interface RuntimeOwnerPolicyPayload {
     note?: string;
   }>;
   strictOtpForAll: boolean;
+  requireOtpForChat: boolean;
+  requireOtpForContact: boolean;
+  requireOtpForCv: boolean;
   enableContactForm: boolean;
   enableCvDownloads: boolean;
   enablePwaInstall: boolean;
@@ -178,7 +181,26 @@ export async function loadDistributedOwnerPolicy(
     };
     return {
       rules: Array.isArray(raw.rules) ? raw.rules.slice(0, 200) : fallback.rules,
-      strictOtpForAll: Boolean(raw.strictOtpForAll),
+      requireOtpForChat:
+        typeof raw.requireOtpForChat === 'boolean'
+          ? raw.requireOtpForChat
+          : fallback.requireOtpForChat,
+      requireOtpForContact:
+        typeof raw.requireOtpForContact === 'boolean'
+          ? raw.requireOtpForContact
+          : fallback.requireOtpForContact,
+      requireOtpForCv:
+        typeof raw.requireOtpForCv === 'boolean'
+          ? raw.requireOtpForCv
+          : typeof raw.strictOtpForAll === 'boolean'
+            ? Boolean(raw.strictOtpForAll)
+            : fallback.requireOtpForCv,
+      strictOtpForAll:
+        typeof raw.requireOtpForCv === 'boolean'
+          ? raw.requireOtpForCv
+          : typeof raw.strictOtpForAll === 'boolean'
+            ? Boolean(raw.strictOtpForAll)
+            : fallback.strictOtpForAll,
       enableContactForm:
         typeof raw.enableContactForm === 'boolean' ? raw.enableContactForm : fallback.enableContactForm,
       enableCvDownloads:
@@ -277,6 +299,9 @@ export async function loadDistributedOwnerPolicy(
       enableChatLlm: false,
       enableVoiceAgent: false,
       strictOtpForAll: true,
+      requireOtpForChat: true,
+      requireOtpForContact: true,
+      requireOtpForCv: true,
       notifyOnNewInquiry: fallback.notifyOnNewInquiry,
     };
   }
