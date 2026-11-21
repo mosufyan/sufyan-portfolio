@@ -21,6 +21,25 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Require SemVer bump when version already released
+        if: github.event_name == 'pull_request'
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p "require('./package.json').version.replace(/^v/i,'').trim()")"
+          if [[ ! "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::package.json version must be SemVer X.Y.Z (got: ${VERSION})"
+            exit 1
+          fi
+          TAG="v${VERSION}"
+          # Fail PRs that still use a version that already shipped (tag exists).
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "::error::${TAG} is already released. Bump package.json (and footer version source) before merging."
+            exit 1
+          fi
+          echo "OK: ${TAG} is not released yet — PR may proceed."
 
       - uses: actions/setup-node@v7
         with:
@@ -177,8 +196,13 @@ jobs:
     timeout-minutes: 40
     needs: [verify, gitleaks, bandit, code-guard, container]
     environment: production
+    permissions:
+      contents: write
+      id-token: write
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
@@ -253,3 +277,34 @@ jobs:
             "controls": status.get("controls"),
           })
           PY
+
+      - name: Publish GitHub Release for package.json version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p "require('./package.json').version.replace(/^v/i,'').trim()")"
+          TAG="v${VERSION}"
+
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "Tag ${TAG} already exists on origin."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "${TAG}" -m "Portfolio site ${TAG} (post-deploy)"
+            git push origin "refs/tags/${TAG}"
+            echo "Created and pushed ${TAG}."
+          fi
+
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            echo "GitHub Release ${TAG} already exists."
+          else
+            # Tag-triggered release.yml may race; succeed if either path creates it.
+            sleep 2
+            gh release create "${TAG}" \
+              --title "Portfolio ${TAG}" \
+              --notes "Production release ${TAG} after successful Cloud Run deploy + smoke." \
+              --verify-tag \
+              || gh release view "${TAG}" >/dev/null
+            echo "GitHub Release ${TAG} is published."
+          fi
