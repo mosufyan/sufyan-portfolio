@@ -1,15 +1,13 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Activity,
+  Check,
   Clock3,
   Copy,
   HeartPulse,
   Link2,
-  Loader2,
-  LogOut,
   MessageSquare,
   MonitorSmartphone,
-  Save,
   ShieldCheck,
   UserRound,
 } from 'lucide-react';
@@ -25,9 +23,6 @@ import {
   filterActivityTimeline,
   type SiteTelemetrySnapshot,
 } from '../utils/ownerTracking';
-import type { PortfolioSettings } from '../utils/ownerGovernance';
-import ChatConfigFields from './ChatConfigFields';
-import AlertNotifyConfigFields from './AlertNotifyConfigFields';
 
 type ChatTrackingStats = {
   botQuestions?: number;
@@ -54,13 +49,11 @@ type ChatTrackingStats = {
 
 export default function OwnerProfilePanel({
   isLight,
-  onSignOut,
   onOpenSection,
   telemetry = EMPTY_SITE_TELEMETRY,
   opsHealth,
 }: {
   isLight: boolean;
-  onSignOut: () => void;
   onOpenSection: (section: OwnerConsoleSectionId) => void;
   telemetry?: SiteTelemetrySnapshot;
   opsHealth?: {
@@ -78,18 +71,10 @@ export default function OwnerProfilePanel({
     adminDelegates,
     contactMessageLogs,
     cvDownloadLogs,
-    savePortfolioSettings,
   } = useFirebase();
   const [timelineFilter, setTimelineFilter] = useState<'all' | 'auth' | 'ops' | 'outreach'>('all');
   const [chatStats, setChatStats] = useState<ChatTrackingStats | null>(null);
-  const [chatDraft, setChatDraft] = useState<PortfolioSettings>(() => ({ ...portfolioSettings }));
-  const [chatSaving, setChatSaving] = useState(false);
-  const [chatError, setChatError] = useState<string | null>(null);
-  const [chatSaved, setChatSaved] = useState<string | null>(null);
-
-  useEffect(() => {
-    setChatDraft({ ...portfolioSettings });
-  }, [portfolioSettings]);
+  const [copiedHref, setCopiedHref] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -149,6 +134,10 @@ export default function OwnerProfilePanel({
     const absolute = `${window.location.origin}${window.location.pathname}${href}`;
     try {
       await navigator.clipboard.writeText(absolute);
+      setCopiedHref(href);
+      window.setTimeout(() => {
+        setCopiedHref((current) => (current === href ? null : current));
+      }, 2000);
     } catch {
       /* ignore */
     }
@@ -199,20 +188,6 @@ export default function OwnerProfilePanel({
             UID <span className="font-mono">{user?.uid || '—'}</span>
             {user?.emailVerified ? ' · email verified' : ''}
           </p>
-          <div className="flex flex-wrap gap-2 pt-1">
-            <button
-              type="button"
-              onClick={onSignOut}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-mono cursor-pointer ${
-                isLight
-                  ? 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100'
-                  : 'border-rose-500/35 bg-rose-950/30 text-rose-300 hover:bg-rose-950/50'
-              }`}
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              Sign out of owner console
-            </button>
-          </div>
         </div>
       </div>
 
@@ -249,7 +224,7 @@ export default function OwnerProfilePanel({
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 text-[11px] font-mono">
           {[
             ['Bot questions', chatStats?.botQuestions ?? '—'],
-            ['Cursor LLM', chatStats?.llmCalls ?? '—'],
+            ['Grok LLM', chatStats?.llmCalls ?? '—'],
             ['LLM fallbacks', chatStats?.llmFallbacks ?? '—'],
             ['Live sessions', chatStats?.liveSessions ?? '—'],
             ['Open / queued', `${chatStats?.openSessions ?? 0}/${chatStats?.queuedSessions ?? 0}`],
@@ -260,7 +235,7 @@ export default function OwnerProfilePanel({
                 portfolioSettings.chatMaxQuestionsPerVisitor,
             ],
             [
-              'Cursor API',
+              'Grok API',
               chatStats?.policy?.llmConfigured
                 ? portfolioSettings.enableChatLlm
                   ? 'Ready'
@@ -276,71 +251,18 @@ export default function OwnerProfilePanel({
         </div>
         <p className={`text-[11px] ${mutedCls}`}>
           Owner online: {chatStats?.ownerOnline ? 'yes' : 'no'} · Presence warms while the console is open.
-        </p>
-
-        {isPrimaryOwner && (
-          <form
-            className="space-y-3"
-            onSubmit={async (e: FormEvent) => {
-              e.preventDefault();
-              if (chatSaving) return;
-              setChatError(null);
-              setChatSaved(null);
-              setChatSaving(true);
-              try {
-                await savePortfolioSettings(chatDraft);
-                setChatSaved('Chat limits saved and synced to the Express policy cache.');
-              } catch (err) {
-                setChatError(err instanceof Error ? err.message : 'Unable to save chat settings.');
-              } finally {
-                setChatSaving(false);
-              }
-            }}
+          Chat limits and alert routing are edited in{' '}
+          <button
+            type="button"
+            onClick={() => onOpenSection('settings')}
+            className={`font-semibold underline-offset-2 hover:underline cursor-pointer ${
+              isLight ? 'text-sky-700' : 'text-cyan-300'
+            }`}
           >
-            <ChatConfigFields
-              draft={chatDraft}
-              setDraft={setChatDraft}
-              isLight={isLight}
-              title="Per-visitor chat configuration"
-              description="Configure the ten chat settings from your owner profile (example: max 10 questions per visitor per window)."
-            />
-            {chatError && (
-              <div
-                role="alert"
-                className={`rounded-lg border px-3 py-2 text-xs ${
-                  isLight
-                    ? 'border-rose-300 bg-rose-50 text-rose-800'
-                    : 'border-rose-500/40 bg-rose-950/40 text-rose-200'
-                }`}
-              >
-                {chatError}
-              </div>
-            )}
-            {chatSaved && (
-              <div
-                role="status"
-                className={`rounded-lg border px-3 py-2 text-xs ${
-                  isLight
-                    ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
-                    : 'border-emerald-500/40 bg-emerald-950/35 text-emerald-200'
-                }`}
-              >
-                {chatSaved}
-              </div>
-            )}
-            <AlertNotifyConfigFields draft={chatDraft} setDraft={setChatDraft} isLight={isLight} />
-            <div className="flex justify-end">
-              <button
-                type="submit"
-                disabled={chatSaving}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#38bdf8] hover:bg-sky-300 disabled:opacity-50 text-slate-950 font-semibold text-xs cursor-pointer"
-              >
-                {chatSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                Save chat &amp; alert settings
-              </button>
-            </div>
-          </form>
-        )}
+            Site Controls
+          </button>
+          .
+        </p>
       </div>
 
       <div className={`rounded-xl border p-4 space-y-2 ${card}`}>
@@ -405,10 +327,19 @@ export default function OwnerProfilePanel({
                 <button
                   type="button"
                   onClick={() => void copyLink(item.href)}
-                  className={`inline-flex items-center gap-1 shrink-0 cursor-pointer ${mutedCls}`}
+                  className={`inline-flex items-center gap-1 shrink-0 rounded-md px-1.5 py-0.5 cursor-pointer transition-colors ${
+                    copiedHref === item.href
+                      ? 'text-emerald-400 bg-emerald-500/10'
+                      : mutedCls
+                  }`}
+                  aria-label={copiedHref === item.href ? 'Copied' : `Copy ${item.href}`}
                 >
-                  <Copy className="w-3 h-3" />
-                  Copy
+                  {copiedHref === item.href ? (
+                    <Check className="w-3 h-3 text-emerald-400" />
+                  ) : (
+                    <Copy className="w-3 h-3" />
+                  )}
+                  {copiedHref === item.href ? 'Copied' : 'Copy'}
                 </button>
               </div>
             ))}

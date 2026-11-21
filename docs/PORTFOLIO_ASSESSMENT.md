@@ -1,7 +1,7 @@
 # Portfolio Assessment — Rating, Gaps & Roadmap
 
 Honest maturity review of **mohammedsufyan.com** after gold-path + P0/P1 closure.  
-Related: [SECURITY.md](../SECURITY.md) · [SECURITY_CONFIGURATION.md](./SECURITY_CONFIGURATION.md) · [EXTERNAL_TOOLS_AND_COSTS.md](./EXTERNAL_TOOLS_AND_COSTS.md) · [ARCHITECTURE.md](./ARCHITECTURE.md)
+Related: [SECURITY.md](./SECURITY.md) · [SECURITY_CONFIGURATION.md](./SECURITY_CONFIGURATION.md) · [EXTERNAL_TOOLS_AND_COSTS.md](./EXTERNAL_TOOLS_AND_COSTS.md) · [ARCHITECTURE.md](./ARCHITECTURE.md)
 
 ---
 
@@ -17,7 +17,7 @@ Related: [SECURITY.md](../SECURITY.md) · [SECURITY_CONFIGURATION.md](./SECURITY
 **Why not 99?** Remaining points are *production proof*, not missing features:
 
 1. Firebase Console **App Check Enforcement** on for Firestore  
-2. Live `SENTRY_DSN` + Slack webhook + Upstash + Turnstile + `SESSION_SECRET` in Cloud Run  
+2. Live `SENTRY_DSN` + Slack webhook + Upstash Redis/Vector + Turnstile + `SESSION_SECRET` + Grok secrets in Cloud Run  
 3. External uptime vendor green for **30 days** on `/api/uptime`  
 4. Optional: CSP nonce migration (report-only is already collecting violations)
 
@@ -68,10 +68,11 @@ quadrantChart
 | Item | Action |
 |------|--------|
 | App Check Enforcement | Firebase Console → App Check → Firestore Enforce |
-| Secrets green | Turnstile, SESSION_SECRET, Redis, Admin JSON, Sentry, Slack |
+| Secrets green | Turnstile, SESSION_SECRET, Redis, Vector, Grok, Admin JSON, Sentry, Slack |
 | `STRICT_PROD_HARDENING=true` | Health/uptime return 503 if gold path incomplete |
 | External uptime | Point Better Stack / UptimeRobot at `https://www.mohammedsufyan.com/api/uptime` |
 | Deploy rules + indexes | `firestore.rules` + `firestore.indexes.json` |
+| CI/CD | PRs green + merge-to-`main` auto-deploys Cloud Run (WIF) |
 
 ---
 

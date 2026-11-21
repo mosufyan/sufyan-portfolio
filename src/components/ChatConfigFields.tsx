@@ -18,7 +18,7 @@ export default function ChatConfigFields({
   setDraft,
   isLight,
   title = 'Chatbot & LLM limits',
-  description = 'Ten owner-controlled chat settings: feature toggles, per-visitor caps (default 10 questions), Cursor LLM enrichment, and live-agent handoff.',
+  description = 'Ten owner-controlled chat settings: feature toggles, per-visitor caps (default 10 questions), Grok LLM enrichment, and live-agent handoff.',
 }: Props) {
   const rowCard = isLight
     ? 'border-slate-200 bg-slate-50/70'
@@ -55,8 +55,8 @@ export default function ChatConfigFields({
     {
       key: 'enableChatLlm',
       icon: Sparkles,
-      title: 'Enable Cursor LLM enrichment',
-      desc: 'Uses Cursor Cloud Agents API when CURSOR_API_KEY is set; otherwise grounded answers.',
+      title: 'Enable Grok LLM enrichment',
+      desc: 'Uses Grok (xAI) when GROK_API_KEY is set; otherwise grounded answers.',
     },
     {
       key: 'chatShowSuggestions',
@@ -131,7 +131,7 @@ export default function ChatConfigFields({
         </div>
         <div>
           <label className={`block text-[10px] font-mono uppercase mb-1 ${mutedCls}`}>
-            Max Cursor LLM answers / visitor
+            Max Grok LLM answers / visitor
           </label>
           <input
             type="number"
@@ -187,14 +187,14 @@ export default function ChatConfigFields({
 
       <div>
         <label className={`block text-[10px] font-mono uppercase mb-1 ${mutedCls}`}>
-          Cursor model id (optional — empty uses account default)
+          Grok model id (optional — empty uses grok-4.3)
         </label>
         <input
           type="text"
           maxLength={PORTFOLIO_SETTINGS_CONSTRAINTS.chatLlmModelMaxLength}
           value={draft.chatLlmModel}
           onChange={(e) => setDraft((prev) => ({ ...prev, chatLlmModel: e.target.value }))}
-          placeholder="e.g. composer-2"
+          placeholder="e.g. grok-4.3"
           className={`w-full rounded-lg border px-3 py-2 text-xs focus:outline-none ${inputCls}`}
         />
       </div>

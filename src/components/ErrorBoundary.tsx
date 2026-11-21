@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { AlertTriangle, RotateCcw } from 'lucide-react';
+import { toUserFacingError } from '../utils/userFacingError';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -19,7 +20,7 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     return {
       hasError: true,
-      message: error.message || 'An unexpected error occurred.',
+      message: toUserFacingError(error, 'An unexpected error occurred.'),
     };
   }
 

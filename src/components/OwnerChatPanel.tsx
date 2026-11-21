@@ -1,6 +1,8 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
-import { Headphones, Loader2, MessageCircle, Radio, Send, XCircle } from 'lucide-react';
+import { Headphones, Loader2, MessageCircle, Radio, XCircle } from 'lucide-react';
 import { useFirebase } from '../contexts/FirebaseContext';
+import { toUserFacingError } from '../utils/userFacingError';
+import ChatMessageComposer from './ChatMessageComposer';
 
 type ChatMessage = { id: string; role: string; text: string; createdAtMs: number };
 type ChatSession = {
@@ -44,9 +46,6 @@ export default function OwnerChatPanel({ isLight }: { isLight: boolean }) {
   const card = isLight ? 'border-slate-200 bg-white' : 'border-slate-800 bg-[#090d16]';
   const muted = isLight ? 'text-slate-500' : 'text-slate-400';
   const title = isLight ? 'text-slate-900' : 'text-white';
-  const input = isLight
-    ? 'border-slate-300 bg-white text-slate-900'
-    : 'border-slate-700 bg-[#070b14] text-slate-100';
 
   const authHeaders = useCallback(async (): Promise<HeadersInit> => {
     if (!user) return {};
@@ -70,7 +69,7 @@ export default function OwnerChatPanel({ isLight }: { isLight: boolean }) {
       setSessions(Array.isArray(data.sessions) ? data.sessions : []);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to load chat.');
+      setError(toUserFacingError(err, 'Unable to load chat.'));
     } finally {
       setLoading(false);
     }
@@ -114,7 +113,7 @@ export default function OwnerChatPanel({ isLight }: { isLight: boolean }) {
         await refresh();
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Reply failed.');
+      setError(toUserFacingError(err, 'Reply failed.'));
     } finally {
       setBusy(false);
     }
@@ -136,7 +135,7 @@ export default function OwnerChatPanel({ isLight }: { isLight: boolean }) {
       }
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to close.');
+      setError(toUserFacingError(err, 'Unable to close.'));
     } finally {
       setBusy(false);
     }
@@ -269,23 +268,20 @@ export default function OwnerChatPanel({ isLight }: { isLight: boolean }) {
                   </div>
                 ))}
               </div>
-              <form onSubmit={sendReply} className={`p-2.5 border-t flex gap-2 ${isLight ? 'border-slate-200' : 'border-slate-800'}`}>
-                <input
+              <div className={`p-2.5 border-t ${isLight ? 'border-slate-200' : 'border-slate-800'}`}>
+                <ChatMessageComposer
                   value={reply}
-                  onChange={(e) => setReply(e.target.value)}
+                  onChange={setReply}
+                  onSubmit={sendReply}
+                  busy={busy}
                   disabled={selected.status === 'closed'}
+                  isLight={isLight}
                   placeholder="Reply to visitor…"
-                  className={`flex-1 min-w-0 rounded-lg border px-2.5 py-2 text-xs focus:outline-none ${input}`}
+                  submitAriaLabel="Send reply"
+                  showSubmitLabel
+                  minSubmitLength={1}
                 />
-                <button
-                  type="submit"
-                  disabled={busy || !reply.trim() || selected.status === 'closed'}
-                  className="inline-flex items-center gap-1 rounded-lg bg-cyan-500 text-slate-950 px-3 text-xs font-semibold disabled:opacity-50 cursor-pointer"
-                >
-                  {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                  Send
-                </button>
-              </form>
+              </div>
             </>
           )}
         </div>

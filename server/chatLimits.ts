@@ -1,5 +1,5 @@
 /**
- * Per-visitor chat usage counters for bot Q&A, Cursor LLM, and live sessions.
+ * Per-visitor chat usage counters for bot Q&A, Grok LLM, and live sessions.
  * When Upstash Redis is configured, quotas are shared across Cloud Run replicas.
  */
 import crypto from 'crypto';

@@ -16,6 +16,8 @@ import {
   ShieldCheck,
   PauseCircle,
   Loader2,
+  Reply,
+  Target,
 } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { PERSONAL_INFO } from '../data/portfolioData';
@@ -34,6 +36,7 @@ import { downloadVCard } from '../utils/vcard';
 import HeaderSpotlight from './HeaderSpotlight';
 import { Reveal, EASE_OUT_EXPO } from './MotionPrimitives';
 import SectionScanLine from './SectionScanLine';
+import { toUserFacingError } from '../utils/userFacingError';
 
 interface ContactProps {
   onOpenDigitalCard?: () => void;
@@ -371,7 +374,7 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
       setTimeout(() => setStatus('idle'), 6000);
     } catch (err) {
       setStatus('error');
-      setErrorMsg(err instanceof Error ? err.message : 'Unable to send message right now.');
+      setErrorMsg(toUserFacingError(err, 'Unable to send message right now.'));
     }
   };
 
@@ -432,7 +435,7 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
       setTimeout(() => setStatus('idle'), 6000);
     } catch (err) {
       setStatus('otp');
-      setErrorMsg(err instanceof Error ? err.message : 'Verification failed. Please try again.');
+      setErrorMsg(toUserFacingError(err, 'Verification failed. Please try again.'));
     }
   };
 
@@ -447,7 +450,7 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
         {/* Main 2-column split */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10 min-[2560px]:gap-14 items-stretch">
           {/* Left Column: Direct channels and bio */}
-          <Reveal className="lg:col-span-5 flex flex-col justify-between space-y-8">
+          <Reveal className="lg:col-span-5 flex flex-col gap-8 lg:gap-10">
             <div>
               <HeaderSpotlight>
                 <div className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-cyan-400 tracking-wider uppercase mb-2">
@@ -476,8 +479,83 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
               </div>
             </div>
 
+            {/* Collaboration brief — fills the mid-column without becoming a stats dashboard */}
+            <div
+              className={`rounded-xl border px-4 py-4 space-y-3.5 ${
+                isLight
+                  ? 'border-slate-200 bg-slate-50/80'
+                  : 'border-slate-800 bg-[#0b101d]/90'
+              }`}
+            >
+              <div className="flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider text-cyan-400">
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Collaboration brief</span>
+              </div>
+              <ul className="space-y-3">
+                <li className="flex items-start gap-3">
+                  <span
+                    className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${
+                      isLight
+                        ? 'border-sky-200 bg-sky-50 text-sky-700'
+                        : 'border-cyan-500/30 bg-cyan-950/50 text-cyan-400'
+                    }`}
+                  >
+                    <Reply className="w-3.5 h-3.5" />
+                  </span>
+                  <div className="min-w-0">
+                    <div className={`text-[10px] font-mono uppercase tracking-wider ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
+                      Typical reply
+                    </div>
+                    <p className={`text-sm leading-snug mt-0.5 ${isLight ? 'text-slate-800' : 'text-slate-100'}`}>
+                      Within 24–48 hours on Pacific time — sooner for OTP-verified inquiries.
+                    </p>
+                  </div>
+                </li>
+                <li className="flex items-start gap-3">
+                  <span
+                    className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${
+                      isLight
+                        ? 'border-sky-200 bg-sky-50 text-sky-700'
+                        : 'border-cyan-500/30 bg-cyan-950/50 text-cyan-400'
+                    }`}
+                  >
+                    <Target className="w-3.5 h-3.5" />
+                  </span>
+                  <div className="min-w-0">
+                    <div className={`text-[10px] font-mono uppercase tracking-wider ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
+                      Best fit
+                    </div>
+                    <p className={`text-sm leading-snug mt-0.5 ${isLight ? 'text-slate-800' : 'text-slate-100'}`}>
+                      Software Engineer roles across security data platforms, multi-cloud systems, and applied AI — San Jose / hybrid.
+                    </p>
+                  </div>
+                </li>
+                <li className="flex items-start gap-3">
+                  <span
+                    className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${
+                      isLight
+                        ? 'border-sky-200 bg-sky-50 text-sky-700'
+                        : 'border-cyan-500/30 bg-cyan-950/50 text-cyan-400'
+                    }`}
+                  >
+                    <MessageSquare className="w-3.5 h-3.5" />
+                  </span>
+                  <div className="min-w-0">
+                    <div className={`text-[10px] font-mono uppercase tracking-wider ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
+                      Prefer
+                    </div>
+                    <p className={`text-sm leading-snug mt-0.5 ${isLight ? 'text-slate-800' : 'text-slate-100'}`}>
+                      {effectivePortfolioSettings.enablePortfolioChat
+                        ? 'This form (email OTP) · LinkedIn · portfolio chat when verified.'
+                        : 'This form (email OTP) · LinkedIn · direct email for time-sensitive notes.'}
+                    </p>
+                  </div>
+                </li>
+              </ul>
+            </div>
+
             {/* Direct Channel Cards */}
-            <div className="space-y-3">
+            <div className="space-y-3 lg:mt-auto">
               {/* Email Card */}
               <motion.div
                 whileHover={{ x: 4 }}
@@ -993,7 +1071,7 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
                       </div>
 
                       {turnstileSiteKey && (
-                        <div className="pt-1 flex justify-start">
+                        <div className="pt-1 flex w-full justify-center">
                           <div ref={turnstileContainerRef} />
                         </div>
                       )}

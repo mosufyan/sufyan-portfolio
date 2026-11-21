@@ -58,7 +58,7 @@ function writeSkillsToUrl(skills: string[]) {
 }
 
 export default function App() {
-  const { effectivePortfolioSettings, isOwner, authReady } = useFirebase();
+  const { effectivePortfolioSettings, isOwner, authReady, user } = useFirebase();
   const [initialCvShare] = useState<ParsedCvShareConfig>(() =>
     typeof window !== 'undefined' ? parseCvShareSearch(window.location.search) : { shouldOpen: false }
   );
@@ -88,6 +88,35 @@ export default function App() {
   });
 
   const ownerViewActive = isOwner && ownerViewRequested;
+
+  // Signed-in owner = available for live chat (console open OR browsing the public site).
+  // Logout clears presence via signOutOwner → { online: false }.
+  useEffect(() => {
+    if (!isOwner || !user) return;
+    let cancelled = false;
+    const beat = async () => {
+      try {
+        const token = await user.getIdToken();
+        if (cancelled) return;
+        await fetch('/api/owner/presence', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ online: true }),
+        });
+      } catch {
+        /* non-fatal */
+      }
+    };
+    void beat();
+    const id = window.setInterval(() => void beat(), 20_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [isOwner, user]);
 
   useEffect(() => {
     if (!isOwner && ownerViewRequested) {
@@ -276,15 +305,44 @@ export default function App() {
         {/* Portfolio chrome follows site theme; ResumeModal stays outside so CV export keeps its own dark/light toggle */}
         <div className="site-theme min-h-screen min-w-0 w-full overflow-x-clip bg-[#06080d] text-slate-200 selection:bg-cyan-500/30 selection:text-cyan-200 transition-colors duration-300">
           <div className={resumeOpen ? 'print:hidden' : ''}>
-            <Navbar
-              onOpenResume={openResume}
-              onOpenAnnouncements={openAnnouncements}
-              onOpenCommandPalette={openCommandPalette}
-              onOpenTerminal={openTerminal}
-              ownerViewActive={ownerViewActive}
-              onEnterOwnerConsole={handleEnterOwnerConsole}
-              onExitOwnerConsole={handleExitOwnerConsole}
-            />
+            <div className="sticky top-0 z-40 print:hidden">
+              <Navbar
+                onOpenResume={openResume}
+                onOpenAnnouncements={openAnnouncements}
+                onOpenCommandPalette={openCommandPalette}
+                onOpenTerminal={openTerminal}
+                ownerViewActive={ownerViewActive}
+                onEnterOwnerConsole={handleEnterOwnerConsole}
+                onExitOwnerConsole={handleExitOwnerConsole}
+              />
+
+              {!ownerViewActive && features.maintenanceMode && (
+                <div
+                  role="status"
+                  className={`border-b backdrop-blur-md ${
+                    features.incidentMode
+                      ? 'border-rose-500/40 bg-rose-950/85 text-rose-100'
+                      : 'border-amber-500/35 bg-amber-950/85 text-amber-200'
+                  }`}
+                >
+                  <div className="page-shell py-2.5 flex flex-wrap items-center justify-center sm:justify-between gap-2 text-xs font-mono">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Wrench className="w-3.5 h-3.5 shrink-0" />
+                      <span className="leading-snug">{features.maintenanceMessage}</span>
+                    </div>
+                    <span
+                      className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded border shrink-0 ${
+                        features.incidentMode
+                          ? 'border-rose-500/50 bg-rose-950/70 text-rose-200'
+                          : 'border-amber-500/40 bg-amber-950/60 text-amber-300'
+                      }`}
+                    >
+                      {features.incidentMode ? 'Incident Mode' : 'Maintenance Notice'}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
 
             {ownerViewActive ? (
               <OwnerConsolePage
@@ -294,33 +352,6 @@ export default function App() {
               />
             ) : (
               <>
-                {features.maintenanceMode && (
-                  <div
-                    role="status"
-                    className={`border-b print:hidden ${
-                      features.incidentMode
-                        ? 'border-rose-500/40 bg-rose-950/40 text-rose-100'
-                        : 'border-amber-500/35 bg-amber-950/35 text-amber-200'
-                    }`}
-                  >
-                    <div className="page-shell py-2.5 flex flex-wrap items-center justify-center sm:justify-between gap-2 text-xs font-mono">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <Wrench className="w-3.5 h-3.5 shrink-0" />
-                        <span className="leading-snug">{features.maintenanceMessage}</span>
-                      </div>
-                      <span
-                        className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded border shrink-0 ${
-                          features.incidentMode
-                            ? 'border-rose-500/50 bg-rose-950/70 text-rose-200'
-                            : 'border-amber-500/40 bg-amber-950/60 text-amber-300'
-                        }`}
-                      >
-                        {features.incidentMode ? 'Incident Mode' : 'Maintenance Notice'}
-                      </span>
-                    </div>
-                  </div>
-                )}
-
                 <main>
                   <Hero
                     onOpenResume={features.enableResumeStudio ? openResume : undefined}

@@ -59,6 +59,7 @@ import {
 import CvAnalyticsCharts from './CvAnalyticsCharts';
 import ModalHeaderScan from './ModalHeaderScan';
 import { EASE_OUT_EXPO } from './MotionPrimitives';
+import { toUserFacingError } from '../utils/userFacingError';
 import {
   AccessRulesPanel,
   AdminAuditPanel,
@@ -488,9 +489,7 @@ export function CvAnalyticsPanel({
       } catch (err) {
         if (!cancelled) {
           setActionError(
-            err instanceof Error
-              ? err.message
-              : 'Unable to export analytics PDF right now.'
+            toUserFacingError(err, 'Unable to export analytics PDF right now.')
           );
         }
       } finally {
@@ -515,7 +514,7 @@ export function CvAnalyticsPanel({
       await deleteCvDownloadLog(downloadId);
       setConfirmDeleteId(null);
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Unable to delete record.');
+      setActionError(toUserFacingError(err, 'Unable to delete record.'));
     } finally {
       setBusyId(null);
     }
@@ -528,7 +527,7 @@ export function CvAnalyticsPanel({
       await deleteContactMessageLog(messageId);
       setConfirmDeleteId(null);
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Unable to delete message record.');
+      setActionError(toUserFacingError(err, 'Unable to delete message record.'));
     } finally {
       setBusyId(null);
     }
@@ -552,7 +551,7 @@ export function CvAnalyticsPanel({
       );
       window.setTimeout(() => setActionSuccess(null), 3500);
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Unable to create rule.');
+      setActionError(toUserFacingError(err, 'Unable to create rule.'));
     } finally {
       setRuleBusyKey(null);
     }
@@ -571,7 +570,7 @@ export function CvAnalyticsPanel({
         ownerNote: noteValue,
       });
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Unable to update inquiry status.');
+      setActionError(toUserFacingError(err, 'Unable to update inquiry status.'));
     } finally {
       setSavingNoteId(null);
     }
@@ -589,7 +588,7 @@ export function CvAnalyticsPanel({
       setActionSuccess(`Saved private note for ${msg.messageId}`);
       window.setTimeout(() => setActionSuccess(null), 3000);
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Unable to save note.');
+      setActionError(toUserFacingError(err, 'Unable to save note.'));
     } finally {
       setSavingNoteId(null);
     }
@@ -618,7 +617,7 @@ export function CvAnalyticsPanel({
       }));
       window.setTimeout(() => setActionSuccess(null), 3500);
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Unable to send reply.');
+      setActionError(toUserFacingError(err, 'Unable to send reply.'));
     } finally {
       setReplyBusyId(null);
     }
@@ -651,7 +650,7 @@ export function CvAnalyticsPanel({
       setActionSuccess(`Saved CRM fields for ${msg.senderEmail}`);
       window.setTimeout(() => setActionSuccess(null), 3000);
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Unable to save CRM fields.');
+      setActionError(toUserFacingError(err, 'Unable to save CRM fields.'));
     } finally {
       setSavingNoteId(null);
     }

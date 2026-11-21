@@ -4,7 +4,7 @@ Inventory of every third-party service used by **mohammedsufyan.com**, what is a
 
 > **Pricing note:** Figures below are vendor-published list prices as of late 2026. Always re-check the linked pricing pages before budgeting. Currency is USD.
 
-Related: [ARCHITECTURE.md](./ARCHITECTURE.md) · [SECURITY_CONFIGURATION.md](./SECURITY_CONFIGURATION.md) · [SECURITY.md](../SECURITY.md) · [`.env.example`](../.env.example)
+Related: [ARCHITECTURE.md](./ARCHITECTURE.md) · [SECURITY_CONFIGURATION.md](./SECURITY_CONFIGURATION.md) · [SECURITY.md](./SECURITY.md) · [`.env.example`](../.env.example)
 
 ---
 
@@ -38,8 +38,9 @@ flowchart TB
 
   subgraph Optional["Optional hardening / AI"]
     Redis[(Upstash Redis)]
+    Vector[(Upstash Vector<br/>chat RAG)]
     AppCheck[App Check<br/>reCAPTCHA Enterprise]
-    Cursor[Cursor Cloud Agents API]
+    Grok[Grok xAI API]
   end
 
   Visitor --> CF --> CR
@@ -51,7 +52,8 @@ flowchart TB
   CR --> Gmail
   CR --> SMTP
   CR --> Redis
-  CR --> Cursor
+  CR --> Vector
+  CR --> Grok
   Admin --> FS
   AppCheck --> FS
   GH --> CR
@@ -70,13 +72,14 @@ flowchart TB
 | 5 | **Resend** *(or Gmail SMTP)* | OTP emails, inquiry mail, owner alerts/replies | Yes (one mail path) | Yes (Resend Free / Gmail personal) |
 | 6 | **Cloudflare Turnstile** | Bot challenge on Contact, CV gate, live-chat start | Recommended | Yes (unlimited challenges on Free) |
 | 7 | **Upstash Redis** | Shared rate limits, owner policy, OTP challenges, chat quotas/sessions across replicas | Recommended if >1 replica | Yes (1 DB, 500K cmds/mo) |
-| 8 | **Firebase Admin SDK** | Server-side PII writes after OTP; reply binding | Recommended | Included with Firebase/GCP |
-| 9 | **Firebase App Check** | Attest browser before Firestore creates | Recommended | Free quotas (provider-dependent) |
-| 10 | **Cursor Cloud Agents API** | Optional chat answer enrichment | Optional | Paid Cursor plan + usage |
-| 11 | **GitHub Actions** | CI: lint, test, audit, build | Yes | Yes (public repos generous) |
-| 12 | **Artifact Registry / Cloud Build** *(if used for image builds)* | Container image storage/build | Optional (depends on pipeline) | Small free/low cost |
-| 13 | **Google Domains / Registrar** | Domain registration (DNS may point at Cloudflare) | Domain ownership | At-cost renewal (not “free”) |
-| 14 | **FormSubmit** | Legacy fallback only — **disabled by default** | No (`ALLOW_FORMSUBMIT_FALLBACK=false`) | N/A — keep off |
+| 8 | **Upstash Vector** | Semantic RAG for portfolio chat (built-in BGE embeddings) | Optional (chat quality) | Yes (Free: 10K queries/day) |
+| 9 | **Firebase Admin SDK** | Server-side PII writes after OTP; reply binding | Recommended | Included with Firebase/GCP |
+| 10 | **Firebase App Check** | Attest browser before Firestore creates | Recommended | Free quotas (provider-dependent) |
+| 11 | **Grok (xAI) API** | Optional chat answer enrichment over retrieved context | Optional | Pay-as-you-go / prepaid credits |
+| 12 | **GitHub Actions** | PR CI (lint/test/audit/build/Docker) + deploy to Cloud Run on `main` | Yes | Yes (public repos generous) |
+| 13 | **Artifact Registry / Cloud Build** | Used by `gcloud run deploy --source .` from Actions | Yes (with CD) | Small free/low cost |
+| 14 | **Google Domains / Registrar** | Domain registration (DNS may point at Cloudflare) | Domain ownership | At-cost renewal (not “free”) |
+| 15 | **FormSubmit** | Legacy fallback only — **disabled by default** | No (`ALLOW_FORMSUBMIT_FALLBACK=false`) | N/A — keep off |
 
 ---
 
@@ -99,7 +102,9 @@ flowchart LR
     TS[TURNSTILE_*]
     FB[FIREBASE_SERVICE_ACCOUNT_JSON]
     RedisKeys[UPSTASH_REDIS_REST_*]
-    CursorKey[CURSOR_API_KEY]
+    VectorKeys[UPSTASH_VECTOR_REST_*]
+    GrokKey[GROK_API_KEY / GROK_API_BASE_URL]
+    ChatTimeout[CHAT_LLM_TIMEOUT_MS]
     Sess[SESSION_SECRET]
   end
 
@@ -116,9 +121,10 @@ flowchart LR
 | OTP / sessions | HMAC via `SESSION_SECRET` (falls back to Turnstile secret if unset — set an explicit secret in prod) |
 | Owner auth | Firebase project id from applet config; RS256 ID token verify |
 | Firestore rules | Deny-by-default; owner/admin gates; announcements list = published |
-| Rate limits / OTP / chat | In-memory (+ disk chat cache) by default; Upstash when REST URL+token set (**fail-closed** on Redis errors) |
-| Chat LLM | `CURSOR_API_KEY` + owner toggle `enableChatLlm` |
-| CI | Typecheck, Vitest, `npm audit --omit=dev`, production build |
+| Rate limits / OTP / chat | In-memory (+ disk chat cache) by default; Upstash Redis when REST URL+token set (**fail-closed** on Redis errors) |
+| Chat RAG | `UPSTASH_VECTOR_REST_*` → Vector retrieve; keyword fallback |
+| Chat LLM | `GROK_API_KEY` + owner toggle `enableChatLlm` (default model `grok-4.3`) |
+| CI/CD | PR: typecheck, Vitest, audit, Vite build, Docker build; `main`: Cloud Run deploy (WIF) |
 
 ---
 
@@ -211,27 +217,45 @@ flowchart LR
 
 ---
 
-### 7. Cursor Cloud Agents API (optional chat LLM)
+### 7. Upstash Vector (optional chat RAG)
 
-| Item | Cost model |
-|------|------------|
-| API access | Requires a Cursor plan that includes Cloud Agents + API key |
-| Per run | Draws from plan **included usage**, then **on-demand** at model API rates |
-| Controls | Owner Profile caps (`chatMaxLlmPerVisitor`) + `CHAT_LLM_TIMEOUT_MS` |
-| If unset / fails | Grounded retrieval continues; **no charge** |
+| Plan | Price | Limits relevant here |
+|------|-------|----------------------|
+| **Free** | **$0** | 10K queries/day, 10K updates/day, 1536 dims |
+| **Pay as you go** | $0.40 / 100K requests + $0.25/GB | Unlimited daily queries |
 
-**Upgrade / control:** Keep `enableChatLlm` off until needed. Set low per-visitor LLM caps (default 5). Set a Cursor spend limit in the dashboard.
+**Portfolio impact:** One query per visitor chat question; re-upsert (~20 chunks) on boot/deploy. Free tier is enough for a personal site. Index uses Upstash-hosted **BGE_SMALL_EN_V1_5** embeddings (`data:` upsert/query — no separate embedding API).
+
+**If unset / fails:** Keyword ranking over `portfolioData` continues.
 
 ---
 
-### 8. GitHub Actions
+### 8. Grok (xAI) API (optional chat LLM)
+
+| Item | Cost model |
+|------|------------|
+| API access | Grok / xAI API key (`GROK_API_KEY`, typically `xai-…`) |
+| Per request | Prepaid / list rates via `https://api.x.ai/v1` |
+| Default model | `grok-4.3` (override with Owner `chatLlmModel`) |
+| Controls | Owner Profile caps (`chatMaxLlmPerVisitor`) + `CHAT_LLM_TIMEOUT_MS` |
+| If unset / fails | Retrieved grounded answer continues; **no charge** |
+
+**Upgrade / control:** Keep `enableChatLlm` off until needed. Set low per-visitor LLM caps. Monitor spend in the xAI / Grok console. Wire secrets: `./scripts/wire-chat-llm-secrets.sh`.
+
+---
+
+### 9. GitHub Actions (CI/CD)
 
 | Repo visibility | Typical cost |
 |-----------------|--------------|
-| Public | Free Actions minutes for standard CI |
+| Public | Free Actions minutes for standard CI/CD |
 | Private | Included minutes then pay-as-you-go |
 
-Current workflow: lint + test + audit + build on PR/push — stays free for a public portfolio repo.
+**Workflow (`.github/workflows/ci.yml`):**
+- **PR → `main`:** lint, Vitest, `npm audit`, Vite build, Docker image build (no push)
+- **Merge → `main`:** same checks, then `gcloud run deploy --source .` via Workload Identity + smoke `GET /api/chat/status`
+
+One-time GCP setup: `./scripts/setup-github-actions-deploy.sh` (deploy SA + WIF). GitHub secrets: `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_SERVICE_ACCOUNT`.
 
 ---
 
@@ -257,8 +281,8 @@ flowchart TB
 
   subgraph Busy["Busy recruiting season"]
     C1[Resend Pro $20]
-    C2[Upstash PAYG or $10 Fixed]
-    C3[Optional Cursor usage]
+    C2[Upstash Redis PAYG or $10 Fixed]
+    C3[Optional Grok API usage]
     C4[Still Cloud Run free-ish]
   end
 
@@ -267,10 +291,10 @@ flowchart TB
 
 | Scenario | Approx monthly | Notes |
 |----------|----------------|-------|
-| **Baseline (current code, free vendors)** | **~$0** | Single Cloud Run instance, Resend Free, no Cursor LLM |
-| **Hardened free stack** | **~$0** | Add Upstash Free + Admin SDK + App Check + CF Bot Fight |
-| **Active hiring inbox** | **~$20–40** | Resend Pro; maybe Upstash Fixed; light Cursor usage |
-| **Always-warm + LLM chat** | **$50+** | Cloud Run min instances + Cursor on-demand + mail |
+| **Baseline (current code, free vendors)** | **~$0** | Single Cloud Run instance, Resend Free, no Grok LLM |
+| **Hardened free stack** | **~$0** | Add Upstash Redis Free + Vector Free + Admin SDK + App Check + CF Bot Fight |
+| **Active hiring inbox** | **~$20–40** | Resend Pro; maybe Upstash Redis Fixed; light Grok usage |
+| **Always-warm + LLM chat** | **$50+** | Cloud Run min instances + Grok prepaid + mail |
 
 ---
 
@@ -298,12 +322,18 @@ flowchart TD
 
   subgraph Vendors["Other vendors"]
     V1[Resend: verify domain SPF/DKIM]
-    V2[Upstash: REST URL + token]
-    V3[Cursor: API key + spend limit]
+    V2[Upstash Redis: REST URL + token]
+    V3[Upstash Vector: REST URL + token]
+    V4[xAI/Grok: API key + prepaid credits]
+  end
+
+  subgraph GitHub["GitHub"]
+    H1[Actions CI/CD + WIF secrets]
   end
 
   Cloudflare --> GCP
   Vendors --> GCP
+  GitHub --> GCP
 ```
 
 Detailed click-path steps: **[SECURITY_CONFIGURATION.md](./SECURITY_CONFIGURATION.md)**.
@@ -323,8 +353,10 @@ Detailed click-path steps: **[SECURITY_CONFIGURATION.md](./SECURITY_CONFIGURATIO
 | `TURNSTILE_SECRET_KEY` / `VITE_TURNSTILE_SITE_KEY` | Cloudflare Turnstile | Free |
 | `FIREBASE_SERVICE_ACCOUNT_JSON` | Firebase Admin | Free w/ project |
 | `VITE_RECAPTCHA_SITE_KEY` | App Check | Free quotas |
-| `UPSTASH_REDIS_REST_URL` / `_TOKEN` | Upstash | Free tier |
-| `CURSOR_API_KEY` | Cursor Agents | Paid usage |
+| `UPSTASH_REDIS_REST_URL` / `_TOKEN` | Upstash Redis | Free tier |
+| `UPSTASH_VECTOR_REST_URL` / `_TOKEN` | Upstash Vector | Free tier |
+| `GROK_API_KEY` / `GROK_API_BASE_URL` | Grok (xAI) | Paid / prepaid |
+| `CHAT_LLM_TIMEOUT_MS` | Grok client timeout | — |
 | `ALLOW_FORMSUBMIT_FALLBACK` | FormSubmit | **Keep `false`** |
 
 ---
@@ -336,11 +368,11 @@ flowchart TD
   Start([Traffic or feature pain?]) --> Q1{OTP/mail failing<br/>at 100/day?}
   Q1 -->|yes| R1[Upgrade Resend → Pro $20]
   Q1 -->|no| Q2{Multiple Cloud Run<br/>replicas?}
-  Q2 -->|yes| R2[Add Upstash Free;<br/>PAYG if 500k cmds hit]
+  Q2 -->|yes| R2[Add Upstash Redis Free;<br/>PAYG if 500k cmds hit]
   Q2 -->|no| Q3{Scrapers / bots<br/>hammering origin?}
   Q3 -->|yes| R3[CF Bot Fight + WAF;<br/>consider Pro $20]
   Q3 -->|no| Q4{Need smarter chat?}
-  Q4 -->|yes| R4[Enable Cursor LLM + spend cap]
+  Q4 -->|yes| R4[Vector RAG Free + Grok LLM + spend cap]
   Q4 -->|no| OK[Stay on free stack]
   R1 --> OK2[Re-check monthly bill]
   R2 --> OK2
@@ -354,7 +386,9 @@ flowchart TD
 
 - [Resend pricing](https://resend.com/pricing)
 - [Upstash Redis pricing](https://upstash.com/pricing/redis)
+- [Upstash Vector pricing](https://upstash.com/pricing/vector)
 - [Cloudflare plans](https://www.cloudflare.com/plans/) · [Turnstile plans](https://developers.cloudflare.com/turnstile/plans/)
 - [Firebase pricing](https://firebase.google.com/pricing)
 - [Cloud Run pricing](https://cloud.google.com/run/pricing)
-- [Cursor Cloud Agents](https://cursor.com/docs/cloud-agent) · [Cursor pricing](https://cursor.com/pricing)
+- [xAI / Grok API](https://x.ai/api) · [xAI docs](https://docs.x.ai/)
+- [GitHub Actions](https://docs.github.com/en/actions)

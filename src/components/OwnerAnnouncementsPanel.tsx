@@ -24,6 +24,7 @@ import {
   type AnnouncementStatus,
 } from '../utils/announcementValidation';
 import { EASE_OUT_EXPO } from './MotionPrimitives';
+import { toUserFacingError } from '../utils/userFacingError';
 
 interface FormState {
   date: string;
@@ -135,7 +136,7 @@ export default function OwnerAnnouncementsPanel({ isLight }: { isLight: boolean 
       setForm(createEmptyForm());
     } catch (err) {
       setFeedbackError(
-        err instanceof Error ? err.message : 'Unable to save announcement. Please verify owner access.'
+        toUserFacingError(err, 'Unable to save announcement. Please verify owner access.')
       );
     } finally {
       setBusy(false);
@@ -152,7 +153,7 @@ export default function OwnerAnnouncementsPanel({ isLight }: { isLight: boolean 
       setConfirmDeleteId(null);
       setFeedbackSuccess('Announcement deleted.');
     } catch (err) {
-      setFeedbackError(err instanceof Error ? err.message : 'Unable to delete announcement.');
+      setFeedbackError(toUserFacingError(err, 'Unable to delete announcement.'));
     } finally {
       setBusy(false);
     }
@@ -168,7 +169,7 @@ export default function OwnerAnnouncementsPanel({ isLight }: { isLight: boolean 
       setFeedbackSuccess('Starter milestones imported into live Firestore.');
     } catch (err) {
       setFeedbackError(
-        err instanceof Error ? err.message : 'Unable to import starter announcements.'
+        toUserFacingError(err, 'Unable to import starter announcements.')
       );
     } finally {
       setBusy(false);

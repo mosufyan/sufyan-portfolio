@@ -12,6 +12,7 @@ import {
   type SiteTelemetrySnapshot,
 } from '../utils/ownerTracking';
 import type { OwnerConsoleSectionId } from '../utils/ownerConsoleRouting';
+import { toUserFacingError } from '../utils/userFacingError';
 
 export default function OwnerAlertsPanel({
   isLight,
@@ -66,7 +67,7 @@ export default function OwnerAlertsPanel({
       if (!res.ok) throw new Error(payload.error || 'Unable to send digest.');
       setNotice('Digest emailed to the primary owner inbox.');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Digest failed.');
+      setError(toUserFacingError(err, 'Digest failed.'));
     } finally {
       setDigestBusy(false);
     }

@@ -46,6 +46,11 @@ service cloud.firestore {
       );
     }
 
+    // Web/mobile SDKs write whole numbers as floats; `is int` alone rejects them.
+    function isWholeNumber(value) {
+      return (value is int || value is float) && value == int(value);
+    }
+
     // Public portfolio announcements only (drafts stay admin-private).
     function isPubliclyVisibleAnnouncement() {
       return !('status' in resource.data)
@@ -58,8 +63,9 @@ service cloud.firestore {
         );
     }
 
-    // Strict schema validation blueprint for Announcement (create & update)
-    function isValidAnnouncement(data) {
+    // Strict schema for announcements. Create requires authorUid == caller;
+    // updates only require a stable non-empty authorUid (must match existing()).
+    function isValidAnnouncementShape(data, requireAuthorIsCaller) {
       return data.keys().hasAll([
           'date', 'title', 'summary', 'badge', 'linkUrl', 'status', 'scheduledAtMs',
           'authorUid', 'createdAt', 'updatedAt'
@@ -86,12 +92,12 @@ service cloud.firestore {
         && (data.linkUrl == '' || data.linkUrl.matches('^https://[^\\s]+$'))
         && data.status is string
         && data.status in ['draft', 'scheduled', 'published']
-        && data.scheduledAtMs is int
+        && isWholeNumber(data.scheduledAtMs)
         && data.scheduledAtMs >= 0
         && data.authorUid is string
         && data.authorUid.size() >= 1
         && data.authorUid.size() <= 128
-        && data.authorUid == request.auth.uid
+        && (!requireAuthorIsCaller || data.authorUid == request.auth.uid)
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
     }
@@ -209,7 +215,7 @@ service cloud.firestore {
         && (!('leadSource' in data) || (data.leadSource is string && data.leadSource in ['', 'linkedin', 'referral', 'organic', 'other']))
         && (!('leadPriority' in data) || (data.leadPriority is string && data.leadPriority in ['', 'hot', 'warm', 'cold']))
         && (!('leadNextAction' in data) || (data.leadNextAction is string && data.leadNextAction.size() <= 200))
-        && (!('leadNextActionDueAtMs' in data) || (data.leadNextActionDueAtMs is int && data.leadNextActionDueAtMs >= 0))
+        && (!('leadNextActionDueAtMs' in data) || (isWholeNumber(data.leadNextActionDueAtMs) && data.leadNextActionDueAtMs >= 0))
         && (!('leadOutcome' in data) || (data.leadOutcome is string && data.leadOutcome in ['', 'open', 'interview', 'offer', 'closed_won', 'closed_lost']))
         && data.createdAt is timestamp;
     }
@@ -305,16 +311,16 @@ service cloud.firestore {
         && data.enablePortfolioChat is bool
         && data.enableLiveChat is bool
         && data.enableChatLlm is bool
-        && data.chatMaxQuestionsPerVisitor is int
+        && isWholeNumber(data.chatMaxQuestionsPerVisitor)
         && data.chatMaxQuestionsPerVisitor >= 1
         && data.chatMaxQuestionsPerVisitor <= 200
-        && data.chatMaxLlmPerVisitor is int
+        && isWholeNumber(data.chatMaxLlmPerVisitor)
         && data.chatMaxLlmPerVisitor >= 0
         && data.chatMaxLlmPerVisitor <= 100
-        && data.chatMaxLiveSessionsPerVisitor is int
+        && isWholeNumber(data.chatMaxLiveSessionsPerVisitor)
         && data.chatMaxLiveSessionsPerVisitor >= 0
         && data.chatMaxLiveSessionsPerVisitor <= 50
-        && data.chatRateWindowHours is int
+        && isWholeNumber(data.chatRateWindowHours)
         && data.chatRateWindowHours >= 1
         && data.chatRateWindowHours <= 168
         && data.chatLlmModel is string
@@ -395,14 +401,14 @@ service cloud.firestore {
       // deploys without App Check keep working; enable Enforcement in Firebase Console.
       allow create: if isVerifiedUser()
         && isValidId(announcementId)
-        && isValidAnnouncement(incoming())
+        && isValidAnnouncementShape(incoming(), true)
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time
         && isAdmin();
 
       allow update: if isVerifiedUser()
         && isValidId(announcementId)
-        && isValidAnnouncement(incoming())
+        && isValidAnnouncementShape(incoming(), false)
         && incoming().authorUid == existing().authorUid
         && incoming().createdAt == existing().createdAt
         && incoming().updatedAt == request.time
@@ -433,9 +439,11 @@ service cloud.firestore {
       allow list: if isAdmin();
       allow create: if false;
 
+      // Validate only triage/CRM patch fields — older Admin-written docs may lack
+      // lead_* keys, so requiring the full create schema here blocked owner replies.
       allow update: if isVerifiedUser()
         && isValidId(messageId)
-        && isValidContactMessageLog(incoming(), messageId)
+        && isAdmin()
         && incoming().createdAt == existing().createdAt
         && incoming().triagedAt == request.time
         && incoming().diff(existing()).affectedKeys().hasOnly([
@@ -443,7 +451,17 @@ service cloud.firestore {
           'leadCompany', 'leadRole', 'leadSource', 'leadPriority',
           'leadNextAction', 'leadNextActionDueAtMs', 'leadOutcome'
         ])
-        && isAdmin();
+        && incoming().triageStatus is string
+        && incoming().triageStatus in ['new', 'replied', 'shortlisted', 'archived']
+        && incoming().ownerNote is string
+        && incoming().ownerNote.size() <= 1000
+        && (!('leadCompany' in incoming()) || (incoming().leadCompany is string && incoming().leadCompany.size() <= 120))
+        && (!('leadRole' in incoming()) || (incoming().leadRole is string && incoming().leadRole.size() <= 120))
+        && (!('leadSource' in incoming()) || (incoming().leadSource is string && incoming().leadSource in ['', 'linkedin', 'referral', 'organic', 'other']))
+        && (!('leadPriority' in incoming()) || (incoming().leadPriority is string && incoming().leadPriority in ['', 'hot', 'warm', 'cold']))
+        && (!('leadNextAction' in incoming()) || (incoming().leadNextAction is string && incoming().leadNextAction.size() <= 200))
+        && (!('leadNextActionDueAtMs' in incoming()) || (isWholeNumber(incoming().leadNextActionDueAtMs) && incoming().leadNextActionDueAtMs >= 0))
+        && (!('leadOutcome' in incoming()) || (incoming().leadOutcome is string && incoming().leadOutcome in ['', 'open', 'interview', 'offer', 'closed_won', 'closed_lost']));
 
       allow delete: if isVerifiedUser()
         && isValidId(messageId)

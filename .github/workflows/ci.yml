@@ -1,14 +1,24 @@
 name: CI
 
 on:
-  push:
-    branches: [main, master]
   pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+  id-token: write
 
 jobs:
   verify:
+    name: Lint · test · build
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
 
@@ -20,8 +30,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Typecheck
+      - name: Lint check (TypeScript)
         run: npm run lint
+
+      - name: Code Guard check (Firestore rules)
+        run: npm run lint:rules
 
       - name: Unit tests
         run: npm test
@@ -31,3 +44,206 @@ jobs:
 
       - name: Production build
         run: npm run build
+        env:
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_TURNSTILE_SITE_KEY: ${{ secrets.VITE_TURNSTILE_SITE_KEY }}
+          VITE_RECAPTCHA_SITE_KEY: ${{ secrets.VITE_RECAPTCHA_SITE_KEY }}
+
+  gitleaks:
+    name: Gitleaks (secrets)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Run Gitleaks (working tree)
+        run: |
+          set -euo pipefail
+          chmod +x scripts/ensure-gitleaks.sh
+          GITLEAKS_BIN="$(./scripts/ensure-gitleaks.sh)"
+          # Working-tree scan so rotated historical keys do not permanently red-fail CI.
+          "${GITLEAKS_BIN}" detect --no-git --source . --verbose --redact --config .gitleaks.toml
+
+  bandit:
+    name: Bandit check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Bandit + Semgrep
+        run: python -m pip install --upgrade pip bandit semgrep
+
+      - name: Bandit (Python SAST)
+        run: |
+          set -euo pipefail
+          mapfile -t py_files < <(git ls-files '*.py')
+          if [ "${#py_files[@]}" -eq 0 ]; then
+            echo "No tracked Python sources; Bandit Python scan skipped."
+            exit 0
+          fi
+          bandit -ll -r "${py_files[@]}"
+
+      - name: Bandit-equivalent (Semgrep JS/TS SAST)
+        run: |
+          set -euo pipefail
+          semgrep scan \
+            --config p/javascript \
+            --config p/typescript \
+            --config p/security-audit \
+            --error \
+            --exclude-dir=node_modules \
+            --exclude-dir=dist \
+            --exclude-dir=dev-dist \
+            --exclude-dir=coverage \
+            --exclude-dir=build \
+            .
+
+  code-guard:
+    name: Code Guard check (CodeQL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          queries: security-extended
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:javascript-typescript
+
+  container:
+    name: Docker build · Trivy
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [verify, gitleaks, bandit, code-guard]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image (load locally for scan)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: sufyan-portfolio:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            VITE_FIREBASE_API_KEY=${{ secrets.VITE_FIREBASE_API_KEY }}
+            VITE_TURNSTILE_SITE_KEY=${{ secrets.VITE_TURNSTILE_SITE_KEY }}
+            VITE_RECAPTCHA_SITE_KEY=${{ secrets.VITE_RECAPTCHA_SITE_KEY }}
+
+      - name: Trivy image scan (CRITICAL/HIGH)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: sufyan-portfolio:ci
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+          scanners: vuln,secret,misconfig
+
+  deploy:
+    name: Deploy Cloud Run
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    needs: [verify, gitleaks, bandit, code-guard, container]
+    environment: production
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy source to Cloud Run
+        env:
+          PROJECT: ${{ vars.GCP_PROJECT || 'mohammed-sufyan-portfolio' }}
+          REGION: ${{ vars.GCP_REGION || 'us-central1' }}
+          SERVICE: ${{ vars.CLOUD_RUN_SERVICE || 'mohammed-sufyan-portfolio' }}
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_TURNSTILE_SITE_KEY: ${{ secrets.VITE_TURNSTILE_SITE_KEY }}
+          VITE_RECAPTCHA_SITE_KEY: ${{ secrets.VITE_RECAPTCHA_SITE_KEY }}
+        run: |
+          set -euo pipefail
+          BUILD_ENV="VITE_FIREBASE_API_KEY=${VITE_FIREBASE_API_KEY},VITE_TURNSTILE_SITE_KEY=${VITE_TURNSTILE_SITE_KEY},VITE_RECAPTCHA_SITE_KEY=${VITE_RECAPTCHA_SITE_KEY}"
+          gcloud run deploy "$SERVICE" \
+            --project="$PROJECT" \
+            --region="$REGION" \
+            --source=. \
+            --set-build-env-vars="$BUILD_ENV" \
+            --quiet
+
+      - name: Post-deploy smoke
+        run: |
+          set -euo pipefail
+          BASE_URL="https://www.mohammedsufyan.com"
+          sleep 10
+
+          curl -sS --fail "$BASE_URL/api/uptime" | tee /tmp/uptime.json
+          curl -sS --fail "$BASE_URL/api/health" | tee /tmp/health.json
+          curl -sS --fail "$BASE_URL/api/status" | tee /tmp/status.json
+          curl -sS --fail "$BASE_URL/api/chat/status" | tee /tmp/chat-status.json
+
+          python3 - <<'PY'
+          import json, sys
+
+          def load(path):
+            with open(path) as f:
+              return json.load(f)
+
+          uptime = load("/tmp/uptime.json")
+          health = load("/tmp/health.json")
+          status = load("/tmp/status.json")
+          chat = load("/tmp/chat-status.json")
+
+          assert uptime.get("ok") is True, uptime
+          assert health.get("ok") is True, health
+          assert health.get("sessionSecretConfigured") is True, health
+          assert health.get("turnstileConfigured") is True, health
+          assert health.get("distributedStore") == "redis", health
+          assert status.get("ok") is True, status
+          assert status.get("controls", {}).get("sessionSecret") is True, status
+          assert status.get("controls", {}).get("turnstile") is True, status
+          assert status.get("controls", {}).get("redis") is True, status
+          assert chat.get("ok") is True, chat
+          assert isinstance(health.get("version"), str) and health["version"], health
+          assert str(health.get("versionLabel", "")).startswith("v"), health
+          assert status.get("version") == health.get("version"), (status, health)
+
+          print("smoke ok", {
+            "version": health.get("versionLabel"),
+            "uptime": uptime.get("ok"),
+            "health": health.get("status"),
+            "goldPath": health.get("goldPath"),
+            "chat": {k: chat.get(k) for k in ("ok", "enabled", "llmConfigured", "vectorConfigured")},
+            "controls": status.get("controls"),
+          })
+          PY

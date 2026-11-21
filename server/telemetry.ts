@@ -3,6 +3,9 @@ import dns from 'dns/promises';
 import type { Request } from 'express';
 import { sanitizeHeaderValue } from './security.ts';
 import { validateAndNormalizePhone, type PhoneValidationResult } from '../src/utils/phoneValidation.ts';
+import { OTP_CHALLENGE_TTL_MS, VERIFIED_SESSION_TTL_MS } from './sessionPolicy.ts';
+
+export { OTP_CHALLENGE_TTL_MS, VERIFIED_SESSION_TTL_MS } from './sessionPolicy.ts';
 
 export type RiskLevel = 'low' | 'medium' | 'high';
 export type VerificationStatus = 'otp_verified' | 'mx_verified' | 'phone_only' | 'repeat_session';
@@ -551,7 +554,7 @@ export function signSessionReceipt(payload: SessionReceiptPayload, secret: strin
 export function verifySessionReceipt(
   token: string | undefined,
   secret: string,
-  maxAgeMs = 12 * 60 * 60 * 1000
+  maxAgeMs = VERIFIED_SESSION_TTL_MS
 ): SessionReceiptPayload | null {
   if (!token || typeof token !== 'string') return null;
   const dotIdx = token.indexOf('.');
@@ -631,7 +634,7 @@ export function createOtpChallenge<T = OtpPendingPayload>(
   options: { now?: number; ttlMs?: number; fixedCode?: string } = {}
 ): { challengeId: string; challengeToken: string; code: string; expiresAt: number } {
   const now = options.now ?? Date.now();
-  const ttlMs = options.ttlMs ?? 10 * 60 * 1000;
+  const ttlMs = options.ttlMs ?? OTP_CHALLENGE_TTL_MS;
 
   // Prune expired entries first
   for (const [id, entry] of store.entries()) {

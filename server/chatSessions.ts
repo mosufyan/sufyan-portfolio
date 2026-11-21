@@ -14,6 +14,7 @@ import {
   redisGetJson,
   redisSetJson,
 } from './distributedStore.ts';
+import { VERIFIED_SESSION_TTL_MS } from './sessionPolicy.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CACHE_PATH = path.join(__dirname, '..', '.owner-chat-cache.json');
@@ -38,6 +39,8 @@ export interface ChatSession {
   updatedAtMs: number;
   lastVisitorAtMs: number;
   lastOwnerAtMs: number;
+  /** Visitor-visible thread start; earlier messages stay for the owner console. */
+  threadStartedAtMs: number;
   messages: ChatMessage[];
   ipAddress: string;
   userAgent: string;
@@ -89,6 +92,10 @@ function loadCache(): void {
           ...s,
           company: typeof s.company === 'string' ? s.company : '',
           interest: typeof s.interest === 'string' ? s.interest : '',
+          threadStartedAtMs:
+            typeof s.threadStartedAtMs === 'number' && s.threadStartedAtMs > 0
+              ? s.threadStartedAtMs
+              : s.createdAtMs || 0,
         });
       }
     }
@@ -128,7 +135,7 @@ function scheduleFlush(): void {
 
 loadCache();
 
-const CHAT_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const CHAT_SESSION_TTL_MS = VERIFIED_SESSION_TTL_MS;
 
 function chatRedisKey(sessionId: string): string {
   return `chatsess:${sessionId.slice(0, 64)}`;
@@ -157,6 +164,12 @@ export function bumpLlmCall(success: boolean): void {
 
 export function touchOwnerPresence(now = Date.now()): void {
   ownerPresenceAtMs = now;
+  scheduleFlush();
+}
+
+/** Explicit offline (logout / console close) — do not wait for presence TTL. */
+export function clearOwnerPresence(): void {
+  ownerPresenceAtMs = 0;
   scheduleFlush();
 }
 
@@ -229,6 +242,7 @@ export function createChatSession(input: {
     updatedAtMs: now,
     lastVisitorAtMs: now,
     lastOwnerAtMs: 0,
+    threadStartedAtMs: now,
     messages,
     ipAddress: input.ipAddress.slice(0, 64),
     userAgent: input.userAgent.slice(0, 220),
@@ -305,7 +319,51 @@ export function closeChatSession(sessionId: string): ChatSession | null {
   return session;
 }
 
-export function publicSessionView(session: ChatSession) {
+/**
+ * Start a fresh visitor thread without closing verification.
+ * Prior messages remain on the session for the owner console.
+ */
+export function startNewChatThread(sessionId: string): ChatSession | null {
+  const session = sessions.get(sessionId);
+  if (!session || session.status === 'closed') return null;
+  const lastAt = session.messages.at(-1)?.createdAtMs || 0;
+  // Ensure the new thread starts strictly after prior messages (same-ms Date.now() is common in tests).
+  const now = Math.max(Date.now(), lastAt + 1);
+  const firstName = session.visitorName.split(/\s+/)[0] || 'there';
+  session.threadStartedAtMs = now;
+  session.updatedAtMs = now;
+  session.lastVisitorAtMs = now;
+  session.messages.push({
+    id: `m-${crypto.randomBytes(4).toString('hex')}`,
+    role: 'system',
+    text: 'New chat started.',
+    createdAtMs: now,
+  });
+  session.messages.push({
+    id: `m-${crypto.randomBytes(4).toString('hex')}`,
+    role: 'bot',
+    text: `Hi ${firstName} — fresh thread. Ask about experience, skills, certifications, or contact — or leave a note for Mohammed with @mohammed.`,
+    createdAtMs: now,
+  });
+  if (session.messages.length > MAX_MESSAGES) {
+    session.messages = session.messages.slice(-MAX_MESSAGES);
+  }
+  scheduleFlush();
+  mirrorSession(session);
+  return session;
+}
+
+export function publicSessionView(
+  session: ChatSession,
+  options?: { threadOnly?: boolean }
+) {
+  const threadStart =
+    typeof session.threadStartedAtMs === 'number' && session.threadStartedAtMs > 0
+      ? session.threadStartedAtMs
+      : session.createdAtMs;
+  const sourceMessages = options?.threadOnly
+    ? session.messages.filter((m) => m.createdAtMs >= threadStart)
+    : session.messages;
   return {
     sessionId: session.sessionId,
     status: session.status,
@@ -315,7 +373,8 @@ export function publicSessionView(session: ChatSession) {
     interest: session.interest || '',
     createdAtMs: session.createdAtMs,
     updatedAtMs: session.updatedAtMs,
-    messages: session.messages.map((m) => ({
+    threadStartedAtMs: threadStart,
+    messages: sourceMessages.map((m) => ({
       id: m.id,
       role: m.role,
       text: m.text,

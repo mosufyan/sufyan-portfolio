@@ -36,9 +36,10 @@ Email security concerns to **sufyan.net@gmail.com**. Please allow reasonable tim
 
 Full Cloudflare / Cloud Run / Firebase / Resend checklists, upgrade paths, and **cost/limit tables** live in:
 
-- [docs/SECURITY_CONFIGURATION.md](./docs/SECURITY_CONFIGURATION.md)
-- [docs/EXTERNAL_TOOLS_AND_COSTS.md](./docs/EXTERNAL_TOOLS_AND_COSTS.md)
-- [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)
+- [SECURITY_CONFIGURATION.md](./SECURITY_CONFIGURATION.md)
+- [EXTERNAL_TOOLS_AND_COSTS.md](./EXTERNAL_TOOLS_AND_COSTS.md)
+- [ARCHITECTURE.md](./ARCHITECTURE.md)
+- [security_spec.md](./security_spec.md)
 
 ## Operations & Hardening — how to implement each recommendation
 
@@ -87,8 +88,9 @@ Full Cloudflare / Cloud Run / Firebase / Resend checklists, upgrade paths, and *
 
 ### Portfolio chatbot & live agent
 
-- **Bot answers** are grounded retrieval over `portfolioData` by default. Optional **Cursor Cloud Agents API** enrichment when `CURSOR_API_KEY` is set and Owner Profile / Site Controls enable `enableChatLlm` (no-repo agent + grounded context; times out to retrieval).
-- **Per-visitor caps** (default 10 questions / window, plus LLM + live-session caps) are owner-configurable and enforced server-side (Redis-shared when Upstash is set; fail-closed on Redis errors); tracking KPIs appear on the Owner Profile.
+- **Retrieval:** Curated chunks from `portfolioData`. With `UPSTASH_VECTOR_REST_URL` + `UPSTASH_VECTOR_REST_TOKEN`, semantic search via **Upstash Vector** (BGE embeddings) + keyword hybrid; otherwise keyword ranking only.
+- **LLM (optional):** **Grok (xAI)** enrichment when `GROK_API_KEY` is set and Owner Profile / Site Controls enable `enableChatLlm`. Grok sees retrieved context only; on timeout/error the grounded answer is returned. With LLM off, visitors still get Vector/keyword answers (no `api.x.ai` calls).
+- **Per-visitor caps** (default 10 questions / window, plus LLM + live-session caps) are owner-configurable and enforced server-side (Redis-shared when Upstash Redis is set; fail-closed on Redis errors); tracking KPIs appear on the Owner Profile.
 - **Live agent** requires email OTP (same mail transport as contact/CV). Sessions use in-process memory + `.owner-chat-cache.json` with optional Redis write-through for multi-replica; owner console `#owner/chat` replies in near-real-time while presence heartbeats mark you online.
 - Rate-limited under the `chat` bucket; allow/block rules still apply to live-chat emails.
 - **Owner alert router** — classify events (live chat, risk CV, inquiry, chat limits, etc.) as `urgent` / `warning` / `digest` / `off` in Owner Profile; urgent/warning email immediately when enabled; digest-class items flush with “Email digest now”.
@@ -112,8 +114,14 @@ FIREBASE_SERVICE_ACCOUNT_JSON='{"type":"service_account",...}'
 UPSTASH_REDIS_REST_URL=https://....upstash.io
 UPSTASH_REDIS_REST_TOKEN=...
 
-# Optional Cursor LLM enrichment for portfolio chat
-CURSOR_API_KEY=...
-# CURSOR_API_BASE_URL=https://api.cursor.com
+# Optional Upstash Vector RAG for portfolio chat
+UPSTASH_VECTOR_REST_URL=https://....upstash.io
+UPSTASH_VECTOR_REST_TOKEN=...
+
+# Optional Grok LLM enrichment (owner toggle enableChatLlm)
+GROK_API_KEY=...
+# GROK_API_BASE_URL=https://api.x.ai/v1
 # CHAT_LLM_TIMEOUT_MS=12000
 ```
+
+Wire chat secrets to Cloud Run: `./scripts/wire-chat-llm-secrets.sh` (reads `.env`).

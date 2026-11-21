@@ -26,6 +26,7 @@ import { useFirebase } from '../contexts/FirebaseContext';
 import { OWNER_EMAIL } from '../utils/announcementValidation';
 import { EASE_OUT_EXPO } from './MotionPrimitives';
 import ThemeSymbol from './ThemeSymbol';
+import { toUserFacingError } from '../utils/userFacingError';
 
 const CONSTELLATION_DOTS = 14;
 
@@ -139,14 +140,14 @@ export default function Navbar({
         typeof (err as { code?: unknown }).code === 'string'
           ? (err as { code: string }).code
           : '';
-      const msg = err instanceof Error ? err.message : String(err);
-      const combined = `${code} ${msg}`;
+      const msg = toUserFacingError(err, 'Sign-in failed. Please try again.');
+      const combined = `${code} ${err instanceof Error ? err.message : String(err)}`;
       const currentHost =
         typeof window !== 'undefined' ? window.location.hostname : 'this domain';
 
       if (combined.includes('unauthorized-domain')) {
         setAuthError(
-          `Domain "${currentHost}" is not authorized for Firebase sign-in. Add "${currentHost}" in Firebase Console → Authentication → Settings → Authorized domains.`
+          `This site (“${currentHost}”) isn’t authorized for sign-in yet. Ask the site owner to allow this domain in Firebase Authentication.`
         );
       } else if (
         combined.includes('popup-closed-by-user') ||
@@ -170,7 +171,7 @@ export default function Navbar({
           'Network error contacting Google Sign-In. Check your connection or ad-blocker and retry.'
         );
       } else {
-        setAuthError(`Unable to complete Google sign-in${code ? ` (${code})` : ''}.`);
+        setAuthError(msg);
       }
     } finally {
       setAuthBusy(false);
@@ -260,7 +261,7 @@ export default function Navbar({
   const consoleTotalCount = cvDownloadLogs.length + contactMessageLogs.length;
 
   return (
-    <header className="navbar-chrome sticky top-0 z-40 w-full border-b border-slate-800/80 bg-[#07090e]/90 backdrop-blur-md transition-all print:hidden">
+    <header className="navbar-chrome w-full border-b border-slate-800/80 bg-[#07090e]/90 backdrop-blur-md transition-all">
       <div className="page-shell flex items-center gap-2.5 sm:gap-3.5 xl:gap-5 h-14 sm:h-16 min-w-0">
         <a
           href="#overview"

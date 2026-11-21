@@ -2,7 +2,26 @@ import { initializeApp } from 'firebase/app';
 import { initializeAppCheck, ReCaptchaEnterpriseProvider } from 'firebase/app-check';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import { doc, getDocFromServer, getFirestore } from 'firebase/firestore';
-import firebaseConfig from '../firebase-applet-config.json';
+import firebaseConfigFile from '../firebase-applet-config.json';
+import { toUserFacingError } from './utils/userFacingError.ts';
+
+/**
+ * Firebase web config: non-secret project identifiers may live in
+ * firebase-applet-config.json. apiKey / recaptchaSiteKey come from env so they
+ * are not committed (restrict the browser key in Google Cloud Console).
+ */
+const firebaseConfig = {
+  ...firebaseConfigFile,
+  // Never fall back to committed JSON for secrets/public keys — env only.
+  apiKey:
+    typeof import.meta.env.VITE_FIREBASE_API_KEY === 'string'
+      ? import.meta.env.VITE_FIREBASE_API_KEY.trim()
+      : '',
+  recaptchaSiteKey:
+    typeof import.meta.env.VITE_RECAPTCHA_SITE_KEY === 'string'
+      ? import.meta.env.VITE_RECAPTCHA_SITE_KEY.trim()
+      : '',
+};
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
@@ -12,15 +31,10 @@ googleProvider.setCustomParameters({ prompt: 'select_account' });
 
 /**
  * Firebase App Check (reCAPTCHA Enterprise).
- * Populate `recaptchaSiteKey` in firebase-applet-config.json or VITE_RECAPTCHA_SITE_KEY,
+ * Set VITE_RECAPTCHA_SITE_KEY (or recaptchaSiteKey via env-backed config),
  * then enable App Check enforcement in the Firebase Console for Firestore.
  */
-const appCheckSiteKey = (
-  (typeof firebaseConfig.recaptchaSiteKey === 'string' && firebaseConfig.recaptchaSiteKey.trim()) ||
-  (typeof import.meta.env.VITE_RECAPTCHA_SITE_KEY === 'string' &&
-    import.meta.env.VITE_RECAPTCHA_SITE_KEY.trim()) ||
-  ''
-);
+const appCheckSiteKey = firebaseConfig.recaptchaSiteKey;
 
 if (typeof window !== 'undefined' && appCheckSiteKey) {
   try {
@@ -81,8 +95,11 @@ export function handleFirestoreError(
     operationType,
     path,
   };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+  // Keep diagnostics in the console only — never rethrow JSON / PII into UI banners.
+  console.error('Firestore Error:', errInfo);
+  throw new Error(
+    toUserFacingError(error, 'Unable to complete that action right now. Please try again.')
+  );
 }
 
 async function testConnection() {

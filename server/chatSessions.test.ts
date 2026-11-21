@@ -1,12 +1,15 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import {
   appendChatMessage,
+  clearOwnerPresence,
   closeChatSession,
   createChatSession,
   getChatSession,
   getChatStats,
+  isOwnerOnline,
   listChatSessions,
   publicSessionView,
+  startNewChatThread,
   touchOwnerPresence,
 } from './chatSessions.ts';
 
@@ -64,5 +67,37 @@ describe('chatSessions', () => {
     expect(typeof stats.botQuestions).toBe('number');
     expect(typeof stats.liveSessions).toBe('number');
     expect(stats.openSessions).toBeGreaterThanOrEqual(0);
+  });
+
+  it('clears owner online immediately on explicit offline', () => {
+    touchOwnerPresence(Date.now());
+    expect(isOwnerOnline()).toBe(true);
+    clearOwnerPresence();
+    expect(isOwnerOnline()).toBe(false);
+  });
+
+  it('starts a new visitor thread while keeping prior messages for the owner', () => {
+    const session = createChatSession({
+      visitorName: 'Sam Visitor',
+      visitorEmail: 'sam@example.com',
+      ipAddress: '203.0.113.9',
+      userAgent: 'vitest',
+    });
+    appendChatMessage(session.sessionId, 'visitor', 'What certifications does he hold?');
+    appendChatMessage(session.sessionId, 'bot', 'AWS, Azure, and more.');
+    const beforeCount = getChatSession(session.sessionId)?.messages.length || 0;
+    const reset = startNewChatThread(session.sessionId);
+    expect(reset).not.toBeNull();
+    expect(reset!.messages.length).toBeGreaterThan(beforeCount);
+    const visitorView = publicSessionView(reset!, { threadOnly: true });
+    const ownerView = publicSessionView(reset!);
+    expect(visitorView.messages.some((m) => m.text.includes('What certifications does he hold?'))).toBe(
+      false
+    );
+    expect(visitorView.messages.some((m) => /new chat started/i.test(m.text))).toBe(true);
+    expect(ownerView.messages.some((m) => m.text.includes('What certifications does he hold?'))).toBe(
+      true
+    );
+    expect(ownerView.messages.length).toBeGreaterThan(visitorView.messages.length);
   });
 });

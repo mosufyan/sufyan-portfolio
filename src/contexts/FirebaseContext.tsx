@@ -285,6 +285,10 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
       };
     };
 
+    // Avoid retry-spamming console when a migration write is rejected by rules.
+    const migrationSkipIds = new Set<string>();
+    let migrationInFlight = false;
+
     if (isOwner) {
       // Full collection for owners; migrate legacy missing status and auto-publish due scheduled.
       const q = query(collection(db, path), orderBy('createdAt', 'desc'));
@@ -294,35 +298,46 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
           (snapshot) => {
             if (cancelled) return;
             void (async () => {
+              if (migrationInFlight) return;
+              const now = Date.now();
+              const candidates = snapshot.docs.filter((docSnap) => {
+                if (migrationSkipIds.has(docSnap.id)) return false;
+                const data = docSnap.data();
+                // Incomplete legacy docs can't satisfy update rules — display-only via mapDoc.
+                if (typeof data.authorUid !== 'string' || !data.authorUid) {
+                  migrationSkipIds.add(docSnap.id);
+                  return false;
+                }
+                if (data.status == null || data.status === '') return true;
+                return (
+                  data.status === 'scheduled' &&
+                  typeof data.scheduledAtMs === 'number' &&
+                  data.scheduledAtMs <= now
+                );
+              });
+              if (candidates.length === 0) return;
+
+              migrationInFlight = true;
               try {
-                const now = Date.now();
                 const batch = writeBatch(db);
                 let ops = 0;
-                for (const docSnap of snapshot.docs) {
-                  const data = docSnap.data();
-                  const ref = doc(db, path, docSnap.id);
-                  if (data.status == null || data.status === '') {
-                    batch.update(ref, {
-                      status: 'published',
-                      updatedAt: serverTimestamp(),
-                    });
-                    ops += 1;
-                  } else if (
-                    data.status === 'scheduled' &&
-                    typeof data.scheduledAtMs === 'number' &&
-                    data.scheduledAtMs <= now
-                  ) {
-                    batch.update(ref, {
-                      status: 'published',
-                      updatedAt: serverTimestamp(),
-                    });
-                    ops += 1;
-                  }
+                for (const docSnap of candidates) {
+                  batch.update(doc(db, path, docSnap.id), {
+                    status: 'published',
+                    updatedAt: serverTimestamp(),
+                  });
+                  ops += 1;
                   if (ops >= 400) break;
                 }
-                if (ops > 0) await batch.commit();
+                await batch.commit();
               } catch (err) {
-                console.warn('Announcement status migration skipped:', err);
+                for (const docSnap of candidates) migrationSkipIds.add(docSnap.id);
+                console.warn(
+                  'Announcement status migration skipped (once per doc):',
+                  err instanceof Error ? err.message : err
+                );
+              } finally {
+                migrationInFlight = false;
               }
             })();
 
@@ -769,6 +784,23 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
 
   const signOutOwner = useCallback(async () => {
     const currentUser = auth.currentUser;
+    if (currentUser) {
+      // Mark live-chat presence offline before the ID token becomes unusable.
+      try {
+        const token = await currentUser.getIdToken();
+        await fetch('/api/owner/presence', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ online: false }),
+          keepalive: true,
+        });
+      } catch {
+        /* non-fatal — presence TTL will expire */
+      }
+    }
     if (currentUser && isPortfolioOwner(currentUser)) {
       const host = typeof window !== 'undefined' ? window.location.hostname : 'unknown';
       await recordAdminAudit('owner_logout', `Owner console sign-out from ${host}`, currentUser).catch(
@@ -971,19 +1003,25 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
         leadOutcome: triage.leadOutcome ?? existing?.leadOutcome,
       });
       const docPath = `contact_messages/${messageId}`;
+      // Firestore rejects `undefined` with invalid-argument — keep every field concrete.
+      const patch = {
+        triageStatus: sanitized.triageStatus,
+        ownerNote: sanitized.ownerNote || '',
+        leadCompany: sanitized.leadCompany || '',
+        leadRole: sanitized.leadRole || '',
+        leadSource: sanitized.leadSource || '',
+        leadPriority: sanitized.leadPriority || '',
+        leadNextAction: sanitized.leadNextAction || '',
+        leadNextActionDueAtMs:
+          typeof sanitized.leadNextActionDueAtMs === 'number' &&
+          Number.isFinite(sanitized.leadNextActionDueAtMs)
+            ? Math.floor(sanitized.leadNextActionDueAtMs)
+            : 0,
+        leadOutcome: sanitized.leadOutcome || '',
+        triagedAt: serverTimestamp(),
+      };
       try {
-        await updateDoc(doc(db, 'contact_messages', messageId), {
-          triageStatus: sanitized.triageStatus,
-          ownerNote: sanitized.ownerNote,
-          leadCompany: sanitized.leadCompany,
-          leadRole: sanitized.leadRole,
-          leadSource: sanitized.leadSource,
-          leadPriority: sanitized.leadPriority,
-          leadNextAction: sanitized.leadNextAction,
-          leadNextActionDueAtMs: sanitized.leadNextActionDueAtMs ?? 0,
-          leadOutcome: sanitized.leadOutcome,
-          triagedAt: serverTimestamp(),
-        });
+        await updateDoc(doc(db, 'contact_messages', messageId), patch);
         void recordAdminAudit(
           'triage_updated',
           `Triaged ${messageId} as ${sanitized.triageStatus.toUpperCase()}${
@@ -1030,16 +1068,27 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
           originalSubject: target.subject,
         }),
       });
-      const payload = (await res.json().catch(() => ({}))) as { error?: string };
+      const payload = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        triageUpdated?: boolean;
+      };
       if (!res.ok) {
         throw new Error(payload.error || 'Unable to send reply email.');
       }
 
-      if (reply.markReplied !== false) {
-        await updateContactMessageTriage(messageId, {
-          triageStatus: 'replied',
-          ownerNote: triageNoteWithReply(target.ownerNote, body),
-        });
+      // Prefer server Admin triage; fall back to client update only if needed.
+      if (reply.markReplied !== false && payload.triageUpdated !== true) {
+        try {
+          await updateContactMessageTriage(messageId, {
+            triageStatus: 'replied',
+            ownerNote: triageNoteWithReply(target.ownerNote, body),
+          });
+        } catch (triageError) {
+          console.warn('Reply email sent but triage update failed:', triageError);
+          throw new Error(
+            'Reply email was sent, but status couldn’t be marked Replied. Refresh and set status manually.'
+          );
+        }
       }
 
       void recordAdminAudit(

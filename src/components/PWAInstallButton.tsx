@@ -10,6 +10,7 @@ import { useFirebase } from '../contexts/FirebaseContext';
 import { useTheme } from '../theme/ThemeProvider';
 import { useModalPlacement } from '../hooks/useModalPlacement';
 import AccessGateModal, {
+  ACCESS_SESSION_EXPIRED_MESSAGE,
   isAccessUnlocked,
   trackSubsequentCvEvent,
   type AccessGateAction,
@@ -91,6 +92,7 @@ export default function PWAInstallButton() {
 
   const [showManualGuide, setShowManualGuide] = useState(false);
   const [gateAction, setGateAction] = useState<AccessGateAction | null>(null);
+  const [gateReverifyMessage, setGateReverifyMessage] = useState<string | null>(null);
   const guideAlignClass = useModalPlacement(showManualGuide);
   const { isLight } = useTheme();
   const { recordCvDownloadLog, effectivePortfolioSettings } = useFirebase();
@@ -111,20 +113,28 @@ export default function PWAInstallButton() {
 
   const beginInstall = () => {
     if (!isAccessUnlocked('install')) {
+      setGateReverifyMessage(null);
       setGateAction('install');
       return;
     }
-    void trackSubsequentCvEvent({
-      action: 'install',
-      formatLabel: 'Portfolio PWA',
-      theme: isLight ? 'light' : 'dark',
-      onPersistLog: recordCvDownloadLog,
-    });
-    if (canDirectInstall) {
-      void runDirectInstall();
-      return;
-    }
-    setShowManualGuide(true);
+    void (async () => {
+      const track = await trackSubsequentCvEvent({
+        action: 'install',
+        formatLabel: 'Portfolio PWA',
+        theme: isLight ? 'light' : 'dark',
+        onPersistLog: recordCvDownloadLog,
+      });
+      if (track.status === 'expired') {
+        setGateReverifyMessage(track.message || ACCESS_SESSION_EXPIRED_MESSAGE);
+        setGateAction('install');
+        return;
+      }
+      if (canDirectInstall) {
+        void runDirectInstall();
+        return;
+      }
+      setShowManualGuide(true);
+    })();
   };
 
   /**
@@ -134,12 +144,14 @@ export default function PWAInstallButton() {
    */
   const handleVerified = (_action: AccessGateAction) => {
     setGateAction(null);
+    setGateReverifyMessage(null);
     setShowManualGuide(true);
   };
 
   const handleGuideInstallNow = () => {
     if (!isAccessUnlocked('install')) {
       setShowManualGuide(false);
+      setGateReverifyMessage(null);
       setGateAction('install');
       return;
     }
@@ -231,8 +243,10 @@ export default function PWAInstallButton() {
       <AccessGateModal
         action={gateAction}
         formatLabel="Portfolio PWA"
+        initialError={gateReverifyMessage}
         onClose={() => {
           setGateAction(null);
+          setGateReverifyMessage(null);
         }}
         onVerified={handleVerified}
       />

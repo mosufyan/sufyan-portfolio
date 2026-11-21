@@ -136,11 +136,11 @@ export interface PortfolioSettings {
   enablePortfolioChat: boolean;
   /** OTP-gated live agent chat. */
   enableLiveChat: boolean;
-  /** Optional Cursor Cloud Agents enrichment on top of grounded retrieval. */
+  /** Optional Grok (xAI) enrichment on top of grounded retrieval. */
   enableChatLlm: boolean;
   /** Max bot questions per visitor within the rate window (default 10). */
   chatMaxQuestionsPerVisitor: number;
-  /** Max Cursor LLM-enriched answers per visitor within the rate window. */
+  /** Max Grok LLM-enriched answers per visitor within the rate window. */
   chatMaxLlmPerVisitor: number;
   /** Max OTP live sessions per visitor email within the rate window. */
   chatMaxLiveSessionsPerVisitor: number;
@@ -281,14 +281,23 @@ function clampString(value: unknown, maxLen: number): string {
   return value.trim().slice(0, maxLen);
 }
 
+function randomIdSuffix(length = 6): string {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  const bytes = new Uint8Array(length);
+  crypto.getRandomValues(bytes);
+  let out = '';
+  for (let i = 0; i < length; i += 1) {
+    out += alphabet[bytes[i]! % alphabet.length]!;
+  }
+  return out;
+}
+
 export function generateAuditId(): string {
-  const rand = Math.random().toString(36).slice(2, 8).toUpperCase();
-  return `AUD-${Date.now().toString(36).toUpperCase()}-${rand}`.slice(0, 64);
+  return `AUD-${Date.now().toString(36).toUpperCase()}-${randomIdSuffix()}`.slice(0, 64);
 }
 
 export function generateRuleId(): string {
-  const rand = Math.random().toString(36).slice(2, 8).toUpperCase();
-  return `RULE-${Date.now().toString(36).toUpperCase()}-${rand}`.slice(0, 64);
+  return `RULE-${Date.now().toString(36).toUpperCase()}-${randomIdSuffix()}`.slice(0, 64);
 }
 
 export function sanitizeAdminAuditPayload(input: {

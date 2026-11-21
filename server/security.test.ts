@@ -106,6 +106,9 @@ describe('CSP / headers', () => {
     expect(csp).toContain('recaptcha');
     expect(csp).toContain("frame-ancestors 'none'");
     expect(csp).not.toContain('unsafe-eval');
+    expect(csp).toMatch(/script-src 'self' 'sha256-[^']+'/);
+    expect(csp).not.toMatch(/script-src[^;]*'unsafe-inline'/);
+    expect(csp).toContain("'sha256-KPGRZh0iZGUQvbOmIn+AyQYlSk1cQH0oPPOFJbrwICg='");
   });
 
   it('applies core security headers', () => {
@@ -119,8 +122,9 @@ describe('CSP / headers', () => {
     expect(headers['Strict-Transport-Security']).toContain('max-age=31536000');
     expect(headers['Content-Security-Policy']).toContain("default-src 'self'");
     expect(headers['Content-Security-Policy']).toContain('report-uri /api/csp-report');
+    expect(headers['Content-Security-Policy']).not.toMatch(/script-src[^;]*'unsafe-inline'/);
     expect(headers['Content-Security-Policy-Report-Only']).toContain("script-src 'self'");
-    expect(headers['Content-Security-Policy-Report-Only']).not.toContain("script-src 'self' 'unsafe-inline'");
+    expect(headers['Content-Security-Policy-Report-Only']).not.toMatch(/script-src[^;]*'unsafe-inline'/);
   });
 
   it('allows AI Studio preview iframe in dev or on *.run.app while staying strict for custom domain prod', () => {
@@ -141,21 +145,22 @@ describe('CSP / headers', () => {
 });
 
 describe('origin allowlist', () => {
-  it('allows missing origin (non-browser clients) and matching hosts', () => {
+  it('allows missing origin in non-production and matching hosts', () => {
     const allowed = resolveAllowedOrigins('https://www.mohammedsufyan.com', 3000);
-    expect(isAllowedRequestOrigin(undefined, allowed)).toBe(true);
+    expect(isAllowedRequestOrigin(undefined, allowed, { requireOrigin: false })).toBe(true);
+    expect(isAllowedRequestOrigin(undefined, allowed, { requireOrigin: true })).toBe(false);
     expect(isAllowedRequestOrigin('https://www.mohammedsufyan.com/contact', allowed)).toBe(true);
     expect(isAllowedRequestOrigin('https://evil.example', allowed)).toBe(false);
   });
 });
 
 describe('FormSubmit gate', () => {
-  it('is disabled in production by default', () => {
+  it('requires explicit opt-in in every environment', () => {
     expect(isFormSubmitFallbackAllowed({ NODE_ENV: 'production' })).toBe(false);
     expect(
       isFormSubmitFallbackAllowed({ NODE_ENV: 'production', ALLOW_FORMSUBMIT_FALLBACK: 'true' })
     ).toBe(true);
-    expect(isFormSubmitFallbackAllowed({ NODE_ENV: 'development' })).toBe(true);
+    expect(isFormSubmitFallbackAllowed({ NODE_ENV: 'development' })).toBe(false);
   });
 });
 
@@ -165,10 +170,22 @@ describe('Turnstile verify', () => {
     vi.restoreAllMocks();
   });
 
-  it('skips when secret is not configured', async () => {
-    await expect(verifyTurnstileToken(undefined, undefined)).resolves.toEqual({
+  it('skips when secret is not configured outside production', async () => {
+    await expect(
+      verifyTurnstileToken(undefined, undefined, undefined, { failOpenWithoutSecret: true })
+    ).resolves.toEqual({
       ok: true,
       skipped: true,
+    });
+  });
+
+  it('fails closed when secret is missing in production mode', async () => {
+    await expect(
+      verifyTurnstileToken(undefined, undefined, undefined, { failOpenWithoutSecret: false })
+    ).resolves.toEqual({
+      ok: false,
+      skipped: false,
+      error: 'Bot verification is not configured. Please try again later.',
     });
   });
 

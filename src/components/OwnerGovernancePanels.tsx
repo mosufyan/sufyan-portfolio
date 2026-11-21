@@ -41,6 +41,7 @@ import {
 } from '../utils/ownerGovernance';
 import ChatConfigFields from './ChatConfigFields';
 import AlertNotifyConfigFields from './AlertNotifyConfigFields';
+import { toUserFacingError } from '../utils/userFacingError';
 
 function formatAuditTime(ms: number): string {
   try {
@@ -144,7 +145,7 @@ export function AccessRulesPanel({ isLight }: { isLight: boolean }) {
         `${ruleType === 'allow' ? 'Allowlist' : 'Blocklist'} rule saved and synced to server enforcement.`
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to save access rule.');
+      setError(toUserFacingError(err, 'Unable to save access rule.'));
     } finally {
       setBusy(false);
     }
@@ -160,7 +161,7 @@ export function AccessRulesPanel({ isLight }: { isLight: boolean }) {
     try {
       await deleteAccessRule(ruleId);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to delete access rule.');
+      setError(toUserFacingError(err, 'Unable to delete access rule.'));
     } finally {
       setDeletingId(null);
     }
@@ -417,7 +418,7 @@ export function SiteControlsPanel({ isLight }: { isLight: boolean }) {
       await savePortfolioSettings(draft);
       setSavedNotice('Site settings updated in Firestore & synced with backend security rules.');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to save site controls.');
+      setError(toUserFacingError(err, 'Unable to save site controls.'));
     } finally {
       setSaving(false);
     }
@@ -1038,7 +1039,7 @@ export function DelegatesPanel({ isLight }: { isLight: boolean }) {
       setEmail('');
       setSuccess('Delegate admin added. They can open the Owner Console after Google sign-in.');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to add delegate.');
+      setError(toUserFacingError(err, 'Unable to add delegate.'));
     } finally {
       setBusy(false);
     }

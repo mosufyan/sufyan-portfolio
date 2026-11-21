@@ -2,7 +2,7 @@
 
 Living documentation for the Mohammed Sufyan portfolio — React/Vite client, Express API, Firebase Auth/Firestore, and owner governance.
 
-Related: [SECURITY.md](../SECURITY.md) · [SECURITY_CONFIGURATION.md](./SECURITY_CONFIGURATION.md) · [EXTERNAL_TOOLS_AND_COSTS.md](./EXTERNAL_TOOLS_AND_COSTS.md) · [PORTFOLIO_ASSESSMENT.md](./PORTFOLIO_ASSESSMENT.md) · [README](../README.md)
+Related: [SECURITY.md](./SECURITY.md) · [SECURITY_CONFIGURATION.md](./SECURITY_CONFIGURATION.md) · [EXTERNAL_TOOLS_AND_COSTS.md](./EXTERNAL_TOOLS_AND_COSTS.md) · [PORTFOLIO_ASSESSMENT.md](./PORTFOLIO_ASSESSMENT.md) · [README](../README.md)
 
 ---
 
@@ -36,8 +36,13 @@ flowchart TB
   subgraph External["External services"]
     FB[Firebase Auth]
     Mail[Resend / SMTP]
-    Cursor[Cursor Cloud Agents]
+    Vector[(Upstash Vector<br/>chat RAG)]
+    Grok[Grok xAI API]
     CF[Cloudflare Turnstile]
+  end
+
+  subgraph CICD["CI/CD"]
+    GH[GitHub Actions<br/>PR verify · main deploy]
   end
 
   UI --> Sec
@@ -49,7 +54,8 @@ flowchart TB
   Sec --> RL
   RL --> Redis
   ChatAPI --> OTP
-  ChatAPI --> Cursor
+  ChatAPI --> Vector
+  ChatAPI --> Grok
   ChatAPI --> Disk
   ChatAPI --> Redis
   Contact --> OTP
@@ -60,6 +66,7 @@ flowchart TB
   CV --> FS
   OwnerAPI --> Mail
   OwnerAPI --> Redis
+  GH --> Edge
 ```
 
 ---
@@ -73,7 +80,8 @@ sequenceDiagram
   participant API as Express /api/chat
   participant TS as Turnstile
   participant Mail as Email OTP
-  participant LLM as Cursor LLM
+  participant Vec as Upstash Vector
+  participant LLM as Grok LLM
   participant Own as Owner Console
 
   V->>W: Open widget
@@ -89,13 +97,24 @@ sequenceDiagram
   V->>W: Ask question
   W->>API: POST /ask + X-Chat-Receipt
   API->>API: Quota by IP or verified email
-  opt enableChatLlm
-    API->>LLM: Enrich grounded answer
-    Note over API: LLM quota consumed only on Cursor success
+  API->>Vec: Semantic retrieve portfolio chunks
+  Note over API,Vec: Falls back to keyword ranking if Vector unset/weak
+  opt enableChatLlm + GROK_API_KEY
+    API->>LLM: Enrich grounded answer (context = retrieved chunks)
+    Note over API: LLM quota consumed only on Grok success
   end
   API-->>W: Concise answer + follow-ups
   Own->>API: Presence + reply to live session
 ```
+
+### Chat retrieval modes
+
+| Mode | When | Behavior |
+|------|------|----------|
+| Keyword | Vector unset / weak scores | Score curated `portfolioData` chunks |
+| Vector | `UPSTASH_VECTOR_*` set | Upstash Vector + BGE embeddings; hybrid merge with keyword |
+| Grok enrich | Owner `enableChatLlm` + `GROK_API_KEY` | Rewrite from retrieved context; else show grounded text |
+| LLM off | Toggle off | Vector/keyword answer only — no `api.x.ai` calls |
 
 ### Quota keys (anti-spoof)
 
@@ -149,8 +168,12 @@ Composite index: `announcements` — `status` ASC + `createdAt` DESC (`firestore
 | `server/telemetry.ts` | IP/ASN risk, MX/phone checks, Redis-backed OTP bridge |
 | `server/observability.ts` | Request IDs, structured logs, metrics, Sentry/Slack hooks |
 | `server/chatLimits.ts` | Per-visitor question / LLM / live caps (Redis-shared) |
-| `server/chatKnowledge.ts` | Grounded Q&A + concise answers |
-| `server/cursorLlm.ts` | Optional Cursor Cloud Agents enrichment |
+| `server/chatKnowledge.ts` | Curated knowledge chunks + keyword ranking + concise answers |
+| `server/portfolioVector.ts` | Upstash Vector RAG (embed/sync/query) + keyword hybrid fallback |
+| `server/grokLlm.ts` | Optional Grok (xAI) chat-completions enrichment |
+| `.github/workflows/ci.yml` | PR: lint/test/audit/build + Docker; `main`: deploy Cloud Run |
+| `scripts/wire-chat-llm-secrets.sh` | Upsert Grok/Vector secrets → Secret Manager + Cloud Run |
+| `scripts/setup-github-actions-deploy.sh` | One-time WIF + deploy SA for GitHub → Cloud Run |
 | `server/chatSessions.ts` | Live session store + disk cache + Redis write-through |
 | `server/chatReceipt.ts` | Header-based session receipt extraction |
 | `server/ownerNotify.ts` | Urgent / warning / digest router |
@@ -197,8 +220,19 @@ mindmap
 
 | Suite | Covers |
 |-------|--------|
-| `server/*.test.ts` | Security, chat limits/receipts/sessions/knowledge, Cursor LLM, notify, Redis |
+| `server/*.test.ts` | Security, chat limits/receipts/sessions/knowledge, Vector RAG, Grok LLM, notify, Redis |
 | `src/utils/*.test.ts` | Governance, announcements, CV/ATS, phone, skills, tracking, routing |
 | `src/utils/portfolioFeatures.test.ts` | Cross-feature matrix smoke |
 
 Run: `npm test` · Lint: `npm run lint` · Audit: `npm run security:audit`
+
+---
+
+## CI/CD
+
+| Event | Jobs |
+|-------|------|
+| **Pull request → `main`** | Lint · unit tests · `npm audit` · Vite build · Docker image build (no push) |
+| **Push / merge → `main`** | Same verify + Docker, then **Cloud Run deploy** (`gcloud run deploy --source .`) via Workload Identity + smoke `GET /api/chat/status` |
+
+Auth: GitHub secrets `GCP_WORKLOAD_IDENTITY_PROVIDER` + `GCP_SERVICE_ACCOUNT`; vars `GCP_PROJECT` / `GCP_REGION` / `CLOUD_RUN_SERVICE`.

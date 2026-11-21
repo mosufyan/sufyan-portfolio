@@ -4,7 +4,7 @@ Recommended security settings for the live portfolio stack:
 
 **Cloudflare (domain) → Google Cloud Run (app) → Firebase (auth/data) → Resend/SMTP (mail)**
 
-Related: [EXTERNAL_TOOLS_AND_COSTS.md](./EXTERNAL_TOOLS_AND_COSTS.md) · [ARCHITECTURE.md](./ARCHITECTURE.md) · [SECURITY.md](../SECURITY.md)
+Related: [EXTERNAL_TOOLS_AND_COSTS.md](./EXTERNAL_TOOLS_AND_COSTS.md) · [ARCHITECTURE.md](./ARCHITECTURE.md) · [SECURITY.md](./SECURITY.md)
 
 ---
 
@@ -14,26 +14,26 @@ Related: [EXTERNAL_TOOLS_AND_COSTS.md](./EXTERNAL_TOOLS_AND_COSTS.md) · [ARCHIT
 flowchart TB
   U[User] --> CF
 
-  subgraph CF["Cloudflare — mohammedsufyan.com"]
+  subgraph CF["Cloudflare - mohammedsufyan.com"]
     DNS[DNS Proxy]
-    SSL[SSL Full strict]
+    SSL["SSL Full strict"]
     Bot[Bot Fight Mode]
     WAF[WAF managed rules]
     TS[Turnstile widgets]
   end
 
-  CF -->|HTTPS + CF-Connecting-IP| CR
+  CF -->|"HTTPS + CF-Connecting-IP"| CR
 
   subgraph CR["Cloud Run"]
-    Exp[Express server.ts]
-    TP[TRUST_PROXY=1]
+    Exp["Express server.ts"]
+    TP["TRUST_PROXY=1"]
     RL[Rate limits]
     OTP[OTP HMAC]
   end
 
   subgraph FB["Firebase"]
     Auth[Auth Google]
-    Rules[firestore.rules]
+    Rules["firestore.rules"]
     AC[App Check optional]
     Adm[Admin SDK writes]
   end
@@ -50,7 +50,6 @@ flowchart TB
   Adm --> Rules
   AC --> Rules
 ```
-
 ---
 
 ## 1. Cloudflare (domain already here)
@@ -72,13 +71,12 @@ flowchart TB
 
 ```mermaid
 flowchart LR
-  Req[Request] --> CFBot{Bot Fight / Super Bot Fight}
+  Req[Request] --> CFBot{"Bot Fight / Super Bot Fight"}
   CFBot -->|challenge| Ch[Managed Challenge]
   CFBot -->|pass| WAF{WAF rules}
   WAF -->|block| Bl[Block obvious scanners]
   WAF -->|allow| Origin[Cloud Run]
 ```
-
 **Free plan**
 
 1. **Security → Settings → Bot traffic → Bot Fight Mode → On**
@@ -146,9 +144,13 @@ UPSTASH_REDIS_REST_TOKEN=...
 # Server PII writes + reply binding
 FIREBASE_SERVICE_ACCOUNT_JSON='{"type":"service_account",...}'
 
-# Optional LLM
-# CURSOR_API_KEY=...
+# Optional portfolio chat RAG + LLM (Secret Manager → Cloud Run)
+# UPSTASH_VECTOR_REST_URL=https://....upstash.io
+# UPSTASH_VECTOR_REST_TOKEN=...
+# GROK_API_KEY=xai-...
+# GROK_API_BASE_URL=https://api.x.ai/v1
 # CHAT_LLM_TIMEOUT_MS=12000
+# Script: ./scripts/wire-chat-llm-secrets.sh
 
 # Observability (gold path)
 # SENTRY_DSN=https://<key>@oXXXX.ingest.sentry.io/<project>
@@ -204,13 +206,12 @@ flowchart LR
 ```mermaid
 sequenceDiagram
   participant B as Browser
-  participant AC as App Check / reCAPTCHA
+  participant AC as App Check or reCAPTCHA
   participant FS as Firestore
   B->>AC: Get attestation token
-  B->>FS: Request + App Check token
-  FS->>FS: Enforce request.app != null
+  B->>FS: Request plus App Check token
+  FS->>FS: Enforce request.app is not null
 ```
-
 1. Firebase Console → **App Check** → register web app with **reCAPTCHA Enterprise**.
 2. Set `VITE_RECAPTCHA_SITE_KEY` or `firebase-applet-config.json` → `recaptchaSiteKey`.
 3. Watch metrics in monitor mode → then **Enforce** for Firestore.
@@ -241,13 +242,12 @@ sequenceDiagram
 
 ```mermaid
 flowchart TD
-  Send[Outbound email] --> Free{Resend Free?}
-  Free -->|≤100/day & ≤3k/mo| OK[Deliver]
+  Send[Outbound email] --> Free{"Resend Free?"}
+  Free -->|"up to 100/day and 3k/mo"| OK[Deliver]
   Free -->|over daily| Fail[Send fails until UTC midnight]
-  Fail --> Up[Upgrade Pro $20]
+  Fail --> Up["Upgrade Pro $20"]
   Up --> OK2[No daily cap]
 ```
-
 ---
 
 ## 5. Upstash Redis (multi-instance)
@@ -284,18 +284,19 @@ Without Redis: rate limits, OTP challenges, and live-chat sessions are **per Clo
 
 ```mermaid
 flowchart TD
-  S1[1. Cloudflare proxy + Full strict SSL + TRUST_PROXY] --> S2
-  S2[2. Turnstile keys on Contact/CV/Chat] --> S3
-  S3[3. Resend domain SPF/DKIM] --> S4
-  S4[4. SESSION_SECRET explicit] --> S5
-  S5[5. Deploy latest firestore.rules + indexes] --> S6
-  S6[6. Firebase Admin SDK secret] --> S7
-  S7[7. Upstash Redis on all replicas] --> S8
-  S8[8. App Check monitor → enforce] --> S9
-  S9[9. Optional: deny public PII creates] --> S10
-  S10[10. Optional: Cursor LLM with spend cap]
+  S1["1. Cloudflare proxy + Full strict SSL + TRUST_PROXY"] --> S2
+  S2["2. Turnstile keys on Contact, CV, Chat"] --> S3
+  S3["3. Resend domain SPF and DKIM"] --> S4
+  S4["4. SESSION_SECRET explicit"] --> S5
+  S5["5. Deploy latest firestore.rules + indexes"] --> S6
+  S6["6. Firebase Admin SDK secret"] --> S7
+  S7["7. Upstash Redis on all replicas"] --> S8
+  S8["8. App Check monitor then enforce"] --> S9
+  S9["9. Optional - deny public PII creates"] --> S10
+  S10["10. Optional - Upstash Vector RAG"] --> S11
+  S11["11. Optional - Grok LLM + wire-chat-llm-secrets"] --> S12
+  S12["12. GitHub Actions CD on main"]
 ```
-
 ---
 
 ## 8. Verification commands
@@ -305,6 +306,9 @@ After deploying secrets:
 ```bash
 curl -sS https://www.mohammedsufyan.com/api/health | jq .
 # Expect: turnstileConfigured, distributedStore, serverTelemetryWrites, otpSupported
+
+curl -sS https://www.mohammedsufyan.com/api/chat/status | jq '{ok,enabled,llmConfigured,vectorConfigured}'
+# After Grok+Vector secrets + new code deploy: llmConfigured/vectorConfigured true when toggles/keys are set
 ```
 
 Local:
@@ -316,6 +320,8 @@ npm run security:audit
 npm run build
 ```
 
+CI/CD: open a PR to `main` (verify + Docker), then merge to deploy Cloud Run automatically.
+
 ---
 
 ## 9. What “good” looks like for this portfolio
@@ -326,5 +332,6 @@ npm run build
 | Compute | Cloud Run min 0, secrets in SM | Same + alerting on 5xx / latency |
 | Data | Strict rules + Admin writes | App Check enforced + public create denied |
 | Mail | Resend Free + verified domain | Resend Pro during hiring spikes |
-| Abuse | In-memory RL single instance | Upstash shared RL fail-closed |
-| Chat | Grounded only | Cursor LLM + tight per-visitor caps |
+| Abuse | In-memory RL single instance | Upstash Redis shared RL fail-closed |
+| Chat | Keyword grounded | Vector RAG + optional Grok + per-visitor caps |
+| Deploy | Manual `gcloud run deploy` | GitHub Actions PR checks + auto-deploy on `main` |

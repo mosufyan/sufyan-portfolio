@@ -45,6 +45,8 @@ import {
   type VerificationStatus,
   type VisitorTelemetryReport,
 } from './server/telemetry.ts';
+import { SESSION_EXPIRED_CODE, SESSION_EXPIRED_MESSAGES } from './server/sessionPolicy.ts';
+import { APP_VERSION, APP_VERSION_LABEL } from './server/appVersion.ts';
 import {
   checkDistributedRateLimit,
   isDistributedStoreEnabled,
@@ -66,12 +68,23 @@ import {
 } from './server/observability.ts';
 import {
   adminGetContactMessage,
+  adminMarkContactReplied,
   adminWriteContactMessage,
   adminWriteCvDownload,
   isFirebaseAdminConfigured,
 } from './server/firebaseAdmin.ts';
 import { answerPortfolioQuestion, listChatSuggestions } from './server/chatKnowledge.ts';
-import { extractChatReceipt as extractChatReceiptToken } from './server/chatReceipt.ts';
+import {
+  answerPortfolioQuestionSmart,
+  isPortfolioVectorConfigured,
+  syncPortfolioVectors,
+} from './server/portfolioVector.ts';
+import {
+  chatSessionAuthError,
+  extractChatReceipt as extractChatReceiptToken,
+  signChatSessionReceipt as signChatSessionReceiptToken,
+  verifyChatSessionReceipt as verifyChatSessionReceiptToken,
+} from './server/chatReceipt.ts';
 import {
   appendChatMessage,
   bumpBotQuestion,
@@ -84,6 +97,8 @@ import {
   isOwnerOnline,
   listChatSessions,
   publicSessionView,
+  startNewChatThread,
+  clearOwnerPresence,
   touchOwnerPresence,
 } from './server/chatSessions.ts';
 import {
@@ -93,7 +108,7 @@ import {
   getChatUsageTotals,
   type ChatLimitPolicy,
 } from './server/chatLimits.ts';
-import { enrichAnswerWithCursorLlm, isCursorLlmConfigured } from './server/cursorLlm.ts';
+import { enrichAnswerWithGrokLlm, isGrokLlmConfigured } from './server/grokLlm.ts';
 import { buildDynamicSocialSvg, SHARE_CARD_TRACKS, type ShareTrackId } from './src/utils/ogShare.ts';
 import {
   DEFAULT_PORTFOLIO_SETTINGS,
@@ -117,9 +132,9 @@ function readFirebaseProjectId(): string {
   try {
     const raw = fs.readFileSync(path.join(__dirname, 'firebase-applet-config.json'), 'utf8');
     const parsed = JSON.parse(raw) as { projectId?: string };
-    return parsed.projectId || 'elite-choir-53kqt';
+    return parsed.projectId || 'mohammed-sufyan-portfolio';
   } catch {
-    return 'elite-choir-53kqt';
+    return 'mohammed-sufyan-portfolio';
   }
 }
 
@@ -129,10 +144,13 @@ const DESTINATION_EMAIL = process.env.CONTACT_TO_EMAIL || 'sufyan.net@gmail.com'
 const TURNSTILE_SECRET = process.env.TURNSTILE_SECRET_KEY?.trim() || '';
 const TURNSTILE_SITE_KEY =
   process.env.VITE_TURNSTILE_SITE_KEY?.trim() || process.env.TURNSTILE_SITE_KEY?.trim() || '';
-const OTP_SECRET =
-  process.env.SESSION_SECRET?.trim() ||
-  TURNSTILE_SECRET ||
-  crypto.randomBytes(32).toString('hex');
+const SESSION_SECRET_ENV = process.env.SESSION_SECRET?.trim() || '';
+if (process.env.NODE_ENV === 'production' && !SESSION_SECRET_ENV) {
+  throw new Error(
+    'SESSION_SECRET is required in production for OTP HMAC and session receipts.'
+  );
+}
+const OTP_SECRET = SESSION_SECRET_ENV || crypto.randomBytes(32).toString('hex');
 const FORCE_CV_OTP = (process.env.FORCE_CV_OTP || '').toLowerCase() === 'true';
 const ALLOWED_ORIGINS = resolveAllowedOrigins(process.env.APP_URL, PORT);
 const otpChallengeStore = new Map<string, OtpChallengeRecord>();
@@ -157,39 +175,14 @@ configureOtpRedisBridge({
 });
 
 function signChatSessionReceipt(sessionId: string, email: string): string {
-  const payload = Buffer.from(
-    JSON.stringify({ sessionId, email: email.toLowerCase(), iat: Date.now() }),
-    'utf8'
-  ).toString('base64url');
-  const sig = crypto.createHmac('sha256', OTP_SECRET).update(payload).digest('base64url');
-  return `${payload}.${sig}`;
+  return signChatSessionReceiptToken(sessionId, email, OTP_SECRET);
 }
 
 function verifyChatSessionReceipt(
   receipt: string | undefined,
   sessionId: string
-): { ok: true; email: string } | { ok: false } {
-  if (!receipt || !receipt.includes('.')) return { ok: false };
-  const [payload, sig] = receipt.split('.');
-  if (!payload || !sig) return { ok: false };
-  const expected = crypto.createHmac('sha256', OTP_SECRET).update(payload).digest('base64url');
-  const a = Buffer.from(sig);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return { ok: false };
-  try {
-    const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as {
-      sessionId?: string;
-      email?: string;
-      iat?: number;
-    };
-    if (parsed.sessionId !== sessionId || typeof parsed.email !== 'string') return { ok: false };
-    if (typeof parsed.iat === 'number' && Date.now() - parsed.iat > 12 * 60 * 60 * 1000) {
-      return { ok: false };
-    }
-    return { ok: true, email: parsed.email.toLowerCase() };
-  } catch {
-    return { ok: false };
-  }
+): { ok: true; email: string } | { ok: false; reason: 'expired' | 'invalid' } {
+  return verifyChatSessionReceiptToken(receipt, sessionId, OTP_SECRET);
 }
 
 interface RuntimeOwnerPolicy {
@@ -444,6 +437,117 @@ function loadInitialOwnerPolicy(): RuntimeOwnerPolicy {
   }
 }
 
+function buildOwnerAlertEmailHtml(input: {
+  alertClass: 'urgent' | 'warning';
+  title: string;
+  detail: string;
+  theme?: EmailTheme;
+  timestamp?: string;
+}): string {
+  const p = getEmailPalette(parseEmailTheme(input.theme));
+  const isUrgent = input.alertClass === 'urgent';
+  const badgeBg = isUrgent ? (p.theme === 'light' ? '#ffe4e6' : '#4c0519') : p.badgeSuccessBg;
+  const badgeBorder = isUrgent ? (p.theme === 'light' ? '#fb7185' : '#e11d48') : p.badgeSuccessBorder;
+  const badgeText = isUrgent ? (p.theme === 'light' ? '#be123c' : '#fb7185') : p.badgeSuccessText;
+  const accentBar = isUrgent ? '#e11d48' : '#d97706';
+  const safeTitle = escapeHtml(input.title);
+  const safeDetail = escapeHtml(input.detail).replace(/\r?\n/g, '<br />');
+  const safeTime = escapeHtml(input.timestamp || new Date().toUTCString());
+  const consoleUrl = cleanSecretEnv(process.env.APP_URL) || 'https://www.mohammedsufyan.com';
+  const safeConsoleUrl = escapeHtml(consoleUrl.replace(/\/$/, ''));
+
+  return `<!DOCTYPE html>
+<html lang="en" data-theme="${p.theme}">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="${p.theme}" />
+  <meta name="supported-color-schemes" content="${p.theme}" />
+  <title>${isUrgent ? 'Urgent' : 'Warning'} Alert — ${safeTitle}</title>
+</head>
+<body style="margin:0;padding:0;background-color:${p.pageBg};font-family:'Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:${p.text};">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:${p.pageBg};padding:32px 16px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background-color:${p.cardBg};border:1px solid ${p.border};border-radius:16px;overflow:hidden;">
+          <tr>
+            <td style="padding:24px 28px;background-color:${p.headerBg};border-bottom:1px solid ${p.border};">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                <tr>
+                  <td style="vertical-align:middle;">
+                    <table role="presentation" cellspacing="0" cellpadding="0">
+                      <tr>
+                        <td style="width:38px;height:38px;border-radius:10px;background-color:${p.accentSoftBg};border:1px solid ${p.accentDeep};text-align:center;vertical-align:middle;font-weight:700;font-size:14px;color:${p.accent};font-family:monospace;">
+                          MS
+                        </td>
+                        <td style="padding-left:12px;">
+                          <div style="font-size:15px;font-weight:700;color:${p.textStrong};letter-spacing:0.02em;">
+                            MOHAMMED SUFYAN
+                          </div>
+                          <div style="font-size:11px;font-family:monospace;color:${p.accent};text-transform:uppercase;letter-spacing:0.08em;margin-top:2px;">
+                            Owner Alert Dispatch
+                          </div>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                  <td align="right" style="vertical-align:middle;">
+                    <span style="display:inline-block;padding:5px 10px;border-radius:6px;background-color:${badgeBg};border:1px solid ${badgeBorder};color:${badgeText};font-size:10px;font-family:monospace;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">
+                      ${isUrgent ? 'URGENT' : 'WARNING'}
+                    </span>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:24px 28px 16px 28px;">
+              <div style="font-size:11px;font-family:monospace;color:${p.accent};text-transform:uppercase;letter-spacing:0.1em;margin-bottom:6px;">
+                ${isUrgent ? 'IMMEDIATE ATTENTION' : 'OWNER NOTICE'}
+              </div>
+              <h1 style="margin:0;font-size:21px;font-weight:700;color:${p.textStrong};line-height:1.3;">
+                ${safeTitle}
+              </h1>
+              <p style="margin:8px 0 0 0;font-size:12px;font-family:monospace;color:${p.textMuted};">
+                Dispatched ${safeTime} · Theme ${p.theme}
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:8px 28px 20px 28px;">
+              <div style="background-color:${p.panelBg};border:1px solid ${p.border};border-left:3px solid ${accentBar};border-radius:12px;padding:18px 20px;">
+                <div style="font-size:10px;font-family:monospace;color:${badgeText};text-transform:uppercase;letter-spacing:0.1em;margin-bottom:10px;">
+                  Alert Detail
+                </div>
+                <div style="font-size:14px;line-height:1.65;color:${p.text};">
+                  ${safeDetail}
+                </div>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 28px 28px 28px;">
+              <a href="${safeConsoleUrl}/#owner/chat" style="display:inline-block;padding:11px 20px;background-color:${p.ctaBg};color:${p.ctaText};font-size:13px;font-weight:700;text-decoration:none;border-radius:8px;">
+                Open Owner Console
+              </a>
+              <div style="margin-top:12px;font-size:12px;font-family:monospace;color:${p.textMuted};">
+                Alerts · Chat · Messages · ${safeConsoleUrl}
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 28px;background-color:${p.footerBg};border-top:1px solid ${p.border};font-size:11px;font-family:monospace;color:${p.textSoft};">
+              Mohammed Sufyan Portfolio · Automated owner alert · Matches visitor ${p.theme} theme
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+}
+
 async function emitOwnerAlert(input: {
   eventType:
     | 'new_inquiry'
@@ -455,9 +559,12 @@ async function emitOwnerAlert(input: {
   title: string;
   detail: string;
   dedupeKey: string;
+  /** Visitor site theme so the alert email matches their light/dark choice. */
+  theme?: EmailTheme;
 }): Promise<void> {
   try {
     const prefs = prefsFromPortfolioSettings(runtimeOwnerPolicy);
+    const theme = parseEmailTheme(input.theme);
     await routeOwnerNotification({
       prefs,
       eventType: input.eventType,
@@ -470,19 +577,29 @@ async function emitOwnerAlert(input: {
           void postSlackAlert({ title, detail, alertClass });
         }
         if (!isDirectEmailTransportConfigured()) return;
-        const color = alertClass === 'urgent' ? '#e11d48' : '#d97706';
-        const html = `<div style="font-family:Inter,Segoe UI,sans-serif;line-height:1.5;color:#0f172a">
-          <p style="margin:0 0 8px;font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:${color};font-weight:700">${alertClass}</p>
-          <h2 style="margin:0 0 8px;font-size:18px;">${escapeHtml(title)}</h2>
-          <p style="margin:0 0 16px;font-size:14px;">${escapeHtml(detail)}</p>
-          <p style="margin:0;font-size:12px;opacity:0.7">Open Owner Console → Alerts / Chat / Messages on mohammedsufyan.com</p>
-        </div>`;
+        const timestamp = new Date().toUTCString();
+        const html = buildOwnerAlertEmailHtml({
+          alertClass,
+          title,
+          detail,
+          theme,
+          timestamp,
+        });
+        const text = [
+          `${alertClass.toUpperCase()} — ${title}`,
+          '==============================',
+          detail,
+          '',
+          `Theme: ${theme}`,
+          'Open Owner Console → Alerts / Chat / Messages',
+          cleanSecretEnv(process.env.APP_URL) || 'https://www.mohammedsufyan.com',
+        ].join('\n');
         await dispatchEmailMessage({
           to: DESTINATION_EMAIL,
           fromDisplayName: 'Portfolio Alerts',
           subjectLine: subject,
           html,
-          text: `${title}\n\n${detail}\n\nOpen Owner Console on mohammedsufyan.com`,
+          text,
         });
       },
     });
@@ -1453,7 +1570,7 @@ async function dispatchEmailMessage(params: DispatchEmailParams): Promise<{ prov
       transportErrors.push(`FormSubmit: ${msg}`);
     }
   } else if (!isCustomRecipient) {
-    transportErrors.push('FormSubmit fallback disabled in production (set ALLOW_FORMSUBMIT_FALLBACK=true to enable)');
+    transportErrors.push('FormSubmit fallback disabled (set ALLOW_FORMSUBMIT_FALLBACK=true to enable)');
   }
 
   if (transportErrors.length > 0) {
@@ -1495,24 +1612,164 @@ async function sendContactEmail(payload: ContactPayload): Promise<{ provider: st
   });
 }
 
+function buildOwnerReplyEmailHtml(params: {
+  toName: string;
+  body: string;
+  originalSubject?: string;
+  theme?: EmailTheme;
+  timestamp?: string;
+}): string {
+  const p = getEmailPalette(parseEmailTheme(params.theme ?? 'light'));
+  const safeName = escapeHtml(sanitizeDisplayName(params.toName) || 'there');
+  const safeBody = escapeHtml(params.body).replace(/\r?\n/g, '<br />');
+  const safeTime = escapeHtml(params.timestamp || new Date().toUTCString());
+  const siteUrl = (cleanSecretEnv(process.env.APP_URL) || 'https://www.mohammedsufyan.com').replace(
+    /\/$/,
+    ''
+  );
+  const safeSiteUrl = escapeHtml(siteUrl);
+  const originalBlock = params.originalSubject
+    ? `<div style="margin-top:16px;padding-top:14px;border-top:1px solid ${p.border};">
+        <div style="font-size:10px;font-family:monospace;color:${p.textSoft};text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">
+          In reply to
+        </div>
+        <div style="font-size:13px;color:${p.textMuted};line-height:1.5;">
+          ${escapeHtml(params.originalSubject)}
+        </div>
+      </div>`
+    : '';
+
+  return `<!DOCTYPE html>
+<html lang="en" data-theme="${p.theme}">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="${p.theme}" />
+  <meta name="supported-color-schemes" content="${p.theme}" />
+  <title>Reply from Mohammed Sufyan</title>
+</head>
+<body style="margin:0;padding:0;background-color:${p.pageBg};font-family:'Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:${p.text};">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:${p.pageBg};padding:32px 16px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background-color:${p.cardBg};border:1px solid ${p.border};border-radius:16px;overflow:hidden;">
+          <tr>
+            <td style="padding:24px 28px;background-color:${p.headerBg};border-bottom:1px solid ${p.border};">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                <tr>
+                  <td style="vertical-align:middle;">
+                    <table role="presentation" cellspacing="0" cellpadding="0">
+                      <tr>
+                        <td style="width:38px;height:38px;border-radius:10px;background-color:${p.accentSoftBg};border:1px solid ${p.accentDeep};text-align:center;vertical-align:middle;font-weight:700;font-size:14px;color:${p.accent};font-family:monospace;">
+                          MS
+                        </td>
+                        <td style="padding-left:12px;">
+                          <div style="font-size:15px;font-weight:700;color:${p.textStrong};letter-spacing:0.02em;">
+                            MOHAMMED SUFYAN
+                          </div>
+                          <div style="font-size:11px;font-family:monospace;color:${p.accent};text-transform:uppercase;letter-spacing:0.08em;margin-top:2px;">
+                            Portfolio Owner Reply
+                          </div>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                  <td align="right" style="vertical-align:middle;">
+                    <span style="display:inline-block;padding:5px 10px;border-radius:6px;background-color:${p.badgeSuccessBg};border:1px solid ${p.badgeSuccessBorder};color:${p.badgeSuccessText};font-size:10px;font-family:monospace;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">
+                      REPLY
+                    </span>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:24px 28px 12px 28px;">
+              <div style="font-size:11px;font-family:monospace;color:${p.accent};text-transform:uppercase;letter-spacing:0.1em;margin-bottom:6px;">
+                Direct reply
+              </div>
+              <h1 style="margin:0;font-size:20px;font-weight:700;color:${p.textStrong};line-height:1.3;">
+                Hi ${safeName},
+              </h1>
+              <p style="margin:8px 0 0 0;font-size:12px;font-family:monospace;color:${p.textMuted};">
+                Sent ${safeTime}
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:8px 28px 24px 28px;">
+              <div style="background-color:${p.panelBg};border:1px solid ${p.border};border-left:3px solid ${p.accent};border-radius:12px;padding:18px 20px;">
+                <div style="font-size:14px;line-height:1.65;color:${p.text};">
+                  ${safeBody}
+                </div>
+                ${originalBlock}
+              </div>
+              <p style="margin:20px 0 0 0;font-size:13px;color:${p.textMuted};line-height:1.5;">
+                — Mohammed Sufyan<br />
+                <a href="${safeSiteUrl}" style="color:${p.accent};text-decoration:none;">${safeSiteUrl.replace(/^https?:\/\//, '')}</a>
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 28px;background-color:${p.footerBg};border-top:1px solid ${p.border};font-size:11px;font-family:monospace;color:${p.textSoft};">
+              Mohammed Sufyan Portfolio · Owner reply from the console · You can reply to this email directly
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+}
+
 async function sendOwnerReplyEmail(params: {
   toEmail: string;
   toName: string;
   subject: string;
   body: string;
   originalSubject?: string;
+  theme?: EmailTheme;
 }): Promise<{ provider: string }> {
   const safeName = sanitizeDisplayName(params.toName) || 'there';
   const safeSubject = sanitizeHeaderValue(params.subject).slice(0, 200);
-  const safeBody = escapeHtml(params.body).replace(/\r?\n/g, '<br />');
-  const original = params.originalSubject
-    ? `<p style="margin:16px 0 0;font-size:12px;opacity:0.75;">In reply to: ${escapeHtml(params.originalSubject)}</p>`
-    : '';
-  const html = `<div style="font-family:Inter,Segoe UI,sans-serif;line-height:1.5;color:#0f172a"><p>Hi ${escapeHtml(safeName)},</p><p>${safeBody}</p>${original}<p style="margin-top:24px;font-size:12px;opacity:0.7">— Mohammed Sufyan</p></div>`;
-  const text = `Hi ${safeName},\n\n${params.body.trim()}\n\n— Mohammed Sufyan`;
+  const timestamp = new Date().toUTCString();
+  const html = buildOwnerReplyEmailHtml({
+    toName: safeName,
+    body: params.body,
+    originalSubject: params.originalSubject,
+    theme: params.theme ?? 'light',
+    timestamp,
+  });
+  const text = [
+    `Hi ${safeName},`,
+    '',
+    params.body.trim(),
+    '',
+    params.originalSubject ? `In reply to: ${params.originalSubject}` : '',
+    '',
+    '— Mohammed Sufyan',
+    cleanSecretEnv(process.env.APP_URL) || 'https://www.mohammedsufyan.com',
+  ]
+    .filter((line, i, arr) => !(line === '' && arr[i - 1] === ''))
+    .join('\n')
+    .trim();
+
+  const ownerReplyTo =
+    cleanSecretEnv(process.env.CONTACT_TO_EMAIL) ||
+    cleanSecretEnv(process.env.GMAIL_USER) ||
+    undefined;
+
+  structuredLog('info', 'owner_reply_email_built', {
+    htmlBytes: html.length,
+    branded: html.includes('Portfolio Owner Reply'),
+    theme: params.theme ?? 'light',
+  });
+
   return dispatchEmailMessage({
     to: params.toEmail,
     fromDisplayName: 'Mohammed Sufyan',
+    replyTo: ownerReplyTo,
     subjectLine: safeSubject,
     html,
     text,
@@ -1626,6 +1883,16 @@ function buildTrackingSummaryForClient(
 async function startServer() {
   runtimeOwnerPolicy = await loadDistributedOwnerPolicy(runtimeOwnerPolicy);
 
+  if (isPortfolioVectorConfigured()) {
+    void syncPortfolioVectors().then((result) => {
+      if (result.ok) {
+        console.log(`Portfolio vector index synced (${result.count} chunks).`);
+      } else {
+        console.warn(`Portfolio vector sync skipped/failed: ${result.error || 'unknown'}`);
+      }
+    });
+  }
+
   const app = express();
   app.disable('x-powered-by');
   // Only trust X-Forwarded-* when explicitly enabled or in production behind a reverse proxy
@@ -1738,9 +2005,11 @@ async function startServer() {
     res.status(degraded ? 503 : 200).json({
       ok: !degraded,
       status: degraded ? 'degraded' : 'healthy',
+      version: APP_VERSION,
+      versionLabel: APP_VERSION_LABEL,
       timestamp: new Date().toISOString(),
       emailTransportConfigured: isDirectEmailTransportConfigured(),
-      turnstileConfigured: Boolean(TURNSTILE_SITE_KEY),
+      turnstileConfigured: Boolean(TURNSTILE_SECRET && TURNSTILE_SITE_KEY),
       sessionSecretConfigured: Boolean(process.env.SESSION_SECRET?.trim()),
       incidentMode: runtimeOwnerPolicy.incidentMode,
       distributedStore: isDistributedStoreEnabled() ? 'redis' : 'memory',
@@ -1763,9 +2032,11 @@ async function startServer() {
     const gold = evaluateGoldPathHardening();
     res.status(200).json({
       ok: true,
+      version: APP_VERSION,
+      versionLabel: APP_VERSION_LABEL,
       timestamp: new Date().toISOString(),
       controls: {
-        turnstile: Boolean(TURNSTILE_SITE_KEY),
+        turnstile: Boolean(TURNSTILE_SECRET && TURNSTILE_SITE_KEY),
         redis: isDistributedStoreEnabled(),
         adminWrites: isFirebaseAdminConfigured(),
         mail: isDirectEmailTransportConfigured(),
@@ -1959,6 +2230,7 @@ async function startServer() {
       const raw = (req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {}) as {
         subject?: unknown;
         body?: unknown;
+        theme?: unknown;
       };
       const subject =
         typeof raw.subject === 'string' && raw.subject.trim()
@@ -1966,6 +2238,7 @@ async function startServer() {
           : 'Portfolio owner digest';
       const body =
         typeof raw.body === 'string' ? raw.body.trim().slice(0, 20000) : '';
+      const digestTheme = parseEmailTheme(raw.theme);
       const queued = drainDigestItems();
       const queuedText = formatDigestQueueText(queued);
       const combined = [queuedText, body].filter(Boolean).join('\n\n').trim();
@@ -1973,7 +2246,12 @@ async function startServer() {
         res.status(400).json({ error: 'Digest body is too short.' });
         return;
       }
-      const html = `<pre style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:1.45;white-space:pre-wrap">${escapeHtml(combined.slice(0, 20000))}</pre>`;
+      const html = buildOwnerAlertEmailHtml({
+        alertClass: 'warning',
+        title: subject,
+        detail: combined.slice(0, 20000),
+        theme: digestTheme,
+      });
       const result = await dispatchEmailMessage({
         to: DESTINATION_EMAIL,
         fromDisplayName: 'Portfolio Owner Digest',
@@ -2257,12 +2535,18 @@ async function startServer() {
         subject: subject.slice(0, 200),
         body: body.slice(0, 5000),
         originalSubject,
+        // Outbound professional replies default to light; honor inquiry theme when set.
+        theme: parseEmailTheme(inquiry.theme ?? 'light'),
       });
+
+      // Mark triage via Admin SDK so client Firestore rules can't block a successful send.
+      const triageUpdated = await adminMarkContactReplied(messageId, body.slice(0, 5000));
 
       res.status(200).json({
         ok: true,
         provider: result.provider,
         messageId,
+        triageUpdated,
       });
     } catch (error) {
       const message =
@@ -2591,6 +2875,7 @@ async function startServer() {
           p.risk.isVpnSuspected ? ' · VPN/proxy suspected' : ''
         }`,
         dedupeKey: `inquiry:${messageId}`,
+        theme: p.theme,
       });
 
       res.status(200).json({
@@ -2891,6 +3176,7 @@ async function startServer() {
             telemetry.risk.isVpnSuspected ? ' · VPN/proxy suspected' : ''
           }`,
           dedupeKey: `cvrisk:${cleanEmail.toLowerCase()}:${Math.floor(Date.now() / 3_600_000)}`,
+          theme: cleanTheme,
         });
       }
 
@@ -3079,7 +3365,10 @@ async function startServer() {
       const receiptToken = typeof body.sessionReceipt === 'string' ? body.sessionReceipt : undefined;
       const verifiedSession = verifySessionReceipt(receiptToken, OTP_SECRET);
       if (!verifiedSession) {
-        res.status(401).json({ error: 'Session verification expired. Please re-verify.' });
+        res.status(401).json({
+          error: SESSION_EXPIRED_MESSAGES.cv,
+          code: SESSION_EXPIRED_CODE,
+        });
         return;
       }
 
@@ -3193,7 +3482,8 @@ async function startServer() {
       enabled: chatEnabled,
       ownerOnline: stats.ownerOnline,
       liveChatAvailable: liveEnabled,
-      llmConfigured: isCursorLlmConfigured() && runtimeOwnerPolicy.enableChatLlm,
+      llmConfigured: isGrokLlmConfigured() && runtimeOwnerPolicy.enableChatLlm,
+      vectorConfigured: isPortfolioVectorConfigured(),
       limits: {
         maxQuestionsPerVisitor: runtimeOwnerPolicy.chatMaxQuestionsPerVisitor,
         maxLlmPerVisitor: runtimeOwnerPolicy.chatMaxLlmPerVisitor,
@@ -3244,7 +3534,7 @@ async function startServer() {
       if (sessionId && receipt) {
         const auth = verifyChatSessionReceipt(receipt, sessionId);
         if (!auth.ok) {
-          res.status(401).json({ error: 'Chat session expired. Please verify your email again.' });
+          res.status(401).json(chatSessionAuthError(auth));
           return;
         }
         const session = await getChatSessionAsync(sessionId);
@@ -3283,27 +3573,30 @@ async function startServer() {
 
       const wantLlm =
         runtimeOwnerPolicy.enableChatLlm &&
-        isCursorLlmConfigured() &&
+        isGrokLlmConfigured() &&
         runtimeOwnerPolicy.chatMaxLlmPerVisitor > 0;
-      let provider: 'cursor' | 'grounded' = 'grounded';
-      let answer = answerPortfolioQuestion(question);
+      let provider: 'grok' | 'grounded' = 'grounded';
+      let answer = await answerPortfolioQuestionSmart(question);
 
       if (wantLlm) {
         const llmCheck = await checkChatLimitAsync(visitorKey, 'llm', limitPolicy);
         if (llmCheck.allowed) {
-          const enriched = await enrichAnswerWithCursorLlm(question, {
-            apiKey: process.env.CURSOR_API_KEY || '',
+          const enriched = await enrichAnswerWithGrokLlm(question, {
+            apiKey: process.env.GROK_API_KEY || '',
             modelId: runtimeOwnerPolicy.chatLlmModel,
+            grounded: answer,
           });
           answer = {
             ...enriched.answer,
             followUps: enriched.answer.followUps?.length
               ? enriched.answer.followUps
               : answer.followUps,
+            retrieval: answer.retrieval,
+            retrievalContext: answer.retrievalContext,
           };
           provider = enriched.provider;
-          // Only spend LLM quota when Cursor actually returned an enriched answer.
-          if (enriched.provider === 'cursor') {
+          // Only spend LLM quota when Grok actually returned an enriched answer.
+          if (enriched.provider === 'grok') {
             await consumeChatLimitAsync(visitorKey, 'llm', limitPolicy);
             bumpLlmCall(true);
           } else {
@@ -3339,7 +3632,7 @@ async function startServer() {
           rateWindowHours: runtimeOwnerPolicy.chatRateWindowHours,
         },
         resetAtMs: questionLimit.resetAtMs,
-        session: session ? publicSessionView(session) : undefined,
+        session: session ? publicSessionView(session, { threadOnly: true }) : undefined,
       });
     } catch {
       res.status(500).json({ error: 'Unable to answer right now. Please try again.' });
@@ -3578,13 +3871,14 @@ async function startServer() {
           p.interest ? ` · ${p.interest}` : ''
         } · session ${session.sessionId} · owner ${isOwnerOnline() ? 'online' : 'offline/queued'}`,
         dedupeKey: `live:${session.sessionId}`,
+        theme: p.theme,
       });
 
       res.status(200).json({
         ok: true,
         status: 'live',
         sessionReceipt,
-        session: publicSessionView(session),
+        session: publicSessionView(session, { threadOnly: true }),
         ownerOnline: isOwnerOnline(),
         suggestions: runtimeOwnerPolicy.chatShowSuggestions ? listChatSuggestions() : [],
         remaining: { live: liveLimit.remaining },
@@ -3610,7 +3904,7 @@ async function startServer() {
     const receipt = extractChatReceipt(req);
     const auth = verifyChatSessionReceipt(receipt, sessionId);
     if (!auth.ok) {
-      res.status(401).json({ error: 'Invalid or expired chat session.' });
+      res.status(401).json(chatSessionAuthError(auth));
       return;
     }
     const session = await getChatSessionAsync(sessionId);
@@ -3620,7 +3914,7 @@ async function startServer() {
     }
     res.status(200).json({
       ok: true,
-      session: publicSessionView(session),
+      session: publicSessionView(session, { threadOnly: true }),
       ownerOnline: isOwnerOnline(),
     });
   });
@@ -3639,7 +3933,7 @@ async function startServer() {
       const receipt = extractChatReceipt(req, body.receipt);
       const auth = verifyChatSessionReceipt(receipt, sessionId);
       if (!auth.ok) {
-        res.status(401).json({ error: 'Invalid or expired chat session.' });
+        res.status(401).json(chatSessionAuthError(auth));
         return;
       }
       const clientIp = extractClientIp(req);
@@ -3662,9 +3956,56 @@ async function startServer() {
         res.status(400).json({ error: 'Unable to send message (session may be closed).' });
         return;
       }
-      res.status(200).json({ ok: true, session: publicSessionView(updated), ownerOnline: isOwnerOnline() });
+      res.status(200).json({
+        ok: true,
+        session: publicSessionView(updated, { threadOnly: true }),
+        ownerOnline: isOwnerOnline(),
+      });
     } catch {
       res.status(500).json({ error: 'Unable to send chat message.' });
+    }
+  });
+
+  app.post('/api/chat/live/:sessionId/new', async (req: Request, res: Response) => {
+    try {
+      if (rejectDisallowedOrigin(req, res)) return;
+      const sessionId = typeof req.params.sessionId === 'string' ? req.params.sessionId : '';
+      const body = (req.body && typeof req.body === 'object' && !Array.isArray(req.body)
+        ? req.body
+        : {}) as { receipt?: unknown };
+      const receipt = extractChatReceipt(req, body.receipt);
+      const auth = verifyChatSessionReceipt(receipt, sessionId);
+      if (!auth.ok) {
+        res.status(401).json(chatSessionAuthError(auth));
+        return;
+      }
+      const clientIp = extractClientIp(req);
+      if (
+        await enforceRateLimit(res, 'chat', `new:${clientIp}`, {
+          maxRequests: 20,
+          error: 'Too many new-chat requests. Please wait a moment.',
+        })
+      ) {
+        return;
+      }
+      const session = await getChatSessionAsync(sessionId);
+      if (!session || session.visitorEmail !== auth.email) {
+        res.status(404).json({ error: 'Chat session not found.' });
+        return;
+      }
+      const updated = startNewChatThread(sessionId);
+      if (!updated) {
+        res.status(400).json({ error: 'Unable to start a new chat (session may be closed).' });
+        return;
+      }
+      res.status(200).json({
+        ok: true,
+        session: publicSessionView(updated, { threadOnly: true }),
+        ownerOnline: isOwnerOnline(),
+        suggestions: runtimeOwnerPolicy.chatShowSuggestions ? listChatSuggestions() : [],
+      });
+    } catch {
+      res.status(500).json({ error: 'Unable to start a new chat right now.' });
     }
   });
 
@@ -3674,7 +4015,16 @@ async function startServer() {
       res.status(401).json({ error: authCheck.error });
       return;
     }
-    touchOwnerPresence();
+    const raw =
+      req.body && typeof req.body === 'object' && !Array.isArray(req.body)
+        ? (req.body as { online?: unknown })
+        : {};
+    // Default keeps heartbeat behavior; explicit online:false clears on logout.
+    if (raw.online === false) {
+      clearOwnerPresence();
+    } else {
+      touchOwnerPresence();
+    }
     res.status(200).json({ ok: true, ...getChatStats() });
   });
 
@@ -3701,7 +4051,7 @@ async function startServer() {
           chatLlmModel: runtimeOwnerPolicy.chatLlmModel,
           chatShowSuggestions: runtimeOwnerPolicy.chatShowSuggestions,
           chatOfferLiveAgent: runtimeOwnerPolicy.chatOfferLiveAgent,
-          llmConfigured: isCursorLlmConfigured(),
+          llmConfigured: isGrokLlmConfigured(),
         },
       },
       sessions: listChatSessions().map((s) => publicSessionView(s)),

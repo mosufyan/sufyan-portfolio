@@ -61,7 +61,10 @@ export default function OwnerConsolePage({
     signOutOwner,
   } = useFirebase();
 
-  // Keep live-chat "owner online" presence warm while console is open
+  // Keep live-chat "owner online" presence warm while console is open.
+  // Do NOT clear on unmount — React Strict Mode remounts would race beat(false)
+  // after beat(true) and leave visitors seeing "owner queued". Logout clears via
+  // signOutOwner → POST { online: false }.
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
@@ -71,14 +74,18 @@ export default function OwnerConsolePage({
         if (cancelled) return;
         await fetch('/api/owner/presence', {
           method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ online: true }),
         });
       } catch {
         /* non-fatal */
       }
     };
     void beat();
-    const id = window.setInterval(() => void beat(), 45_000);
+    const id = window.setInterval(() => void beat(), 20_000);
     return () => {
       cancelled = true;
       window.clearInterval(id);
@@ -510,7 +517,6 @@ export default function OwnerConsolePage({
               {section === 'profile' ? (
                 <OwnerProfilePanel
                   isLight={isLight}
-                  onSignOut={() => void handleSignOut()}
                   onOpenSection={(next) => setSection(next)}
                   telemetry={telemetry}
                   opsHealth={opsHealth}

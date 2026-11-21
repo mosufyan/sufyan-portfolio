@@ -10,3 +10,6 @@ coverage/
 .owner-policy-cache.json
 .owner-telemetry-cache.json
 .owner-chat-cache.json
+.owner-alert-digest-cache.json
+codeguard-findings-*.sarif
+.tools/

@@ -1,23 +1,43 @@
-import { FormEvent, useEffect, useRef, useState } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type FormEvent,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import {
   Bot,
   Loader2,
+  Maximize2,
   MessageCircle,
-  Send,
+  MessageSquarePlus,
+  Minimize2,
   Sparkles,
-  UserRound,
   X,
 } from 'lucide-react';
 import { EASE_OUT_EXPO } from './MotionPrimitives';
+import ModalHeaderScan from './ModalHeaderScan';
 import { useTheme } from '../theme/ThemeProvider';
+import { toUserFacingError } from '../utils/userFacingError';
+import {
+  CHAT_WINDOW_DEFAULT,
+  clampChatWindowSize,
+  expandedChatWindowSize,
+  loadChatWindowSize,
+  saveChatWindowSize,
+  type ChatWindowSize,
+} from '../utils/chatWindowLayout';
+import ChatMessageComposer from './ChatMessageComposer';
+
+const OWNER_AVATAR_SRC = '/assets/aistudio/Sufyan_hero_portrait.png';
 
 type ChatBubble = {
   id: string;
   role: 'visitor' | 'bot' | 'owner' | 'system';
   text: string;
   sources?: string[];
-  followUps?: string[];
 };
 
 type LiveSession = {
@@ -31,9 +51,21 @@ type LiveSession = {
 type Mode = 'welcome' | 'register' | 'otp' | 'chat';
 
 const SESSION_STORAGE_KEY = 'ms_chat_verified_session_v1';
+const SESSION_EXPIRED_MESSAGE =
+  'Your verified session expired. Please verify your email again to continue.';
 
 function chatReceiptHeaders(receipt: string): HeadersInit {
   return { 'X-Chat-Receipt': receipt };
+}
+
+function isSessionExpiredResponse(
+  status: number,
+  data: { code?: string; error?: string } | null | undefined
+): boolean {
+  if (status !== 401) return false;
+  if (data?.code === 'session_expired') return true;
+  const err = (data?.error || '').toLowerCase();
+  return err.includes('expired') || err.includes('re-verify') || err.includes('verify your email');
 }
 
 function getOrCreateVisitorId(): string {
@@ -52,31 +84,39 @@ function getOrCreateVisitorId(): string {
   }
 }
 
+function bubblesFromSession(
+  messages: LiveSession['messages']
+): ChatBubble[] {
+  return messages.map((m) => ({
+    id: m.id,
+    role: (m.role === 'visitor' || m.role === 'owner' || m.role === 'bot'
+      ? m.role
+      : 'system') as ChatBubble['role'],
+    text: m.text,
+  }));
+}
+
+/** Verified chat auth stays in memory only — no receipt/PII in sessionStorage. */
+let memoryChatSession: {
+  sessionId: string;
+  receipt: string;
+  name: string;
+  email: string;
+} | null = null;
+
 function loadStoredSession(): {
   sessionId: string;
   receipt: string;
   name: string;
   email: string;
 } | null {
+  // Drop any legacy sessionStorage payload from older builds.
   try {
-    const raw = window.sessionStorage.getItem(SESSION_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as {
-      sessionId?: string;
-      receipt?: string;
-      name?: string;
-      email?: string;
-    };
-    if (!parsed.sessionId || !parsed.receipt || !parsed.name || !parsed.email) return null;
-    return {
-      sessionId: parsed.sessionId,
-      receipt: parsed.receipt,
-      name: parsed.name,
-      email: parsed.email,
-    };
+    window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
   } catch {
-    return null;
+    /* ignore */
   }
+  return memoryChatSession;
 }
 
 function persistSession(input: {
@@ -85,8 +125,18 @@ function persistSession(input: {
   name: string;
   email: string;
 }): void {
+  memoryChatSession = input;
   try {
-    window.sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(input));
+    window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+function clearStoredSession(): void {
+  memoryChatSession = null;
+  try {
+    window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
   } catch {
     /* ignore */
   }
@@ -129,6 +179,90 @@ export default function ChatWidget() {
   const turnstileContainerRef = useRef<HTMLDivElement | null>(null);
   const turnstileWidgetIdRef = useRef<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const resizeRef = useRef<{
+    edge: 'left' | 'top' | 'corner';
+    startX: number;
+    startY: number;
+    startW: number;
+    startH: number;
+  } | null>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [windowSize, setWindowSize] = useState<ChatWindowSize>(() => ({ ...CHAT_WINDOW_DEFAULT }));
+  const [isNarrow, setIsNarrow] = useState(false);
+
+  useEffect(() => {
+    setWindowSize(loadChatWindowSize());
+    const syncViewport = () => {
+      setIsNarrow(window.matchMedia('(max-width: 639px)').matches);
+      setWindowSize((prev) => clampChatWindowSize(prev));
+    };
+    syncViewport();
+    window.addEventListener('resize', syncViewport);
+    return () => window.removeEventListener('resize', syncViewport);
+  }, []);
+
+  useEffect(() => {
+    if (expanded || isNarrow) return;
+    saveChatWindowSize(windowSize);
+  }, [windowSize, expanded, isNarrow]);
+
+  const beginResize = (edge: 'left' | 'top' | 'corner') => (event: ReactPointerEvent) => {
+    if (isNarrow || expanded) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const target = event.currentTarget;
+    target.setPointerCapture(event.pointerId);
+    resizeRef.current = {
+      edge,
+      startX: event.clientX,
+      startY: event.clientY,
+      startW: windowSize.width,
+      startH: windowSize.height,
+    };
+  };
+
+  useEffect(() => {
+    const onMove = (event: PointerEvent) => {
+      const active = resizeRef.current;
+      if (!active) return;
+      const dx = event.clientX - active.startX;
+      const dy = event.clientY - active.startY;
+      // Panel is anchored bottom-right: drag left/top edges outward to grow.
+      const nextW =
+        active.edge === 'left' || active.edge === 'corner' ? active.startW - dx : active.startW;
+      const nextH =
+        active.edge === 'top' || active.edge === 'corner' ? active.startH - dy : active.startH;
+      setWindowSize(clampChatWindowSize({ width: nextW, height: nextH }));
+    };
+    const onUp = () => {
+      resizeRef.current = null;
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    };
+  }, []);
+
+  const toggleExpanded = () => {
+    setExpanded((prev) => {
+      if (prev) {
+        setWindowSize(loadChatWindowSize());
+        return false;
+      }
+      setWindowSize(
+        expandedChatWindowSize({
+          width: window.innerWidth,
+          height: window.innerHeight,
+        })
+      );
+      return true;
+    });
+  };
 
   const panel = isLight
     ? 'border-slate-200 bg-white text-slate-900'
@@ -138,27 +272,34 @@ export default function ChatWidget() {
     ? 'border-slate-300 bg-white text-slate-900 placeholder-slate-400'
     : 'border-slate-700 bg-[#070b14] text-slate-100 placeholder-slate-500';
 
+
   useEffect(() => {
     let cancelled = false;
-    void fetch('/api/chat/status')
-      .then(async (r) =>
-        r.ok
-          ? ((await r.json()) as {
-              enabled?: boolean;
-              ownerOnline?: boolean;
-              suggestions?: string[];
-              liveChatAvailable?: boolean;
-            })
-          : null
-      )
-      .then((data) => {
-        if (cancelled || !data) return;
-        setEnabled(data.enabled !== false);
-        setOtpAvailable(data.liveChatAvailable !== false);
-        setOwnerOnline(Boolean(data.ownerOnline));
-        if (Array.isArray(data.suggestions)) setSuggestions(data.suggestions.slice(0, 5));
-      })
-      .catch(() => {});
+    const refreshStatus = () => {
+      void fetch('/api/chat/status')
+        .then(async (r) =>
+          r.ok
+            ? ((await r.json()) as {
+                enabled?: boolean;
+                ownerOnline?: boolean;
+                suggestions?: string[];
+                liveChatAvailable?: boolean;
+              })
+            : null
+        )
+        .then((data) => {
+          if (cancelled || !data) return;
+          setEnabled(data.enabled !== false);
+          setOtpAvailable(data.liveChatAvailable !== false);
+          setOwnerOnline(Boolean(data.ownerOnline));
+          if (Array.isArray(data.suggestions)) setSuggestions(data.suggestions.slice(0, 5));
+        })
+        .catch(() => {});
+    };
+    refreshStatus();
+    // Poll so Online clears soon after owner logout (not only on next open).
+    const pollMs = open ? 15_000 : 30_000;
+    const id = window.setInterval(refreshStatus, pollMs);
     if (!turnstileSiteKey) {
       void fetch('/api/access-config')
         .then(async (r) => (r.ok ? ((await r.json()) as { turnstileSiteKey?: string }) : null))
@@ -169,6 +310,7 @@ export default function ChatWidget() {
     }
     return () => {
       cancelled = true;
+      window.clearInterval(id);
     };
   }, [open, turnstileSiteKey]);
 
@@ -228,25 +370,74 @@ export default function ChatWidget() {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' });
   }, [bubbles, liveSession?.messages.length, open, mode]);
 
+  const forceReverify = (message = SESSION_EXPIRED_MESSAGE) => {
+    clearStoredSession();
+    setLiveSession(null);
+    setLiveReceipt(null);
+    setBubbles([]);
+    setOtpStep(null);
+    setOtpCode('');
+    setInput('');
+    setMode('register');
+    setError(message);
+  };
+
   useEffect(() => {
     if (mode !== 'chat' || !liveSession || !liveReceipt) return;
     const id = window.setInterval(() => {
       void fetch(`/api/chat/live/${encodeURIComponent(liveSession.sessionId)}`, {
         headers: chatReceiptHeaders(liveReceipt),
       })
-        .then(async (r) =>
-          r.ok
-            ? ((await r.json()) as { session?: LiveSession; ownerOnline?: boolean })
-            : null
-        )
+        .then(async (r) => {
+          const data = (await r.json().catch(() => ({}))) as {
+            session?: LiveSession;
+            ownerOnline?: boolean;
+            code?: string;
+            error?: string;
+          };
+          if (isSessionExpiredResponse(r.status, data)) {
+            forceReverify(data.error || SESSION_EXPIRED_MESSAGE);
+            return null;
+          }
+          return r.ok ? data : null;
+        })
         .then((data) => {
-          if (data?.session) setLiveSession(data.session);
-          if (typeof data?.ownerOnline === 'boolean') setOwnerOnline(data.ownerOnline);
+          if (!data) return;
+          if (data.session) setLiveSession(data.session);
+          if (typeof data.ownerOnline === 'boolean') setOwnerOnline(data.ownerOnline);
         })
         .catch(() => {});
     }, 3500);
     return () => window.clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- forceReverify closes over setters only
   }, [mode, liveSession, liveReceipt]);
+
+  // Keep the visible thread aligned with the server thread (new chat + owner replies).
+  useEffect(() => {
+    if (mode !== 'chat' || !liveSession || busy) return;
+    const next = bubblesFromSession(liveSession.messages);
+    if (next.length === 0) return;
+    setBubbles((prev) => {
+      const merged = next.map((n) => {
+        const prior =
+          prev.find((p) => p.id === n.id) ||
+          prev.find((p) => p.role === n.role && p.text === n.text && p.sources?.length);
+        return prior?.sources?.length ? { ...n, sources: prior.sources } : n;
+      });
+      if (
+        prev.length === merged.length &&
+        prev.every(
+          (b, i) =>
+            b.id === merged[i]?.id &&
+            b.text === merged[i]?.text &&
+            (b.sources || []).join('|') === (merged[i]?.sources || []).join('|')
+        )
+      ) {
+        return prev;
+      }
+      return merged;
+    });
+  }, [mode, liveSession, busy]);
 
   const enterVerifiedChat = (inputSession: {
     session: LiveSession;
@@ -267,13 +458,7 @@ export default function ChatWidget() {
     if (inputSession.starterSuggestions?.length) {
       setSuggestions(inputSession.starterSuggestions.slice(0, 5));
     }
-    const fromSession: ChatBubble[] = inputSession.session.messages.map((m) => ({
-      id: m.id,
-      role: (m.role === 'visitor' || m.role === 'owner' || m.role === 'bot'
-        ? m.role
-        : 'system') as ChatBubble['role'],
-      text: m.text,
-    }));
+    const fromSession = bubblesFromSession(inputSession.session.messages);
     setBubbles(
       fromSession.length > 0
         ? fromSession
@@ -288,6 +473,47 @@ export default function ChatWidget() {
     setMode('chat');
   };
 
+  const startNewChat = async () => {
+    if (busy || !liveSession || !liveReceipt || mode !== 'chat') return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/chat/live/${encodeURIComponent(liveSession.sessionId)}/new`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...chatReceiptHeaders(liveReceipt),
+        },
+        body: JSON.stringify({}),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        code?: string;
+        session?: LiveSession;
+        ownerOnline?: boolean;
+        suggestions?: string[];
+      };
+      if (isSessionExpiredResponse(res.status, data)) {
+        forceReverify(data.error || SESSION_EXPIRED_MESSAGE);
+        return;
+      }
+      if (!res.ok || !data.session) {
+        throw new Error(data.error || 'Unable to start a new chat.');
+      }
+      if (typeof data.ownerOnline === 'boolean') setOwnerOnline(data.ownerOnline);
+      setLiveSession(data.session);
+      setBubbles(bubblesFromSession(data.session.messages));
+      if (Array.isArray(data.suggestions) && data.suggestions.length) {
+        setSuggestions(data.suggestions.slice(0, 5));
+      }
+      setInput('');
+    } catch (err) {
+      setError(toUserFacingError(err, 'Unable to start a new chat.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleOpen = () => {
     const next = !open;
     setOpen(next);
@@ -300,11 +526,19 @@ export default function ChatWidget() {
       void fetch(`/api/chat/live/${encodeURIComponent(stored.sessionId)}`, {
         headers: chatReceiptHeaders(stored.receipt),
       })
-        .then(async (r) =>
-          r.ok
-            ? ((await r.json()) as { session?: LiveSession; ownerOnline?: boolean })
-            : null
-        )
+        .then(async (r) => {
+          const data = (await r.json().catch(() => ({}))) as {
+            session?: LiveSession;
+            ownerOnline?: boolean;
+            code?: string;
+            error?: string;
+          };
+          if (isSessionExpiredResponse(r.status, data)) {
+            forceReverify(data.error || SESSION_EXPIRED_MESSAGE);
+            return null;
+          }
+          return r.ok ? data : null;
+        })
         .then((data) => {
           if (data?.session) {
             if (typeof data.ownerOnline === 'boolean') setOwnerOnline(data.ownerOnline);
@@ -316,9 +550,14 @@ export default function ChatWidget() {
             });
             return;
           }
+          if (data === null) return;
+          clearStoredSession();
           setMode('welcome');
         })
-        .catch(() => setMode('welcome'))
+        .catch(() => {
+          clearStoredSession();
+          setMode('welcome');
+        })
         .finally(() => setBusy(false));
       return;
     }
@@ -347,6 +586,7 @@ export default function ChatWidget() {
       });
       const data = (await res.json().catch(() => ({}))) as {
         error?: string;
+        code?: string;
         answer?: string;
         sources?: string[];
         suggestions?: string[];
@@ -354,11 +594,19 @@ export default function ChatWidget() {
         ownerOnline?: boolean;
         session?: LiveSession;
       };
+      if (isSessionExpiredResponse(res.status, data)) {
+        forceReverify(data.error || SESSION_EXPIRED_MESSAGE);
+        return;
+      }
       if (!res.ok) throw new Error(data.error || 'Unable to answer right now.');
       if (typeof data.ownerOnline === 'boolean') setOwnerOnline(data.ownerOnline);
-      if (Array.isArray(data.suggestions) && data.suggestions.length) {
-        setSuggestions(data.suggestions);
-      }
+      // Replace starter chips with contextual follow-ups (single chip strip near the input).
+      const nextChips = Array.isArray(data.followUps) && data.followUps.length
+        ? data.followUps
+        : Array.isArray(data.suggestions)
+          ? data.suggestions
+          : [];
+      if (nextChips.length) setSuggestions(nextChips.slice(0, 4));
       if (data.session) setLiveSession(data.session);
       setBubbles((prev) => [
         ...prev,
@@ -367,11 +615,10 @@ export default function ChatWidget() {
           role: 'bot',
           text: data.answer || 'No answer returned.',
           sources: data.sources,
-          followUps: Array.isArray(data.followUps) ? data.followUps.slice(0, 3) : [],
         },
       ]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Chat unavailable.');
+      setError(toUserFacingError(err, 'Chat unavailable.'));
     } finally {
       setBusy(false);
     }
@@ -421,7 +668,7 @@ export default function ChatWidget() {
       });
       setMode('otp');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to start verification.');
+      setError(toUserFacingError(err, 'Unable to start verification.'));
     } finally {
       setBusy(false);
     }
@@ -463,7 +710,7 @@ export default function ChatWidget() {
       setOtpCode('');
       setOtpStep(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Verification failed.');
+      setError(toUserFacingError(err, 'Verification failed.'));
     } finally {
       setBusy(false);
     }
@@ -494,23 +741,20 @@ export default function ChatWidget() {
       });
       const data = (await res.json().catch(() => ({}))) as {
         error?: string;
+        code?: string;
         session?: LiveSession;
         ownerOnline?: boolean;
       };
+      if (isSessionExpiredResponse(res.status, data)) {
+        forceReverify(data.error || SESSION_EXPIRED_MESSAGE);
+        return;
+      }
       if (!res.ok || !data.session) throw new Error(data.error || 'Unable to send message.');
       setLiveSession(data.session);
       if (typeof data.ownerOnline === 'boolean') setOwnerOnline(data.ownerOnline);
-      setBubbles(
-        data.session.messages.map((m) => ({
-          id: m.id,
-          role: (m.role === 'visitor' || m.role === 'owner' || m.role === 'bot'
-            ? m.role
-            : 'system') as ChatBubble['role'],
-          text: m.text,
-        }))
-      );
+      setBubbles(bubblesFromSession(data.session.messages));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to send.');
+      setError(toUserFacingError(err, 'Unable to send.'));
     } finally {
       setBusy(false);
     }
@@ -522,35 +766,101 @@ export default function ChatWidget() {
     ? 'border-slate-200 hover:border-sky-300 text-slate-600 bg-white'
     : 'border-slate-700 hover:border-cyan-500/40 text-slate-300 bg-[#070b14]';
 
+  const panelStyle =
+    isNarrow
+      ? expanded
+        ? {
+            width: '100%',
+            height: 'min(100dvh - 4.5rem, 100dvh - env(safe-area-inset-bottom) - 4.5rem)',
+            maxHeight: 'calc(100dvh - 4.5rem)',
+          }
+        : {
+            width: '100%',
+            height: 'min(88dvh, 40rem)',
+            maxHeight: 'calc(100dvh - 5.5rem)',
+          }
+      : expanded
+        ? {
+            width: Math.min(window.innerWidth - 24, Math.max(windowSize.width, 640)),
+            height: Math.min(window.innerHeight - 88, Math.max(windowSize.height, 480)),
+            maxWidth: 'calc(100vw - 1.5rem)',
+            maxHeight: 'calc(100dvh - 5.5rem)',
+          }
+        : {
+            width: windowSize.width,
+            height: windowSize.height,
+            maxWidth: 'calc(100vw - 1.5rem)',
+            maxHeight: 'calc(100dvh - 5.5rem)',
+          };
+
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[42] flex justify-end p-[max(0.75rem,env(safe-area-inset-bottom))] pr-[max(0.75rem,env(safe-area-inset-right))] print:hidden sm:inset-x-auto sm:right-0 sm:bottom-0 sm:p-[max(1.25rem,env(safe-area-inset-bottom))] sm:pr-[max(1.25rem,env(safe-area-inset-right))]">
-      <div className="pointer-events-none flex w-full max-w-[100vw] flex-col items-stretch gap-3 sm:w-auto sm:items-end">
+    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[42] flex justify-end p-[max(0.75rem,env(safe-area-inset-bottom))] pr-[max(0.75rem,env(safe-area-inset-right))] pl-[max(0.75rem,env(safe-area-inset-left))] print:hidden sm:inset-x-auto sm:right-0 sm:bottom-0 sm:p-[max(1.25rem,env(safe-area-inset-bottom))] sm:pr-[max(1.25rem,env(safe-area-inset-right))]">
+      <div className="pointer-events-none flex w-full max-w-[100vw] flex-col items-stretch gap-3 sm:w-auto sm:max-w-none sm:items-end">
         <AnimatePresence>
           {open && (
             <motion.div
+              ref={panelRef}
               initial={shouldReduceMotion ? false : { opacity: 0, y: 18, scale: 0.97 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 12, scale: 0.98 }}
               transition={{ duration: 0.28, ease: EASE_OUT_EXPO }}
-              className={`pointer-events-auto flex w-full flex-col overflow-hidden rounded-2xl border shadow-2xl sm:w-[min(100vw-2rem,28rem)] md:w-[30rem] ${panel} h-[min(88dvh,40rem)] max-h-[calc(100dvh-5.5rem)] sm:h-[min(78dvh,38rem)]`}
+              style={panelStyle as CSSProperties}
+              className={`pointer-events-auto relative flex w-full flex-col overflow-hidden rounded-2xl border shadow-2xl ${panel} ${
+                isNarrow ? 'max-w-full' : ''
+              }`}
               role="dialog"
               aria-label="Portfolio chat"
+              aria-modal="true"
             >
-              <div
-                className={`flex items-center justify-between gap-2 px-3.5 py-3 border-b shrink-0 ${
-                  isLight ? 'border-slate-200 bg-slate-50' : 'border-slate-800 bg-[#080c14]'
-                }`}
-              >
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5 text-sm font-semibold">
+              {!isNarrow && !expanded && (
+                <>
+                  <div
+                    role="separator"
+                    aria-orientation="vertical"
+                    aria-label="Resize chat width"
+                    onPointerDown={beginResize('left')}
+                    className="absolute inset-y-3 left-0 z-20 w-2 cursor-ew-resize touch-none"
+                  />
+                  <div
+                    role="separator"
+                    aria-orientation="horizontal"
+                    aria-label="Resize chat height"
+                    onPointerDown={beginResize('top')}
+                    className="absolute inset-x-3 top-0 z-20 h-2 cursor-ns-resize touch-none"
+                  />
+                  <div
+                    role="separator"
+                    aria-label="Resize chat"
+                    onPointerDown={beginResize('corner')}
+                    className="absolute left-0 top-0 z-30 h-4 w-4 cursor-nwse-resize touch-none"
+                  />
+                </>
+              )}
+              {/* Always-dark header — navbar-chrome opts out of lightTheme remaps */}
+              <div className="navbar-chrome relative flex items-center justify-between gap-2 px-3.5 py-3 border-b border-slate-800 bg-[#080b13] shrink-0">
+                <ModalHeaderScan active={open} />
+                <div className="relative min-w-0">
+                  <div className="flex items-center gap-1.5 text-sm font-semibold text-white">
                     <Sparkles className="w-4 h-4 text-cyan-400 shrink-0" />
                     <span className="truncate">
                       {mode === 'chat' && customerName
                         ? `Hi, ${customerName.split(' ')[0]}`
                         : 'Portfolio Assistant'}
                     </span>
+                    {ownerOnline && (
+                      <span
+                        className="inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-mono font-semibold uppercase tracking-wider text-emerald-300"
+                        title="Mohammed is online"
+                      >
+                        <span className="relative flex h-1.5 w-1.5">
+                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+                          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                        </span>
+                        Online
+                      </span>
+                    )}
                   </div>
-                  <div className={`text-[10px] font-mono uppercase tracking-wider ${muted}`}>
+                  <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
                     {mode === 'welcome' && 'Welcome'}
                     {mode === 'register' && 'Step 1 · Your details'}
                     {mode === 'otp' && 'Step 2 · Email OTP'}
@@ -558,14 +868,38 @@ export default function ChatWidget() {
                       (ownerOnline ? 'Verified · owner online' : 'Verified · owner queued')}
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setOpen(false)}
-                  className={`p-1.5 rounded-lg border ${isLight ? 'border-slate-200' : 'border-slate-700'} cursor-pointer`}
-                  aria-label="Close chat"
-                >
-                  <X className="w-4 h-4" />
-                </button>
+                <div className="relative flex items-center gap-1.5 shrink-0">
+                  {mode === 'chat' && liveSession && liveReceipt && (
+                    <button
+                      type="button"
+                      onClick={() => void startNewChat()}
+                      disabled={busy}
+                      className="inline-flex items-center gap-1 rounded-lg border border-slate-700 px-2 py-1.5 text-[11px] font-medium text-slate-300 transition-colors hover:border-cyan-500/40 hover:text-cyan-300 disabled:opacity-50 cursor-pointer"
+                      aria-label="Start a new chat"
+                      title="Start a new chat"
+                    >
+                      <MessageSquarePlus className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">New chat</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={toggleExpanded}
+                    className="p-1.5 rounded-lg border border-slate-700 text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer"
+                    aria-label={expanded ? 'Collapse chat' : 'Expand chat'}
+                    title={expanded ? 'Collapse' : 'Expand'}
+                  >
+                    {expanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOpen(false)}
+                    className="p-1.5 rounded-lg border border-slate-700 text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer"
+                    aria-label="Close chat"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
 
               <div ref={listRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-3 space-y-2.5">
@@ -625,14 +959,25 @@ export default function ChatWidget() {
                   >
                     {b.role !== 'visitor' && (
                       <div
-                        className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border ${
-                          isLight
-                            ? 'border-sky-200 bg-sky-50 text-sky-700'
-                            : 'border-cyan-500/30 bg-cyan-950/40 text-cyan-300'
+                        className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-lg border ${
+                          b.role === 'owner'
+                            ? isLight
+                              ? 'border-sky-300 bg-slate-100'
+                              : 'border-cyan-400/50 bg-[#0b1220]'
+                            : isLight
+                              ? 'border-sky-200 bg-sky-50 text-sky-700'
+                              : 'border-cyan-500/30 bg-cyan-950/40 text-cyan-300'
                         }`}
                       >
                         {b.role === 'owner' ? (
-                          <UserRound className="w-3.5 h-3.5" />
+                          <img
+                            src={OWNER_AVATAR_SRC}
+                            alt="Mohammed Sufyan"
+                            width={28}
+                            height={28}
+                            className="h-full w-full object-cover object-top"
+                            decoding="async"
+                          />
                         ) : (
                           <Bot className="w-3.5 h-3.5" />
                         )}
@@ -659,28 +1004,13 @@ export default function ChatWidget() {
                           </div>
                         )}
                       </div>
-                      {b.followUps && b.followUps.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5 pl-0.5">
-                          {b.followUps.map((fu) => (
-                            <button
-                              key={fu}
-                              type="button"
-                              disabled={busy}
-                              onClick={() => void askBot(fu)}
-                              className={`text-[10px] font-mono px-2 py-1 rounded-lg border cursor-pointer disabled:opacity-50 ${chipCls}`}
-                            >
-                              {fu}
-                            </button>
-                          ))}
-                        </div>
-                      )}
                     </div>
                   </div>
                 ))}
               </div>
 
               {error && (
-                <div className="px-3 pb-1 text-[11px] text-rose-400 shrink-0" role="alert">
+                <div className="px-3 pb-2 shrink-0 text-[11px] text-rose-400" role="alert">
                   {error}
                 </div>
               )}
@@ -730,7 +1060,9 @@ export default function ChatWidget() {
                     className={`w-full rounded-xl border px-3 py-2 text-xs focus:outline-none resize-none focus:border-cyan-400 ${field}`}
                   />
                   {turnstileSiteKey ? (
-                    <div ref={turnstileContainerRef} className="min-h-[65px]" />
+                    <div className="flex w-full justify-center min-h-[65px]">
+                      <div ref={turnstileContainerRef} />
+                    </div>
                   ) : null}
                   <input
                     tabIndex={-1}
@@ -814,25 +1146,20 @@ export default function ChatWidget() {
                       </button>
                     ))}
                   </div>
-                  <form
-                    onSubmit={sendOwnerMessage}
-                    className={`p-3 border-t flex gap-2 shrink-0 ${isLight ? 'border-slate-200' : 'border-slate-800'}`}
+                  <div
+                    className={`p-3 border-t shrink-0 ${isLight ? 'border-slate-200' : 'border-slate-800'}`}
                   >
-                    <input
+                    <ChatMessageComposer
                       value={input}
-                      onChange={(e) => setInput(e.target.value)}
+                      onChange={setInput}
+                      onSubmit={sendOwnerMessage}
+                      busy={busy}
+                      isLight={isLight}
                       placeholder="Ask a concise question… (@mohammed for live note)"
-                      className={`flex-1 min-w-0 rounded-xl border px-3 py-2.5 text-xs focus:outline-none focus:border-cyan-400 ${field}`}
+                      submitAriaLabel="Send question"
+                      minSubmitLength={2}
                     />
-                    <button
-                      type="submit"
-                      disabled={busy || input.trim().length < 2}
-                      className="inline-flex items-center justify-center rounded-xl bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-slate-950 px-3 cursor-pointer"
-                      aria-label="Send question"
-                    >
-                      {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                    </button>
-                  </form>
+                  </div>
                 </>
               )}
             </motion.div>
@@ -844,10 +1171,17 @@ export default function ChatWidget() {
           whileHover={shouldReduceMotion ? undefined : { y: -2, scale: 1.03 }}
           whileTap={{ scale: 0.96 }}
           onClick={handleOpen}
-          className="pointer-events-auto ml-auto inline-flex h-12 w-12 items-center justify-center rounded-2xl border border-cyan-400/40 bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-950/40 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+          className="pointer-events-auto relative ml-auto inline-flex h-12 w-12 items-center justify-center rounded-2xl border border-cyan-400/40 bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-950/40 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
           aria-label={open ? 'Close portfolio chat' : 'Open portfolio chat'}
         >
           {open ? <X className="w-5 h-5" /> : <MessageCircle className="w-5 h-5" />}
+          {!open && ownerOnline && (
+            <span
+              className="absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full border-2 border-[#020617] bg-emerald-400"
+              title="Owner online"
+              aria-hidden
+            />
+          )}
         </motion.button>
       </div>
     </div>

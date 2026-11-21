@@ -2,6 +2,7 @@ import { Linkedin } from './icons/Linkedin';
 import { Mail, ArrowUp, QrCode, Terminal, Shield } from 'lucide-react';
 import { motion } from 'motion/react';
 import { PERSONAL_INFO } from '../data/portfolioData';
+import { APP_VERSION_LABEL } from '../version';
 import { useFirebase } from '../contexts/FirebaseContext';
 import { HoverLift, Reveal } from './MotionPrimitives';
 import PWAInstallButton from './PWAInstallButton';
@@ -141,10 +142,19 @@ export default function Footer({ onOpenDigitalCard, onOpenTerminal, onOpenSecuri
           </div>
         </div>
 
-        {/* Bottom bar */}
+        {/* Bottom bar — version stays muted mono next to copyright (not a badge/pill). */}
         <div className="pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs font-mono text-slate-500 text-center sm:text-left">
-          <div>
-            © {new Date().getFullYear()} Mohammed Sufyan. All rights reserved.
+          <div className="flex flex-wrap items-center justify-center sm:justify-start gap-x-2 gap-y-1">
+            <span>© {new Date().getFullYear()} Mohammed Sufyan. All rights reserved.</span>
+            <span className="hidden sm:inline text-slate-700" aria-hidden="true">
+              ·
+            </span>
+            <span
+              className="text-slate-600 tracking-wide"
+              title={`Portfolio site release ${APP_VERSION_LABEL}`}
+            >
+              {APP_VERSION_LABEL}
+            </span>
           </div>
 
           <div className="flex flex-wrap items-center justify-center sm:justify-end gap-3 sm:gap-4">

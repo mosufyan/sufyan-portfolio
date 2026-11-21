@@ -45,7 +45,7 @@ describe('ownerGovernance utilities', () => {
       chatMaxQuestionsPerVisitor: 999,
       chatMaxLlmPerVisitor: -2,
       enableChatLlm: true,
-      chatLlmModel: 'composer-2',
+      chatLlmModel: 'grok-4.7',
     });
     expect(sanitized.availabilityStatus).toBe('advisory');
     expect(sanitized.maintenanceMode).toBe(true);
@@ -56,7 +56,7 @@ describe('ownerGovernance utilities', () => {
     expect(sanitized.chatMaxQuestionsPerVisitor).toBe(200);
     expect(sanitized.chatMaxLlmPerVisitor).toBe(0);
     expect(sanitized.enableChatLlm).toBe(true);
-    expect(sanitized.chatLlmModel).toBe('composer-2');
+    expect(sanitized.chatLlmModel).toBe('grok-4.7');
 
     const effective = getEffectivePortfolioSettings(sanitized);
     expect(effective.maintenanceMode).toBe(true);

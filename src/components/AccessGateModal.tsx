@@ -34,6 +34,7 @@ import {
 import ModalHeaderScan from './ModalHeaderScan';
 import { EASE_OUT_EXPO } from './MotionPrimitives';
 import ShineSurface from './ShineSurface';
+import { toUserFacingError } from '../utils/userFacingError';
 
 export type AccessGateAction = 'pdf' | 'print' | 'ats' | 'install';
 
@@ -77,11 +78,21 @@ declare global {
   }
 }
 
+export const ACCESS_SESSION_EXPIRED_MESSAGE =
+  'Session verification expired. Please re-verify.';
+
+export type TrackCvEventResult =
+  | { status: 'ok'; summary: CvTrackingSummary }
+  | { status: 'expired'; message: string }
+  | { status: 'skipped' };
+
 interface AccessGateModalProps {
   action: AccessGateAction | null;
   formatLabel?: string;
   /** Override site theme (e.g. CV Light Paper). Defaults to site theme. */
   isLight?: boolean;
+  /** Shown when reopening the gate after a timed-out verified session. */
+  initialError?: string | null;
   onClose: () => void;
   onVerified: (action: AccessGateAction, trackingSummary?: CvTrackingSummary) => void;
 }
@@ -136,6 +147,13 @@ function removeStorage(key: string): void {
   }
 }
 
+/** HMAC session receipts stay in memory only — never sessionStorage (XSS-readable). */
+const memoryReceipts = new Map<string, string>();
+
+function receiptMemoryKey(action: AccessGateAction): string {
+  return action === 'install' ? PWA_SESSION_RECEIPT_KEY : CV_SESSION_RECEIPT_KEY;
+}
+
 /** CV export actions share one unlock; install is tracked separately. */
 export function isAccessUnlocked(action: AccessGateAction = 'pdf'): boolean {
   if (action === 'install') {
@@ -151,27 +169,32 @@ export function isAccessUnlocked(action: AccessGateAction = 'pdf'): boolean {
 }
 
 export function getSessionReceipt(action: AccessGateAction = 'pdf'): string | null {
-  return readStorage(action === 'install' ? PWA_SESSION_RECEIPT_KEY : CV_SESSION_RECEIPT_KEY);
+  return memoryReceipts.get(receiptMemoryKey(action)) || null;
 }
 
 export function markAccessUnlocked(action: AccessGateAction, sessionReceipt?: string): void {
   if (action === 'install') {
     writeStorage(PWA_INSTALL_UNLOCK_KEY, '1');
-    if (sessionReceipt) writeStorage(PWA_SESSION_RECEIPT_KEY, sessionReceipt);
+    if (sessionReceipt) memoryReceipts.set(PWA_SESSION_RECEIPT_KEY, sessionReceipt);
     return;
   }
   writeStorage(CV_EXPORT_UNLOCK_KEY, '1');
-  if (sessionReceipt) writeStorage(CV_SESSION_RECEIPT_KEY, sessionReceipt);
+  if (sessionReceipt) memoryReceipts.set(CV_SESSION_RECEIPT_KEY, sessionReceipt);
   removeStorage(ACCESS_UNLOCK_STORAGE_KEY);
+  // Drop any legacy receipt tokens previously written to sessionStorage.
+  removeStorage(CV_SESSION_RECEIPT_KEY);
+  removeStorage(PWA_SESSION_RECEIPT_KEY);
 }
 
 export function clearAccessUnlocked(action: AccessGateAction = 'pdf'): void {
   if (action === 'install') {
     removeStorage(PWA_INSTALL_UNLOCK_KEY);
+    memoryReceipts.delete(PWA_SESSION_RECEIPT_KEY);
     removeStorage(PWA_SESSION_RECEIPT_KEY);
     return;
   }
   removeStorage(CV_EXPORT_UNLOCK_KEY);
+  memoryReceipts.delete(CV_SESSION_RECEIPT_KEY);
   removeStorage(CV_SESSION_RECEIPT_KEY);
 }
 
@@ -180,9 +203,9 @@ export async function trackSubsequentCvEvent(params: {
   formatLabel: string;
   theme: 'dark' | 'light';
   onPersistLog?: (summary: CvTrackingSummary) => Promise<void>;
-}): Promise<CvTrackingSummary | null> {
+}): Promise<TrackCvEventResult> {
   const receipt = getSessionReceipt(params.action);
-  if (!receipt) return null;
+  if (!receipt) return { status: 'skipped' };
 
   try {
     const context = collectClientTelemetryContext();
@@ -199,17 +222,23 @@ export async function trackSubsequentCvEvent(params: {
       }),
     });
 
-    if (res.status === 401) {
-      clearAccessUnlocked(params.action);
-      return null;
-    }
-
-    if (!res.ok) return null;
     const data = (await res.json().catch(() => ({}))) as {
       ok?: boolean;
+      error?: string;
+      code?: string;
       trackingSummary?: CvTrackingSummary;
       telemetryPersistedByServer?: boolean;
     };
+
+    if (res.status === 401) {
+      clearAccessUnlocked(params.action);
+      return {
+        status: 'expired',
+        message: data.error || ACCESS_SESSION_EXPIRED_MESSAGE,
+      };
+    }
+
+    if (!res.ok) return { status: 'skipped' };
 
     if (data.ok && data.trackingSummary) {
       if (params.onPersistLog && !data.telemetryPersistedByServer) {
@@ -217,11 +246,11 @@ export async function trackSubsequentCvEvent(params: {
           console.warn('Firestore subsequent telemetry write skipped:', err);
         });
       }
-      return data.trackingSummary;
+      return { status: 'ok', summary: data.trackingSummary };
     }
-    return null;
+    return { status: 'skipped' };
   } catch {
-    return null;
+    return { status: 'skipped' };
   }
 }
 
@@ -229,6 +258,7 @@ export default function AccessGateModal({
   action,
   formatLabel = 'Portfolio Access',
   isLight: isLightProp,
+  initialError = null,
   onClose,
   onVerified,
 }: AccessGateModalProps) {
@@ -250,7 +280,7 @@ export default function AccessGateModal({
     guessDefaultPhoneCountry()
   );
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(initialError);
   const [otpStep, setOtpStep] = useState<OtpStepState | null>(null);
   const [otpCode, setOtpCode] = useState('');
   const [turnstileSiteKey, setTurnstileSiteKey] = useState<string>(
@@ -268,6 +298,7 @@ export default function AccessGateModal({
       setTurnstileToken('');
       return;
     }
+    if (initialError) setError(initialError);
 
     if (!turnstileSiteKey) {
       fetch('/api/access-config')
@@ -476,7 +507,7 @@ export default function AccessGateModal({
 
       finalizeVerifiedSession(action, data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not verify request right now. Please try again.');
+      setError(toUserFacingError(err, 'Could not verify request right now. Please try again.'));
     } finally {
       setSubmitting(false);
     }
@@ -519,7 +550,7 @@ export default function AccessGateModal({
 
       finalizeVerifiedSession(action, data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Verification failed. Please try again.');
+      setError(toUserFacingError(err, 'Verification failed. Please try again.'));
     } finally {
       setSubmitting(false);
     }
@@ -531,7 +562,7 @@ export default function AccessGateModal({
   const panel = isLight
     ? 'border-slate-200 bg-white'
     : 'border-slate-700 bg-[#0d121f]';
-  const header = 'border-slate-800 bg-[#080b13]';
+  const header = 'navbar-chrome border-slate-800 bg-[#080b13]';
   const lockBox = 'bg-cyan-950/60 border-cyan-500/40 text-cyan-400';
   const title = 'text-white';
   const badge = 'bg-cyan-950/50 border-cyan-500/30 text-cyan-300';
