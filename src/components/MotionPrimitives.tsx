@@ -143,6 +143,52 @@ export function StaggerItem({
   );
 }
 
+/** Soft scale+fade entrance for section blocks (phones → TV). */
+export function SoftRise({
+  children,
+  className = '',
+  delay = 0,
+}: {
+  children: ReactNode;
+  className?: string;
+  delay?: number;
+}) {
+  const shouldReduceMotion = useReducedMotion();
+  return (
+    <motion.div
+      initial={shouldReduceMotion ? false : { opacity: 0, y: 22, scale: 0.985 }}
+      whileInView={{ opacity: 1, y: 0, scale: 1 }}
+      viewport={{ once: true, amount: 0.08 }}
+      transition={{ duration: 0.58, delay, ease: EASE_OUT_EXPO }}
+      className={`print-force-visible ${className}`}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
+/** Subtle hover lift for interactive surfaces; no-ops under reduced motion. */
+export function HoverLift({
+  children,
+  className = '',
+  y = -4,
+}: {
+  children: ReactNode;
+  className?: string;
+  y?: number;
+}) {
+  const shouldReduceMotion = useReducedMotion();
+  return (
+    <motion.div
+      whileHover={shouldReduceMotion ? undefined : { y }}
+      transition={{ type: 'spring', stiffness: 320, damping: 22, mass: 0.45 }}
+      className={className}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
 function metricZero(value: string): string {
   const match = value.match(/^(\d+(?:\.\d+)?)(.*)$/);
   if (!match) return value;

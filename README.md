@@ -10,7 +10,7 @@
   ·
   <a href="https://www.linkedin.com/in/mohammed-sufyan">LinkedIn</a>
   ·
-  <a href="./SECURITY.md">Security</a>
+  <a href="./docs/SECURITY.md">Security</a>
 </p>
 
 <p align="center">
@@ -20,7 +20,9 @@
 ---
 
 Interactive personal portfolio built with **React**, **Vite**, **Express**, **Tailwind CSS**, **Firebase Auth & Firestore**, and **Motion**.
-It includes multi-skill filtering, a command palette (`⌘K`/`Ctrl+K`), an interactive CLI (`sufyanctl`), dark/light themes, real-time announcements, a digital business card, an OTP-verified inquiry & CV export studio, and a full-page Owner Security & Governance Console accessible directly from the navbar.
+It includes multi-skill filtering, a command palette (`⌘K`/`Ctrl+K`), an interactive CLI (`sufyanctl`), dark/light themes, real-time announcements, a digital business card, an OTP-verified inquiry & CV export studio, OTP-gated portfolio chat (Upstash Vector RAG + optional Grok LLM), and a full-page Owner Security & Governance Console accessible directly from the navbar.
+
+Docs: **[Architecture](./docs/ARCHITECTURE.md)** · **[Security configuration](./docs/SECURITY_CONFIGURATION.md)** · **[External tools & costs](./docs/EXTERNAL_TOOLS_AND_COSTS.md)** · **[Portfolio assessment](./docs/PORTFOLIO_ASSESSMENT.md)** · **[SECURITY.md](./docs/SECURITY.md)**.
 
 ## Features
 
@@ -31,8 +33,9 @@ It includes multi-skill filtering, a command palette (`⌘K`/`Ctrl+K`), an inter
 | **Themes** | Site Dark / Light Paper mode + independent CV & Analytics PDF Light/Dark export |
 | **Contact (`Transmit Message`)** | Quick-intent presets, mandatory 6-digit email OTP verification, Cloudflare Turnstile, honeypot, inquiry triage |
 | **CV / PWA studio** | Live preview, custom presets, A4 print layout, ATS plain-text export, OTP-gated lead telemetry |
-| **Owner Console (Full-Page)** | Navbar Google Sign-In, CV & Message analytics charts, Light/Dark exact-layout PDF export, triage pipeline, announcements CRUD, allow/block rules, site/maintenance toggles, admin audit log |
-| **Ops** | Vitest unit tests, CI (`tsc --noEmit` / tests / `npm audit` / build) |
+| **Owner Console (Full-Page)** | Navbar Google Sign-In, `#owner/<tab>` deep links, CV & Message analytics, funnel/CRM/alerts, Light/Dark PDF export, triage + inbox replies, announcements (draft/schedule/publish), delegates, feature switches, incident mode, audit log |
+| **Portfolio chat** | OTP-gated welcome, Turnstile on live start, Upstash Vector RAG (+ keyword fallback), optional Grok enrichment with per-visitor caps, header-bound session receipts, owner live-agent console |
+| **Ops** | Vitest unit tests, GitHub Actions CI/CD (PR verify + Docker; `main` → Cloud Run), `/api/health` · `/api/status` · `/api/uptime`, architecture + security docs |
 
 ## Tech stack
 
@@ -41,6 +44,7 @@ It includes multi-skill filtering, a command palette (`⌘K`/`Ctrl+K`), an inter
 - **Database & Auth:** Firebase Authentication (Google Sign-In) + Cloud Firestore with strict Security Rules
 - **Tooling:** TypeScript, Vitest, ESLint (`firestore.rules`), GitHub Actions
 - **Hosting:** Google Cloud Run
+- **CI/CD:** GitHub Actions — PRs run lint/tests/audit/build + Docker image build; merges to `main` deploy to Cloud Run (Workload Identity)
 
 ---
 
@@ -74,12 +78,12 @@ This codebase applies layered defense-in-depth across the Express API server, Re
   - `index.html` includes `<meta name="robots" content="noai, noimageai, noarchive" />` and API routes emit `X-Robots-Tag: noindex, nofollow, noarchive`.
 
 ### 5. HTTP Security Headers, Injection & CSRF Defenses
-- **Security Headers (`server/security.ts`)**: Strict `Content-Security-Policy` (no `unsafe-eval` in production), `Strict-Transport-Security`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()`, `Cross-Origin-Opener-Policy: same-origin-allow-popups` (required for Firebase Google Auth popups), and `X-Frame-Options: DENY` / `frame-ancestors 'none'` in custom-domain production.
+- **Security Headers (`server/security.ts`)**: Strict `Content-Security-Policy` (no `unsafe-eval` in production), `Strict-Transport-Security`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy: camera=(), microphone=(self), geolocation=(), payment=()`, `Cross-Origin-Opener-Policy: same-origin-allow-popups` (required for Firebase Google Auth popups), and `X-Frame-Options: DENY` / `frame-ancestors 'none'` in custom-domain production.
 - **Cross-Origin & Fetch Metadata Enforcement**: Mutation POST endpoints enforce both `Origin`/`Referer` allowlisting (`ALLOWED_ORIGINS`) and Fetch Metadata rejection (`Sec-Fetch-Site: cross-site` -> `403`).
 - **Sanitization & Injection Prevention**: Strict email character allowlisting, `sanitizeHeaderValue` / `sanitizeDisplayName` stripping CR/LF/control bytes to eliminate SMTP header injection, `escapeHtml` across all email templates and dynamic OG meta tags, plus validated `resolveSafeBaseUrl()` to prevent HTTP `Host` header injection.
 - **Zero Client Secrets**: All mail credentials, OTP HMAC secrets, Firebase public key verification, and Turnstile secrets stay strictly server-side (`.env` gitignored).
 
-For threat model notes and operational recommendations (WAF, Redis rate limits, Firebase App Check), see [SECURITY.md](./SECURITY.md).
+For threat model notes and operational recommendations (WAF, Redis rate limits, Firebase App Check), see [SECURITY.md](./docs/SECURITY.md).
 
 ---
 
@@ -141,6 +145,8 @@ Open **[http://localhost:3000](http://localhost:3000)**.
 | `npm run build` | Production Vite build → `dist/` |
 | `npm start` | Serve production build + APIs (`NODE_ENV=production`) |
 | `npm run lint` | Typecheck (`tsc --noEmit`) |
+| `npm run precommit` | Local pre-commit gate (Gitleaks + typecheck + rules lint) |
+| `npm run release -- 1.0.1` | Bump `package.json`, commit, create annotated `v*` tag (add `--push` to publish) |
 | `npm test` | Unit tests (Vitest) |
 | `npm run security:audit` | Production dependency audit |
 
@@ -154,13 +160,15 @@ npm start
 ## Project layout
 
 ```text
-src/                 React UI, Owner Console, Resume Studio, Contexts & Utilities
-server.ts            Express server (APIs, OTP, RS256 owner policy sync, OG tags, SPA serving)
-server/security.ts   Validation, CSP, headers, IP/email rate limits, bot/origin guards, Turnstile
-server/telemetry.ts  IP/ASN intelligence, risk scoring, HMAC OTP/session tokens, MX & phone checks
-firestore.rules      Strict schema-validated Firebase Security Rules
-public/              Static assets (icons, robots.txt, manifest, OG cards)
-.github/workflows/   CI (lint / test / audit / build)
+src/                 React UI, Owner Console, ChatWidget, Resume Studio, contexts & utilities
+server.ts            Express APIs (OTP, chat, owner, telemetry, OG, SPA serving)
+server/              security, telemetry, distributedStore, chat*, grokLlm, portfolioVector, observability
+docs/                Architecture, security, security config, costs, portfolio assessment
+scripts/             wire-*-secrets.sh, setup-github-actions-deploy.sh
+firestore.rules      Strict schema-validated Firebase Security Rules (Admin-only PII creates)
+firestore.indexes.json  Composite indexes for announcements / analytics queries
+public/              Static assets, robots.txt, .well-known/security.txt, OG cards
+.github/workflows/   CI/CD (PR verify + Docker; main → Cloud Run)
 ```
 
 ## License

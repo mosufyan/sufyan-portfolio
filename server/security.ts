@@ -142,25 +142,40 @@ export function buildContentSecurityPolicy(
     ? "frame-ancestors 'self' https://aistudio.google.com https://*.google.com https://*.googleusercontent.com"
     : "frame-ancestors 'none'";
 
+  // Theme boot script in index.html — keep hash in sync if that inline block changes.
+  const themeBootScriptHash = "'sha256-KPGRZh0iZGUQvbOmIn+AyQYlSk1cQH0oPPOFJbrwICg='";
+
   return [
     "default-src 'self'",
     isDev
-      ? "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com https://www.gstatic.com https://www.google.com https://challenges.cloudflare.com"
-      : "script-src 'self' 'unsafe-inline' https://apis.google.com https://www.gstatic.com https://www.google.com https://challenges.cloudflare.com",
+      ? `script-src 'self' 'unsafe-inline' 'unsafe-eval' ${themeBootScriptHash} https://apis.google.com https://www.gstatic.com https://www.google.com https://www.gstatic.com/recaptcha/ https://www.recaptcha.net https://challenges.cloudflare.com`
+      : `script-src 'self' ${themeBootScriptHash} https://apis.google.com https://www.gstatic.com https://www.google.com https://www.gstatic.com/recaptcha/ https://www.recaptcha.net https://challenges.cloudflare.com`,
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    "img-src 'self' data: blob: https://*.googleusercontent.com",
+    "img-src 'self' data: blob: https://*.googleusercontent.com https://www.gstatic.com https://www.recaptcha.net",
     "font-src 'self' data: https://fonts.gstatic.com",
     isDev
-      ? "connect-src 'self' ws: wss: https://challenges.cloudflare.com https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com https://accounts.google.com"
-      : "connect-src 'self' https://challenges.cloudflare.com https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com https://accounts.google.com",
-    "frame-src 'self' https://challenges.cloudflare.com https://*.firebaseapp.com https://accounts.google.com https://www.google.com",
+      ? "connect-src 'self' ws: wss: https://challenges.cloudflare.com https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firebaseappcheck.googleapis.com https://content-firebaseappcheck.googleapis.com https://www.googleapis.com https://accounts.google.com https://www.recaptcha.net"
+      : "connect-src 'self' https://challenges.cloudflare.com https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firebaseappcheck.googleapis.com https://content-firebaseappcheck.googleapis.com https://www.googleapis.com https://accounts.google.com https://www.recaptcha.net",
+    "frame-src 'self' https://challenges.cloudflare.com https://*.firebaseapp.com https://accounts.google.com https://www.google.com https://www.recaptcha.net https://recaptcha.google.com",
     "worker-src 'self' blob:",
     "manifest-src 'self'",
     "base-uri 'self'",
     "form-action 'self'",
     frameAncestors,
     "object-src 'none'",
+    "report-uri /api/csp-report",
   ].join('; ');
+}
+
+/** Stricter report-only policy (no unsafe-inline / unsafe-eval) for migration telemetry. */
+export function buildContentSecurityPolicyReportOnly(
+  isDev: boolean,
+  options: { allowPreviewIframe?: boolean } = {}
+): string {
+  const enforced = buildContentSecurityPolicy(isDev, options);
+  return enforced
+    .replace(" 'unsafe-inline'", '')
+    .replace(" 'unsafe-eval'", '');
 }
 
 export function applySecurityHeaders(
@@ -170,7 +185,8 @@ export function applySecurityHeaders(
   const allowPreviewIframe = Boolean(options.allowPreviewIframe);
   setHeader('X-Content-Type-Options', 'nosniff');
   setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
+  // microphone=(self) required for chat speech-to-text; empty () blocks getUserMedia entirely.
+  setHeader('Permissions-Policy', 'camera=(), microphone=(self), geolocation=(), payment=()');
   setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
   if (!allowPreviewIframe) {
     setHeader('X-Frame-Options', 'DENY');
@@ -179,20 +195,28 @@ export function applySecurityHeaders(
     'Content-Security-Policy',
     buildContentSecurityPolicy(options.isDev, { allowPreviewIframe })
   );
+  setHeader(
+    'Content-Security-Policy-Report-Only',
+    buildContentSecurityPolicyReportOnly(options.isDev, { allowPreviewIframe })
+  );
   if (options.isHttps) {
     setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   }
 }
 
 /**
- * Soft same-origin check for browser POSTs.
- * Missing Origin/Referer (curl, some privacy browsers) is allowed; mismatched hosts are rejected.
+ * Same-origin check for browser POSTs.
+ * In production, missing Origin/Referer is rejected (CSRF-hardening).
+ * In non-production, missing Origin/Referer is allowed for curl/local tooling.
  */
 export function isAllowedRequestOrigin(
   originOrReferer: string | undefined,
-  allowedOrigins: string[]
+  allowedOrigins: string[],
+  options: { requireOrigin?: boolean } = {}
 ): boolean {
-  if (!originOrReferer) return true;
+  const requireOrigin =
+    options.requireOrigin ?? process.env.NODE_ENV === 'production';
+  if (!originOrReferer) return !requireOrigin;
   let parsed: URL;
   try {
     parsed = new URL(originOrReferer);
@@ -225,17 +249,27 @@ export function resolveAllowedOrigins(appUrl: string | undefined, port: number):
 export function isFormSubmitFallbackAllowed(env: NodeJS.ProcessEnv = process.env): boolean {
   const flag = (env.ALLOW_FORMSUBMIT_FALLBACK || '').toLowerCase();
   if (flag === '1' || flag === 'true' || flag === 'yes') return true;
-  // Dev convenience only
-  return env.NODE_ENV !== 'production';
+  // Never auto-enable: third-party PII relay must be an explicit opt-in.
+  return false;
 }
 
 export async function verifyTurnstileToken(
   token: string | undefined,
   secret: string | undefined,
-  remoteIp?: string
+  remoteIp?: string,
+  options: { failOpenWithoutSecret?: boolean } = {}
 ): Promise<{ ok: boolean; skipped: boolean; error?: string }> {
   if (!secret) {
-    return { ok: true, skipped: true };
+    const failOpen =
+      options.failOpenWithoutSecret ?? process.env.NODE_ENV !== 'production';
+    if (failOpen) {
+      return { ok: true, skipped: true };
+    }
+    return {
+      ok: false,
+      skipped: false,
+      error: 'Bot verification is not configured. Please try again later.',
+    };
   }
   if (!token || typeof token !== 'string' || token.trim().length < 10) {
     return { ok: false, skipped: false, error: 'Bot verification failed. Please refresh and try again.' };

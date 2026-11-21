@@ -1,0 +1,15 @@
+name: "sufyan-portfolio"
+queries:
+  - uses: security-extended
+# Custom distributed rate limiting + Firebase/session auth are invisible to these
+# heuristics. File→HTTP findings are intentional (portfolio context → LLM/email,
+# verified UID → Firestore).
+query-filters:
+  - exclude:
+      id: js/missing-rate-limiting
+  - exclude:
+      id: js/user-controlled-bypass
+  - exclude:
+      id: js/file-access-to-http
+  - exclude:
+      id: js/http-to-file-access

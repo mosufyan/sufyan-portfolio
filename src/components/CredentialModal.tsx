@@ -80,8 +80,8 @@ export default function CredentialModal({ certification, onClose }: CredentialMo
             className={`relative w-full max-w-xl 2xl:max-w-2xl max-h-[min(calc(100dvh-1.5rem),35.5rem)] sm:max-h-[min(calc(100dvh-2.5rem),36rem)] lg:max-h-[min(calc(100dvh-3rem),46rem)] overflow-hidden rounded-2xl border shadow-2xl flex flex-col ${panel}`}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Always-dark header */}
-            <div className="relative flex items-start justify-between gap-3 px-5 sm:px-6 py-4 border-b border-slate-800/90 bg-[#0b101b] shrink-0">
+            {/* Always-dark header — navbar-chrome opts out of lightTheme remaps */}
+            <div className="navbar-chrome relative flex items-start justify-between gap-3 px-5 sm:px-6 py-4 border-b border-slate-800/90 bg-[#0b101b] shrink-0">
               <ModalHeaderScan active={Boolean(certification)} />
               <div className="flex items-center gap-2.5 min-w-0">
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-950/50 border border-emerald-500/40 text-emerald-400">

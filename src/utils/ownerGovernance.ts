@@ -6,6 +6,10 @@ export const ADMIN_AUDIT_EVENTS = [
   'rule_deleted',
   'triage_updated',
   'announcement_mutated',
+  'owner_reply_sent',
+  'delegate_added',
+  'delegate_removed',
+  'incident_mode_toggled',
 ] as const;
 
 export type AdminAuditEventType = (typeof ADMIN_AUDIT_EVENTS)[number];
@@ -44,11 +48,54 @@ export interface AdminAuditLogRecord extends AdminAuditLogPayload {
 export const PORTFOLIO_AVAILABILITY_STATUSES = ['open', 'advisory', 'unavailable'] as const;
 export type AvailabilityStatus = (typeof PORTFOLIO_AVAILABILITY_STATUSES)[number];
 
+export const OWNER_ALERT_CLASSES = ['urgent', 'warning', 'digest', 'off'] as const;
+export type OwnerAlertClass = (typeof OWNER_ALERT_CLASSES)[number];
+
+export const OWNER_ALERT_EVENT_TYPES = [
+  'new_inquiry',
+  'live_chat',
+  'risk_download',
+  'unusual_traffic',
+  'chat_limit',
+  'overdue_crm',
+] as const;
+export type OwnerAlertEventType = (typeof OWNER_ALERT_EVENT_TYPES)[number];
+
+export const OWNER_ALERT_EVENT_LABELS: Record<OwnerAlertEventType, string> = {
+  new_inquiry: 'New contact inquiry',
+  live_chat: 'Verified live chat / customer session',
+  risk_download: 'High-risk / VPN CV download',
+  unusual_traffic: 'Unusual traffic / rate pressure',
+  chat_limit: 'Visitor chat limit reached',
+  overdue_crm: 'Overdue CRM follow-up',
+};
+
+export function sanitizeOwnerAlertClass(
+  value: unknown,
+  fallback: OwnerAlertClass
+): OwnerAlertClass {
+  return value === 'urgent' || value === 'warning' || value === 'digest' || value === 'off'
+    ? value
+    : fallback;
+}
+
 export const PORTFOLIO_SETTINGS_CONSTRAINTS = {
   availabilityTextMaxLength: 140,
   maintenanceMessageMaxLength: 300,
+  incidentMessageMaxLength: 300,
   uidMinLength: 1,
   uidMaxLength: 128,
+  chatLlmModelMaxLength: 64,
+  chatMaxQuestionsPerVisitorMin: 1,
+  chatMaxQuestionsPerVisitorMax: 200,
+  chatMaxLlmPerVisitorMin: 0,
+  chatMaxLlmPerVisitorMax: 100,
+  chatMaxLiveSessionsPerVisitorMin: 0,
+  chatMaxLiveSessionsPerVisitorMax: 50,
+  chatRateWindowHoursMin: 1,
+  chatRateWindowHoursMax: 168,
+  chatLlmTimeoutMsMin: 3000,
+  chatLlmTimeoutMsMax: 60000,
 } as const;
 
 export interface PortfolioSettings {
@@ -60,6 +107,66 @@ export interface PortfolioSettings {
   enableCvDownloads: boolean;
   strictOtpForAll: boolean;
   showAnnouncementsBadge: boolean;
+  /** Public announcements entry + modal (badge only applies when this is on). */
+  enableAnnouncements: boolean;
+  /** Resume / CV studio modal (view + customize); exports still need enableCvDownloads. */
+  enableResumeStudio: boolean;
+  /** Digital business card / QR modal. */
+  enableDigitalCard: boolean;
+  /** Command palette (⌘K / Ctrl+K). */
+  enableCommandPalette: boolean;
+  /** Interactive engineering terminal (sufyanctl). */
+  enableTerminal: boolean;
+  /** PWA install button + OTP install gate. */
+  enablePwaInstall: boolean;
+  /** Cross-section skill filter chips and ?skill= deep links. */
+  enableSkillFilter: boolean;
+  /** Brief / Deep reading mode controls. */
+  enableReadingModes: boolean;
+  /** Desktop scroll rail + unified scroll HUD. */
+  enableScrollHud: boolean;
+  /** Anonymous pageview / OG share telemetry beacons. */
+  enableSiteTelemetry: boolean;
+  /** One-click lockdown: maintenance + pause contact/CV + strict OTP. */
+  incidentMode: boolean;
+  incidentMessage: string;
+  /** When true, new verified inquiries also trigger an owner alert email subject tag. */
+  notifyOnNewInquiry: boolean;
+  /** Portfolio grounded chatbot widget. */
+  enablePortfolioChat: boolean;
+  /** OTP-gated live agent chat. */
+  enableLiveChat: boolean;
+  /** Optional Grok (xAI) enrichment on top of grounded retrieval. */
+  enableChatLlm: boolean;
+  /** Max bot questions per visitor within the rate window (default 10). */
+  chatMaxQuestionsPerVisitor: number;
+  /** Max Grok LLM-enriched answers per visitor within the rate window. */
+  chatMaxLlmPerVisitor: number;
+  /** Max OTP live sessions per visitor email within the rate window. */
+  chatMaxLiveSessionsPerVisitor: number;
+  /** Sliding window length for per-visitor chat caps (hours). */
+  chatRateWindowHours: number;
+  /** Optional Cursor model id (empty = account default). */
+  chatLlmModel: string;
+  /** Show starter suggestion chips in the chat widget. */
+  chatShowSuggestions: boolean;
+  /** Offer live-agent handoff when bot confidence is low. */
+  chatOfferLiveAgent: boolean;
+  /** Master switch for owner email alert routing (urgent / warning / digest). */
+  alertEmailEnabled: boolean;
+  /** Send immediate email for events classified as urgent. */
+  alertEmailUrgent: boolean;
+  /** Send immediate email for events classified as warning. */
+  alertEmailWarning: boolean;
+  /** Queue digest-class (and copies of higher) events for digest emails. */
+  alertEmailDigest: boolean;
+  /** Event → urgency class mappings. */
+  alertClassNewInquiry: OwnerAlertClass;
+  alertClassLiveChat: OwnerAlertClass;
+  alertClassRiskDownload: OwnerAlertClass;
+  alertClassUnusualTraffic: OwnerAlertClass;
+  alertClassChatLimit: OwnerAlertClass;
+  alertClassOverdueCrm: OwnerAlertClass;
 }
 
 export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
@@ -72,7 +179,67 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
   enableCvDownloads: true,
   strictOtpForAll: false,
   showAnnouncementsBadge: true,
+  enableAnnouncements: true,
+  enableResumeStudio: true,
+  enableDigitalCard: true,
+  enableCommandPalette: true,
+  enableTerminal: true,
+  enablePwaInstall: true,
+  enableSkillFilter: true,
+  enableReadingModes: true,
+  enableScrollHud: true,
+  enableSiteTelemetry: true,
+  incidentMode: false,
+  incidentMessage:
+    'Incident response mode is active. Public contact and CV exports are temporarily paused.',
+  notifyOnNewInquiry: true,
+  enablePortfolioChat: true,
+  enableLiveChat: true,
+  enableChatLlm: false,
+  chatMaxQuestionsPerVisitor: 10,
+  chatMaxLlmPerVisitor: 5,
+  chatMaxLiveSessionsPerVisitor: 3,
+  chatRateWindowHours: 24,
+  chatLlmModel: '',
+  chatShowSuggestions: true,
+  chatOfferLiveAgent: true,
+  alertEmailEnabled: true,
+  alertEmailUrgent: true,
+  alertEmailWarning: true,
+  alertEmailDigest: true,
+  alertClassNewInquiry: 'digest',
+  alertClassLiveChat: 'urgent',
+  alertClassRiskDownload: 'warning',
+  alertClassUnusualTraffic: 'warning',
+  alertClassChatLimit: 'digest',
+  alertClassOverdueCrm: 'warning',
 };
+
+function clampInt(value: unknown, fallback: number, min: number, max: number): number {
+  const n = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(n)));
+}
+
+export interface AdminDelegateDraft {
+  uid: string;
+  email: string;
+}
+
+export interface AdminDelegateRecord extends AdminDelegateDraft {
+  role: 'admin';
+  createdByUid: string;
+  createdAtMs: number;
+  createdAtIso: string;
+}
+
+export const ADMIN_DELEGATE_CONSTRAINTS = {
+  uidMinLength: 1,
+  uidMaxLength: 128,
+  emailMinLength: 3,
+  emailMaxLength: 254,
+  emailPattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+} as const;
 
 export const ACCESS_RULE_TYPES = ['allow', 'block'] as const;
 export type AccessRuleType = (typeof ACCESS_RULE_TYPES)[number];
@@ -114,14 +281,23 @@ function clampString(value: unknown, maxLen: number): string {
   return value.trim().slice(0, maxLen);
 }
 
+function randomIdSuffix(length = 6): string {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  const bytes = new Uint8Array(length);
+  crypto.getRandomValues(bytes);
+  let out = '';
+  for (let i = 0; i < length; i += 1) {
+    out += alphabet[bytes[i]! % alphabet.length]!;
+  }
+  return out;
+}
+
 export function generateAuditId(): string {
-  const rand = Math.random().toString(36).slice(2, 8).toUpperCase();
-  return `AUD-${Date.now().toString(36).toUpperCase()}-${rand}`.slice(0, 64);
+  return `AUD-${Date.now().toString(36).toUpperCase()}-${randomIdSuffix()}`.slice(0, 64);
 }
 
 export function generateRuleId(): string {
-  const rand = Math.random().toString(36).slice(2, 8).toUpperCase();
-  return `RULE-${Date.now().toString(36).toUpperCase()}-${rand}`.slice(0, 64);
+  return `RULE-${Date.now().toString(36).toUpperCase()}-${randomIdSuffix()}`.slice(0, 64);
 }
 
 export function sanitizeAdminAuditPayload(input: {
@@ -205,7 +381,261 @@ export function sanitizePortfolioSettings(input: Partial<PortfolioSettings> | nu
       typeof input.showAnnouncementsBadge === 'boolean'
         ? input.showAnnouncementsBadge
         : DEFAULT_PORTFOLIO_SETTINGS.showAnnouncementsBadge,
+    enableAnnouncements:
+      typeof input.enableAnnouncements === 'boolean'
+        ? input.enableAnnouncements
+        : DEFAULT_PORTFOLIO_SETTINGS.enableAnnouncements,
+    enableResumeStudio:
+      typeof input.enableResumeStudio === 'boolean'
+        ? input.enableResumeStudio
+        : DEFAULT_PORTFOLIO_SETTINGS.enableResumeStudio,
+    enableDigitalCard:
+      typeof input.enableDigitalCard === 'boolean'
+        ? input.enableDigitalCard
+        : DEFAULT_PORTFOLIO_SETTINGS.enableDigitalCard,
+    enableCommandPalette:
+      typeof input.enableCommandPalette === 'boolean'
+        ? input.enableCommandPalette
+        : DEFAULT_PORTFOLIO_SETTINGS.enableCommandPalette,
+    enableTerminal:
+      typeof input.enableTerminal === 'boolean'
+        ? input.enableTerminal
+        : DEFAULT_PORTFOLIO_SETTINGS.enableTerminal,
+    enablePwaInstall:
+      typeof input.enablePwaInstall === 'boolean'
+        ? input.enablePwaInstall
+        : DEFAULT_PORTFOLIO_SETTINGS.enablePwaInstall,
+    enableSkillFilter:
+      typeof input.enableSkillFilter === 'boolean'
+        ? input.enableSkillFilter
+        : DEFAULT_PORTFOLIO_SETTINGS.enableSkillFilter,
+    enableReadingModes:
+      typeof input.enableReadingModes === 'boolean'
+        ? input.enableReadingModes
+        : DEFAULT_PORTFOLIO_SETTINGS.enableReadingModes,
+    enableScrollHud:
+      typeof input.enableScrollHud === 'boolean'
+        ? input.enableScrollHud
+        : DEFAULT_PORTFOLIO_SETTINGS.enableScrollHud,
+    enableSiteTelemetry:
+      typeof input.enableSiteTelemetry === 'boolean'
+        ? input.enableSiteTelemetry
+        : DEFAULT_PORTFOLIO_SETTINGS.enableSiteTelemetry,
+    incidentMode: Boolean(input.incidentMode),
+    incidentMessage:
+      clampString(
+        input.incidentMessage ?? DEFAULT_PORTFOLIO_SETTINGS.incidentMessage,
+        PORTFOLIO_SETTINGS_CONSTRAINTS.incidentMessageMaxLength
+      ) || DEFAULT_PORTFOLIO_SETTINGS.incidentMessage,
+    notifyOnNewInquiry:
+      typeof input.notifyOnNewInquiry === 'boolean'
+        ? input.notifyOnNewInquiry
+        : DEFAULT_PORTFOLIO_SETTINGS.notifyOnNewInquiry,
+    enablePortfolioChat:
+      typeof input.enablePortfolioChat === 'boolean'
+        ? input.enablePortfolioChat
+        : DEFAULT_PORTFOLIO_SETTINGS.enablePortfolioChat,
+    enableLiveChat:
+      typeof input.enableLiveChat === 'boolean'
+        ? input.enableLiveChat
+        : DEFAULT_PORTFOLIO_SETTINGS.enableLiveChat,
+    enableChatLlm:
+      typeof input.enableChatLlm === 'boolean'
+        ? input.enableChatLlm
+        : DEFAULT_PORTFOLIO_SETTINGS.enableChatLlm,
+    chatMaxQuestionsPerVisitor: clampInt(
+      input.chatMaxQuestionsPerVisitor,
+      DEFAULT_PORTFOLIO_SETTINGS.chatMaxQuestionsPerVisitor,
+      PORTFOLIO_SETTINGS_CONSTRAINTS.chatMaxQuestionsPerVisitorMin,
+      PORTFOLIO_SETTINGS_CONSTRAINTS.chatMaxQuestionsPerVisitorMax
+    ),
+    chatMaxLlmPerVisitor: clampInt(
+      input.chatMaxLlmPerVisitor,
+      DEFAULT_PORTFOLIO_SETTINGS.chatMaxLlmPerVisitor,
+      PORTFOLIO_SETTINGS_CONSTRAINTS.chatMaxLlmPerVisitorMin,
+      PORTFOLIO_SETTINGS_CONSTRAINTS.chatMaxLlmPerVisitorMax
+    ),
+    chatMaxLiveSessionsPerVisitor: clampInt(
+      input.chatMaxLiveSessionsPerVisitor,
+      DEFAULT_PORTFOLIO_SETTINGS.chatMaxLiveSessionsPerVisitor,
+      PORTFOLIO_SETTINGS_CONSTRAINTS.chatMaxLiveSessionsPerVisitorMin,
+      PORTFOLIO_SETTINGS_CONSTRAINTS.chatMaxLiveSessionsPerVisitorMax
+    ),
+    chatRateWindowHours: clampInt(
+      input.chatRateWindowHours,
+      DEFAULT_PORTFOLIO_SETTINGS.chatRateWindowHours,
+      PORTFOLIO_SETTINGS_CONSTRAINTS.chatRateWindowHoursMin,
+      PORTFOLIO_SETTINGS_CONSTRAINTS.chatRateWindowHoursMax
+    ),
+    chatLlmModel: clampString(
+      input.chatLlmModel ?? DEFAULT_PORTFOLIO_SETTINGS.chatLlmModel,
+      PORTFOLIO_SETTINGS_CONSTRAINTS.chatLlmModelMaxLength
+    ),
+    chatShowSuggestions:
+      typeof input.chatShowSuggestions === 'boolean'
+        ? input.chatShowSuggestions
+        : DEFAULT_PORTFOLIO_SETTINGS.chatShowSuggestions,
+    chatOfferLiveAgent:
+      typeof input.chatOfferLiveAgent === 'boolean'
+        ? input.chatOfferLiveAgent
+        : DEFAULT_PORTFOLIO_SETTINGS.chatOfferLiveAgent,
+    alertEmailEnabled:
+      typeof input.alertEmailEnabled === 'boolean'
+        ? input.alertEmailEnabled
+        : DEFAULT_PORTFOLIO_SETTINGS.alertEmailEnabled,
+    alertEmailUrgent:
+      typeof input.alertEmailUrgent === 'boolean'
+        ? input.alertEmailUrgent
+        : DEFAULT_PORTFOLIO_SETTINGS.alertEmailUrgent,
+    alertEmailWarning:
+      typeof input.alertEmailWarning === 'boolean'
+        ? input.alertEmailWarning
+        : DEFAULT_PORTFOLIO_SETTINGS.alertEmailWarning,
+    alertEmailDigest:
+      typeof input.alertEmailDigest === 'boolean'
+        ? input.alertEmailDigest
+        : DEFAULT_PORTFOLIO_SETTINGS.alertEmailDigest,
+    alertClassNewInquiry: sanitizeOwnerAlertClass(
+      input.alertClassNewInquiry,
+      DEFAULT_PORTFOLIO_SETTINGS.alertClassNewInquiry
+    ),
+    alertClassLiveChat: sanitizeOwnerAlertClass(
+      input.alertClassLiveChat,
+      DEFAULT_PORTFOLIO_SETTINGS.alertClassLiveChat
+    ),
+    alertClassRiskDownload: sanitizeOwnerAlertClass(
+      input.alertClassRiskDownload,
+      DEFAULT_PORTFOLIO_SETTINGS.alertClassRiskDownload
+    ),
+    alertClassUnusualTraffic: sanitizeOwnerAlertClass(
+      input.alertClassUnusualTraffic,
+      DEFAULT_PORTFOLIO_SETTINGS.alertClassUnusualTraffic
+    ),
+    alertClassChatLimit: sanitizeOwnerAlertClass(
+      input.alertClassChatLimit,
+      DEFAULT_PORTFOLIO_SETTINGS.alertClassChatLimit
+    ),
+    alertClassOverdueCrm: sanitizeOwnerAlertClass(
+      input.alertClassOverdueCrm,
+      DEFAULT_PORTFOLIO_SETTINGS.alertClassOverdueCrm
+    ),
   };
+}
+
+/** UX-only subset safe to expose on `portfolio_settings/public` (no caps/alerts/LLM). */
+export type PublicPortfolioSettings = Pick<
+  PortfolioSettings,
+  | 'availabilityStatus'
+  | 'availabilityText'
+  | 'maintenanceMode'
+  | 'maintenanceMessage'
+  | 'enableContactForm'
+  | 'enableCvDownloads'
+  | 'showAnnouncementsBadge'
+  | 'enableAnnouncements'
+  | 'enableResumeStudio'
+  | 'enableDigitalCard'
+  | 'enableCommandPalette'
+  | 'enableTerminal'
+  | 'enablePwaInstall'
+  | 'enableSkillFilter'
+  | 'enableReadingModes'
+  | 'enableScrollHud'
+  | 'enableSiteTelemetry'
+  | 'incidentMode'
+  | 'incidentMessage'
+  | 'enablePortfolioChat'
+  | 'enableLiveChat'
+  | 'chatShowSuggestions'
+  | 'chatOfferLiveAgent'
+>;
+
+export function toPublicPortfolioSettings(settings: PortfolioSettings): PublicPortfolioSettings {
+  return {
+    availabilityStatus: settings.availabilityStatus,
+    availabilityText: settings.availabilityText,
+    maintenanceMode: settings.maintenanceMode,
+    maintenanceMessage: settings.maintenanceMessage,
+    enableContactForm: settings.enableContactForm,
+    enableCvDownloads: settings.enableCvDownloads,
+    showAnnouncementsBadge: settings.showAnnouncementsBadge,
+    enableAnnouncements: settings.enableAnnouncements,
+    enableResumeStudio: settings.enableResumeStudio,
+    enableDigitalCard: settings.enableDigitalCard,
+    enableCommandPalette: settings.enableCommandPalette,
+    enableTerminal: settings.enableTerminal,
+    enablePwaInstall: settings.enablePwaInstall,
+    enableSkillFilter: settings.enableSkillFilter,
+    enableReadingModes: settings.enableReadingModes,
+    enableScrollHud: settings.enableScrollHud,
+    enableSiteTelemetry: settings.enableSiteTelemetry,
+    incidentMode: settings.incidentMode,
+    incidentMessage: settings.incidentMessage,
+    enablePortfolioChat: settings.enablePortfolioChat,
+    enableLiveChat: settings.enableLiveChat,
+    chatShowSuggestions: settings.chatShowSuggestions,
+    chatOfferLiveAgent: settings.chatOfferLiveAgent,
+  };
+}
+
+/** Merge a public UX snapshot onto defaults (private caps/alerts stay default until owner loads global). */
+export function mergePublicPortfolioSettings(
+  publicSlice: Partial<PublicPortfolioSettings> | null | undefined
+): PortfolioSettings {
+  return sanitizePortfolioSettings({
+    ...DEFAULT_PORTFOLIO_SETTINGS,
+    ...publicSlice,
+  });
+}
+
+/** Visitor-facing effective settings when incident mode is active. */
+export function getEffectivePortfolioSettings(settings: PortfolioSettings): PortfolioSettings {
+  if (!settings.incidentMode) return settings;
+  return {
+    ...settings,
+    maintenanceMode: true,
+    enableContactForm: false,
+    enableCvDownloads: false,
+    strictOtpForAll: true,
+    enablePortfolioChat: false,
+    enableLiveChat: false,
+    enableChatLlm: false,
+    enableAnnouncements: false,
+    enableResumeStudio: false,
+    enableDigitalCard: false,
+    enableCommandPalette: false,
+    enableTerminal: false,
+    enablePwaInstall: false,
+    enableSkillFilter: false,
+    enableReadingModes: false,
+    enableScrollHud: false,
+    enableSiteTelemetry: false,
+    maintenanceMessage: settings.incidentMessage || settings.maintenanceMessage,
+  };
+}
+
+export function validateAdminDelegateDraft(draft: AdminDelegateDraft): {
+  valid: boolean;
+  error?: string;
+  normalized?: { uid: string; email: string };
+} {
+  const uid = clampString(draft.uid, ADMIN_DELEGATE_CONSTRAINTS.uidMaxLength);
+  const email = clampString(draft.email, ADMIN_DELEGATE_CONSTRAINTS.emailMaxLength).toLowerCase();
+
+  if (uid.length < ADMIN_DELEGATE_CONSTRAINTS.uidMinLength) {
+    return { valid: false, error: 'Firebase UID is required.' };
+  }
+  if (!/^[a-zA-Z0-9_-]+$/.test(uid)) {
+    return { valid: false, error: 'UID may only contain letters, numbers, underscores, and hyphens.' };
+  }
+  if (
+    email.length < ADMIN_DELEGATE_CONSTRAINTS.emailMinLength ||
+    !ADMIN_DELEGATE_CONSTRAINTS.emailPattern.test(email)
+  ) {
+    return { valid: false, error: 'Please enter a valid delegate email address.' };
+  }
+
+  return { valid: true, normalized: { uid, email } };
 }
 
 export function normalizeRuleValue(matchType: AccessRuleMatchType, rawValue: string): string {

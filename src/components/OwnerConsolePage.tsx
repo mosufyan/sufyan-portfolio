@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ArrowLeft,
   Download,
@@ -10,24 +10,43 @@ import {
   Shield,
   ShieldCheck,
   SlidersHorizontal,
+  Activity,
+  Bell,
+  UserRound,
+  Users,
   Wrench,
+  Headphones,
 } from 'lucide-react';
 import { useFirebase } from '../contexts/FirebaseContext';
 import { useTheme } from '../theme/ThemeProvider';
 import { OWNER_EMAIL } from '../utils/announcementValidation';
+import {
+  parseOwnerConsoleHash,
+  writeOwnerConsoleHash,
+  type OwnerConsoleSectionId,
+} from '../utils/ownerConsoleRouting';
 import { CvAnalyticsPanel, type WorkspaceTab } from './CvAnalyticsView';
 import OwnerAnnouncementsPanel from './OwnerAnnouncementsPanel';
+import OwnerAlertsPanel from './OwnerAlertsPanel';
+import OwnerFunnelPanel from './OwnerFunnelPanel';
+import OwnerProfilePanel, { useOwnerOpsHealth } from './OwnerProfilePanel';
+import { DelegatesPanel } from './OwnerGovernancePanels';
+import OwnerChatPanel from './OwnerChatPanel';
 
-export type OwnerConsoleSection = WorkspaceTab | 'announcements';
+export type OwnerConsoleSection = OwnerConsoleSectionId;
 
 interface OwnerConsolePageProps {
   onBackToPortfolio: () => void;
   onOpenResume: () => void;
+  initialSection?: OwnerConsoleSectionId;
 }
+
+const WORKSPACE_TABS = new Set<string>(['downloads', 'messages', 'rules', 'settings', 'audit']);
 
 export default function OwnerConsolePage({
   onBackToPortfolio,
   onOpenResume,
+  initialSection,
 }: OwnerConsolePageProps) {
   const { isLight } = useTheme();
   const {
@@ -37,11 +56,66 @@ export default function OwnerConsolePage({
     announcements,
     accessRules,
     adminAuditLogs,
+    adminDelegates,
     portfolioSettings,
     signOutOwner,
   } = useFirebase();
 
-  const [section, setSection] = useState<OwnerConsoleSection>('downloads');
+  // Keep live-chat "owner online" presence warm while console is open.
+  // Do NOT clear on unmount — React Strict Mode remounts would race beat(false)
+  // after beat(true) and leave visitors seeing "owner queued". Logout clears via
+  // signOutOwner → POST { online: false }.
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    const beat = async () => {
+      try {
+        const token = await user.getIdToken();
+        if (cancelled) return;
+        await fetch('/api/owner/presence', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ online: true }),
+        });
+      } catch {
+        /* non-fatal */
+      }
+    };
+    void beat();
+    const id = window.setInterval(() => void beat(), 20_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [user]);
+
+  const [section, setSectionState] = useState<OwnerConsoleSection>(() => {
+    if (initialSection) return initialSection;
+    if (typeof window !== 'undefined') {
+      return parseOwnerConsoleHash(window.location.hash).section;
+    }
+    return 'profile';
+  });
+  const { telemetry, opsHealth } = useOwnerOpsHealth(true);
+
+  const setSection = (next: OwnerConsoleSection, historyMode: 'push' | 'replace' = 'replace') => {
+    setSectionState(next);
+    writeOwnerConsoleHash(next, historyMode);
+  };
+
+  useEffect(() => {
+    const onHash = () => {
+      const parsed = parseOwnerConsoleHash(window.location.hash);
+      if (parsed.open) setSectionState(parsed.section);
+    };
+    window.addEventListener('hashchange', onHash);
+    writeOwnerConsoleHash(section, 'replace');
+    return () => window.removeEventListener('hashchange', onHash);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sync hash once on mount + listen
+  }, []);
 
   const newInquiryCount = contactMessageLogs.filter((m) => m.triageStatus === 'new').length;
 
@@ -54,6 +128,26 @@ export default function OwnerConsolePage({
       icon: typeof Download;
     }>;
   }> = [
+    {
+      groupLabel: 'Account',
+      items: [
+        { id: 'profile', label: 'Owner Profile', icon: UserRound },
+        {
+          id: 'delegates',
+          label: 'Delegates',
+          badge: String(adminDelegates.length),
+          icon: Users,
+        },
+      ],
+    },
+    {
+      groupLabel: 'Tracking',
+      items: [
+        { id: 'funnel', label: 'Funnel', icon: Activity },
+        { id: 'alerts', label: 'Alerts', icon: Bell },
+        { id: 'chat', label: 'Chat & Live Agent', icon: Headphones },
+      ],
+    },
     {
       groupLabel: 'Telemetry & Outreach',
       items: [
@@ -106,6 +200,12 @@ export default function OwnerConsolePage({
 
   const handleSignOut = async () => {
     await signOutOwner();
+    writeOwnerConsoleHash(null);
+    onBackToPortfolio();
+  };
+
+  const handleBack = () => {
+    writeOwnerConsoleHash(null);
     onBackToPortfolio();
   };
 
@@ -121,6 +221,28 @@ export default function OwnerConsolePage({
   const accentCls = isLight ? 'text-sky-700' : 'text-cyan-400';
 
   const activeTitleMap: Record<OwnerConsoleSection, { title: string; subtitle: string }> = {
+    profile: {
+      title: 'Owner Profile & Session Security',
+      subtitle:
+        'Identity, ops health, activity timeline, sessions, SEO counters, and deep links for the owner console.',
+    },
+    funnel: {
+      title: 'Visitor Funnel & Conversion',
+      subtitle: 'Track inquiry and CV export conversion across rolling time windows.',
+    },
+    alerts: {
+      title: 'Alerts Center & Digests',
+      subtitle: 'Watchers for new leads, overdue CRM actions, risk spikes, plus on-demand email digests.',
+    },
+    chat: {
+      title: 'Chat & Live Agent',
+      subtitle:
+        'Grounded portfolio Q&A volume, OTP-verified live sessions, and real-time visitor replies while you are online.',
+    },
+    delegates: {
+      title: 'Secondary Admin Delegates',
+      subtitle: 'Grant trusted teammates console access via Firebase Auth UID allowlisting.',
+    },
     downloads: {
       title: 'CV Downloads & Visitor Intelligence',
       subtitle:
@@ -129,12 +251,12 @@ export default function OwnerConsolePage({
     messages: {
       title: 'Transmitted Messages & Inquiry Triage',
       subtitle:
-        'Review OTP-verified submissions, classify status (New / Replied / Shortlisted / Archived), and add private notes.',
+        'Review OTP-verified submissions, reply from console, classify status, and add private notes.',
     },
     announcements: {
       title: 'Announcements & Publications Manager',
       subtitle:
-        'Create, update, and curate public career milestones and architecture announcements.',
+        'Draft, schedule, and publish career milestones and architecture announcements.',
     },
     rules: {
       title: 'Allowlist & Blocklist Access Rules',
@@ -144,7 +266,7 @@ export default function OwnerConsolePage({
     settings: {
       title: 'Portfolio Feature & Maintenance Toggles',
       subtitle:
-        'Control public availability posture, maintenance banner messaging, form pauses, and global strict OTP.',
+        'Incident mode, availability posture, maintenance messaging, alerts, and strict OTP.',
     },
     audit: {
       title: 'Admin Audit & Login History',
@@ -158,7 +280,6 @@ export default function OwnerConsolePage({
   return (
     <div className={`min-h-[calc(100vh-4rem)] w-full transition-colors duration-300 ${pageBg}`}>
       <div className="page-shell py-6 sm:py-8 space-y-6">
-        {/* Top Workspace Header */}
         <div
           className={`rounded-2xl border p-4 sm:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4 shadow-sm ${surface}`}
         >
@@ -175,6 +296,17 @@ export default function OwnerConsolePage({
                 <span>OWNER CONSOLE</span>
               </span>
               <span className={mutedCls}>{user?.email || OWNER_EMAIL}</span>
+              {portfolioSettings.incidentMode && (
+                <span
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[10px] font-semibold ${
+                    isLight
+                      ? 'border-rose-300 bg-rose-50 text-rose-800'
+                      : 'border-rose-500/40 bg-rose-950/40 text-rose-300'
+                  }`}
+                >
+                  Incident Mode
+                </span>
+              )}
               {portfolioSettings.maintenanceMode && (
                 <span
                   className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[10px] font-semibold ${
@@ -209,7 +341,7 @@ export default function OwnerConsolePage({
           <div className="flex flex-wrap items-center gap-2 shrink-0">
             <button
               type="button"
-              onClick={onBackToPortfolio}
+              onClick={handleBack}
               className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border text-xs font-medium transition-colors cursor-pointer whitespace-nowrap ${
                 isLight
                   ? 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
@@ -248,7 +380,6 @@ export default function OwnerConsolePage({
           </div>
         </div>
 
-        {/* Mobile / Tablet Section Switcher (< lg) */}
         <div
           className={`lg:hidden flex items-center gap-1.5 overflow-x-auto rounded-xl border p-1.5 ${surface}`}
         >
@@ -290,9 +421,7 @@ export default function OwnerConsolePage({
           })}
         </div>
 
-        {/* Desktop SaaS Workspace Grid: Left Sidebar + Main Workspace Canvas */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          {/* Desktop Left Rail */}
           <aside className="hidden lg:block lg:col-span-3 sticky top-24 space-y-4">
             <div className={`rounded-2xl border p-3.5 space-y-5 shadow-sm ${surface}`}>
               {navGroups.map((group) => (
@@ -343,7 +472,6 @@ export default function OwnerConsolePage({
                 </div>
               ))}
 
-              {/* Posture Snapshot */}
               <div className={`rounded-xl border p-3 space-y-2 text-[11px] font-mono ${subSurface}`}>
                 <div className={`text-[10px] uppercase tracking-wider ${accentCls}`}>
                   Live Enforcement Posture
@@ -352,20 +480,28 @@ export default function OwnerConsolePage({
                   <span className={mutedCls}>Contact Form</span>
                   <span
                     className={
-                      portfolioSettings.enableContactForm ? 'text-emerald-500 font-semibold' : 'text-amber-500 font-semibold'
+                      portfolioSettings.enableContactForm && !portfolioSettings.incidentMode
+                        ? 'text-emerald-500 font-semibold'
+                        : 'text-amber-500 font-semibold'
                     }
                   >
-                    {portfolioSettings.enableContactForm ? 'Active' : 'Paused'}
+                    {portfolioSettings.enableContactForm && !portfolioSettings.incidentMode
+                      ? 'Active'
+                      : 'Paused'}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className={mutedCls}>CV Exports</span>
                   <span
                     className={
-                      portfolioSettings.enableCvDownloads ? 'text-emerald-500 font-semibold' : 'text-amber-500 font-semibold'
+                      portfolioSettings.enableCvDownloads && !portfolioSettings.incidentMode
+                        ? 'text-emerald-500 font-semibold'
+                        : 'text-amber-500 font-semibold'
                     }
                   >
-                    {portfolioSettings.enableCvDownloads ? 'Active' : 'Paused'}
+                    {portfolioSettings.enableCvDownloads && !portfolioSettings.incidentMode
+                      ? 'Active'
+                      : 'Paused'}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
@@ -376,19 +512,37 @@ export default function OwnerConsolePage({
             </div>
           </aside>
 
-          {/* Primary Console Panel */}
           <main className="lg:col-span-9 min-w-0">
             <div className={`rounded-2xl border p-4 sm:p-6 shadow-sm ${surface}`}>
-              {section === 'announcements' ? (
+              {section === 'profile' ? (
+                <OwnerProfilePanel
+                  isLight={isLight}
+                  onOpenSection={(next) => setSection(next)}
+                  telemetry={telemetry}
+                  opsHealth={opsHealth}
+                />
+              ) : section === 'funnel' ? (
+                <OwnerFunnelPanel isLight={isLight} />
+              ) : section === 'alerts' ? (
+                <OwnerAlertsPanel
+                  isLight={isLight}
+                  onOpenSection={(next) => setSection(next)}
+                  telemetry={telemetry}
+                />
+              ) : section === 'chat' ? (
+                <OwnerChatPanel isLight={isLight} />
+              ) : section === 'delegates' ? (
+                <DelegatesPanel isLight={isLight} />
+              ) : section === 'announcements' ? (
                 <OwnerAnnouncementsPanel isLight={isLight} />
-              ) : (
+              ) : WORKSPACE_TABS.has(section) ? (
                 <CvAnalyticsPanel
                   isLight={isLight}
-                  activeTab={section}
+                  activeTab={section as WorkspaceTab}
                   onTabChange={(tab) => setSection(tab)}
                   hideTabBar
                 />
-              )}
+              ) : null}
             </div>
           </main>
         </div>

@@ -3,6 +3,9 @@ import dns from 'dns/promises';
 import type { Request } from 'express';
 import { sanitizeHeaderValue } from './security.ts';
 import { validateAndNormalizePhone, type PhoneValidationResult } from '../src/utils/phoneValidation.ts';
+import { OTP_CHALLENGE_TTL_MS, VERIFIED_SESSION_TTL_MS } from './sessionPolicy.ts';
+
+export { OTP_CHALLENGE_TTL_MS, VERIFIED_SESSION_TTL_MS } from './sessionPolicy.ts';
 
 export type RiskLevel = 'low' | 'medium' | 'high';
 export type VerificationStatus = 'otp_verified' | 'mx_verified' | 'phone_only' | 'repeat_session';
@@ -355,53 +358,7 @@ export async function lookupIpIntelligence(ipAddress: string): Promise<IpIntelli
     ipGeoCache.set(ipAddress, { value, expiresAt: now + IP_CACHE_TTL_MS });
   };
 
-  // Primary lookup: ip-api.com provides native proxy/hosting/mobile flags
-  try {
-    const res = await fetch(
-      `http://ip-api.com/json/${encodeURIComponent(ipAddress)}?fields=status,country,countryCode,regionName,city,timezone,isp,org,as,proxy,hosting,mobile`,
-      { signal: AbortSignal.timeout(2500) }
-    );
-    if (res.ok) {
-      const data = (await res.json()) as {
-        status?: string;
-        country?: string;
-        countryCode?: string;
-        regionName?: string;
-        city?: string;
-        timezone?: string;
-        isp?: string;
-        org?: string;
-        as?: string;
-        proxy?: boolean;
-        hosting?: boolean;
-        mobile?: boolean;
-      };
-      if (data.status === 'success') {
-        const intel: IpIntelligence = {
-          ipAddress,
-          isPrivate: false,
-          country: sanitizeHeaderValue(data.country || 'Unknown').slice(0, 80),
-          countryCode: sanitizeHeaderValue(data.countryCode || '').slice(0, 12),
-          region: sanitizeHeaderValue(data.regionName || '').slice(0, 80),
-          city: sanitizeHeaderValue(data.city || '').slice(0, 80),
-          isp: sanitizeHeaderValue(data.isp || 'Unknown').slice(0, 120),
-          asn: sanitizeHeaderValue((data.as || '').split(' ')[0] || '').slice(0, 64),
-          org: sanitizeHeaderValue(data.org || data.isp || '').slice(0, 120),
-          timezone: sanitizeHeaderValue(data.timezone || '').slice(0, 64),
-          isProxy: Boolean(data.proxy),
-          isHosting: Boolean(data.hosting),
-          isMobile: Boolean(data.mobile),
-          lookupProvider: 'ip-api',
-        };
-        saveCache(intel);
-        return intel;
-      }
-    }
-  } catch {
-    // Fall back to ipwho.is below
-  }
-
-  // Fallback lookup: ipwho.is over HTTPS
+  // Primary lookup: ipwho.is over HTTPS (integrity of risk signals).
   try {
     const res = await fetch(`https://ipwho.is/${encodeURIComponent(ipAddress)}`, {
       signal: AbortSignal.timeout(2500),
@@ -415,6 +372,7 @@ export async function lookupIpIntelligence(ipAddress: string): Promise<IpIntelli
         city?: string;
         timezone?: { id?: string };
         connection?: { asn?: number; org?: string; isp?: string };
+        security?: { vpn?: boolean; proxy?: boolean; tor?: boolean; hosting?: boolean };
       };
       if (data.success) {
         const isp = sanitizeHeaderValue(data.connection?.isp || data.connection?.org || 'Unknown').slice(0, 120);
@@ -428,9 +386,54 @@ export async function lookupIpIntelligence(ipAddress: string): Promise<IpIntelli
           region: sanitizeHeaderValue(data.region || '').slice(0, 80),
           city: sanitizeHeaderValue(data.city || '').slice(0, 80),
           isp,
-          asn: asn.slice(0, 64),
+          asn: sanitizeHeaderValue(asn).slice(0, 64),
           org,
           timezone: sanitizeHeaderValue(data.timezone?.id || '').slice(0, 64),
+          isProxy: Boolean(data.security?.proxy || data.security?.vpn || data.security?.tor),
+          isHosting: Boolean(data.security?.hosting) || isHostingOrVpnAsn(isp, org, asn),
+          isMobile: false,
+          lookupProvider: 'ipwho.is',
+        };
+        saveCache(intel);
+        return intel;
+      }
+    }
+  } catch {
+    // Fall back below
+  }
+
+  // Fallback: ipapi.co HTTPS (no API key required for light traffic)
+  try {
+    const res = await fetch(`https://ipapi.co/${encodeURIComponent(ipAddress)}/json/`, {
+      signal: AbortSignal.timeout(2500),
+      headers: { Accept: 'application/json' },
+    });
+    if (res.ok) {
+      const data = (await res.json()) as {
+        error?: boolean;
+        country_name?: string;
+        country_code?: string;
+        region?: string;
+        city?: string;
+        timezone?: string;
+        org?: string;
+        asn?: string;
+      };
+      if (!data.error) {
+        const org = sanitizeHeaderValue(data.org || 'Unknown').slice(0, 120);
+        const isp = org;
+        const asn = sanitizeHeaderValue(data.asn || '').slice(0, 64);
+        const intel: IpIntelligence = {
+          ipAddress,
+          isPrivate: false,
+          country: sanitizeHeaderValue(data.country_name || 'Unknown').slice(0, 80),
+          countryCode: sanitizeHeaderValue(data.country_code || '').slice(0, 12),
+          region: sanitizeHeaderValue(data.region || '').slice(0, 80),
+          city: sanitizeHeaderValue(data.city || '').slice(0, 80),
+          isp,
+          asn,
+          org,
+          timezone: sanitizeHeaderValue(data.timezone || '').slice(0, 64),
           isProxy: false,
           isHosting: isHostingOrVpnAsn(isp, org, asn),
           isMobile: false,
@@ -551,7 +554,7 @@ export function signSessionReceipt(payload: SessionReceiptPayload, secret: strin
 export function verifySessionReceipt(
   token: string | undefined,
   secret: string,
-  maxAgeMs = 12 * 60 * 60 * 1000
+  maxAgeMs = VERIFIED_SESSION_TTL_MS
 ): SessionReceiptPayload | null {
   if (!token || typeof token !== 'string') return null;
   const dotIdx = token.indexOf('.');
@@ -631,7 +634,7 @@ export function createOtpChallenge<T = OtpPendingPayload>(
   options: { now?: number; ttlMs?: number; fixedCode?: string } = {}
 ): { challengeId: string; challengeToken: string; code: string; expiresAt: number } {
   const now = options.now ?? Date.now();
-  const ttlMs = options.ttlMs ?? 10 * 60 * 1000;
+  const ttlMs = options.ttlMs ?? OTP_CHALLENGE_TTL_MS;
 
   // Prune expired entries first
   for (const [id, entry] of store.entries()) {
@@ -709,4 +712,75 @@ export function verifyOtpChallenge<T = OtpPendingPayload>(
   // Single-use: consume challenge immediately on match
   store.delete(input.challengeId);
   return { ok: true, payload: record.payload };
+}
+
+type RedisOtpBridge = {
+  setJson: (key: string, value: unknown, ttlMs?: number) => Promise<{ ok: boolean }>;
+  getJson: <T>(key: string) => Promise<{ value: T | null; error?: boolean }>;
+  del: (key: string) => Promise<void>;
+  enabled: () => boolean;
+};
+
+let otpRedisBridge: RedisOtpBridge | null = null;
+
+/** Wire Upstash helpers so OTP challenges are shared across Cloud Run replicas. */
+export function configureOtpRedisBridge(bridge: RedisOtpBridge | null): void {
+  otpRedisBridge = bridge;
+}
+
+function otpRedisKey(challengeId: string): string {
+  return `otp:${challengeId.slice(0, 80)}`;
+}
+
+/**
+ * Async OTP create — mirrors into Redis when configured so multi-replica verify works.
+ */
+export async function createOtpChallengeAsync<T = OtpPendingPayload>(
+  store: Map<string, OtpChallengeRecord<T>>,
+  payload: T,
+  secret: string,
+  options: { now?: number; ttlMs?: number; fixedCode?: string } = {}
+): Promise<{ challengeId: string; challengeToken: string; code: string; expiresAt: number }> {
+  const created = createOtpChallenge(store, payload, secret, options);
+  const record = store.get(created.challengeId);
+  if (record && otpRedisBridge?.enabled()) {
+    const ttlMs = Math.max(1_000, created.expiresAt - (options.now ?? Date.now()));
+    await otpRedisBridge.setJson(otpRedisKey(created.challengeId), record, ttlMs);
+  }
+  return created;
+}
+
+/**
+ * Async OTP verify — reads Redis when the challenge is missing on this replica.
+ */
+export async function verifyOtpChallengeAsync<T = OtpPendingPayload>(
+  store: Map<string, OtpChallengeRecord<T>>,
+  input: { challengeId: string; challengeToken: string; code: string },
+  secret: string,
+  options: { now?: number; maxAttempts?: number } = {}
+): Promise<{ ok: true; payload: T } | { ok: false; error: string }> {
+  if (!store.has(input.challengeId) && otpRedisBridge?.enabled()) {
+    const remote = await otpRedisBridge.getJson<OtpChallengeRecord<T>>(otpRedisKey(input.challengeId));
+    if (remote.error) {
+      return {
+        ok: false,
+        error: 'Verification service temporarily unavailable. Please try again shortly.',
+      };
+    }
+    if (remote.value) {
+      store.set(input.challengeId, remote.value);
+    }
+  }
+
+  const result = verifyOtpChallenge(store, input, secret, options);
+  if (otpRedisBridge?.enabled()) {
+    const local = store.get(input.challengeId);
+    if (!local || result.ok) {
+      await otpRedisBridge.del(otpRedisKey(input.challengeId));
+    } else {
+      const ttlMs = Math.max(1_000, local.expiresAt - (options.now ?? Date.now()));
+      await otpRedisBridge.setJson(otpRedisKey(input.challengeId), local, ttlMs);
+    }
+  }
+  return result;
 }

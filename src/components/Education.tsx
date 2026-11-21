@@ -22,7 +22,7 @@ export default function Education({ readingMode = 'deep' }: EducationProps) {
               <GraduationCap className="w-3.5 h-3.5" />
               <span>ACADEMIC FOUNDATION</span>
             </div>
-            <h2 className="text-2xl sm:text-3xl lg:text-4xl font-display font-bold text-white tracking-tight">
+            <h2 className="fluid-title font-display font-bold text-white tracking-tight">
               Education &amp; Scholastic Honors
             </h2>
             <p className="mt-2 text-sm sm:text-base text-slate-400 max-w-3xl">

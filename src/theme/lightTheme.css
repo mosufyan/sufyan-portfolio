@@ -404,8 +404,14 @@ html[data-theme='light'] .site-theme .navbar-chrome {
 }
 
 html[data-theme='light'] .site-theme .navbar-chrome .bg-\[\#07090e\]\/90,
-html[data-theme='light'] .site-theme .navbar-chrome .bg-\[\#07090e\]\/95 {
-  background-color: rgb(7 9 14 / 0.95) !important;
+html[data-theme='light'] .site-theme .navbar-chrome .bg-\[\#07090e\]\/95,
+html[data-theme='light'] .site-theme .navbar-chrome .bg-\[\#080b13\],
+html[data-theme='light'] .site-theme .navbar-chrome.bg-\[\#080b13\],
+html[data-theme='light'] .site-theme .navbar-chrome .bg-\[\#080b13\]\/95,
+html[data-theme='light'] .site-theme .navbar-chrome.bg-\[\#080b13\]\/95,
+html[data-theme='light'] .site-theme .navbar-chrome .bg-\[\#0b101b\],
+html[data-theme='light'] .site-theme .navbar-chrome.bg-\[\#0b101b\] {
+  background-color: #080b13 !important;
 }
 
 html[data-theme='light'] .site-theme .navbar-chrome .text-white,
@@ -428,6 +434,21 @@ html[data-theme='light'] .site-theme .navbar-chrome .text-cyan-300,
 html[data-theme='light'] .site-theme .navbar-chrome .hover\:text-cyan-300:hover,
 html[data-theme='light'] .site-theme .navbar-chrome .hover\:text-cyan-400:hover {
   color: #22d3ee !important;
+}
+
+html[data-theme='light'] .site-theme .navbar-chrome .text-emerald-300,
+html[data-theme='light'] .site-theme .navbar-chrome .text-emerald-400 {
+  color: #6ee7b7 !important;
+}
+
+html[data-theme='light'] .site-theme .navbar-chrome .border-emerald-500\/40,
+html[data-theme='light'] .site-theme .navbar-chrome .bg-emerald-500\/15 {
+  border-color: rgb(16 185 129 / 0.4) !important;
+  background-color: rgb(16 185 129 / 0.15) !important;
+}
+
+html[data-theme='light'] .site-theme .navbar-chrome .bg-emerald-400 {
+  background-color: #34d399 !important;
 }
 
 html[data-theme='light'] .site-theme .navbar-chrome .border-slate-800,

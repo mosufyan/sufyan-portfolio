@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_PORTFOLIO_SETTINGS,
   evaluateAccessRules,
+  getEffectivePortfolioSettings,
   sanitizeAdminAuditPayload,
   sanitizePortfolioSettings,
+  toPublicPortfolioSettings,
   validateAccessRuleDraft,
+  validateAdminDelegateDraft,
 } from './ownerGovernance';
 
 describe('ownerGovernance utilities', () => {
@@ -37,11 +40,105 @@ describe('ownerGovernance utilities', () => {
       maintenanceMode: true,
       enableContactForm: false,
       strictOtpForAll: true,
+      incidentMode: true,
+      notifyOnNewInquiry: false,
+      chatMaxQuestionsPerVisitor: 999,
+      chatMaxLlmPerVisitor: -2,
+      enableChatLlm: true,
+      chatLlmModel: 'grok-4.7',
     });
     expect(sanitized.availabilityStatus).toBe('advisory');
     expect(sanitized.maintenanceMode).toBe(true);
     expect(sanitized.enableContactForm).toBe(false);
     expect(sanitized.enableCvDownloads).toBe(DEFAULT_PORTFOLIO_SETTINGS.enableCvDownloads);
+    expect(sanitized.incidentMode).toBe(true);
+    expect(sanitized.notifyOnNewInquiry).toBe(false);
+    expect(sanitized.chatMaxQuestionsPerVisitor).toBe(200);
+    expect(sanitized.chatMaxLlmPerVisitor).toBe(0);
+    expect(sanitized.enableChatLlm).toBe(true);
+    expect(sanitized.chatLlmModel).toBe('grok-4.7');
+
+    const effective = getEffectivePortfolioSettings(sanitized);
+    expect(effective.maintenanceMode).toBe(true);
+    expect(effective.enableContactForm).toBe(false);
+    expect(effective.enableCvDownloads).toBe(false);
+    expect(effective.strictOtpForAll).toBe(true);
+    expect(effective.enablePortfolioChat).toBe(false);
+    expect(effective.enableLiveChat).toBe(false);
+    expect(effective.enableChatLlm).toBe(false);
+    expect(effective.enableAnnouncements).toBe(false);
+    expect(effective.enableResumeStudio).toBe(false);
+    expect(effective.enableDigitalCard).toBe(false);
+    expect(effective.enableCommandPalette).toBe(false);
+    expect(effective.enableTerminal).toBe(false);
+    expect(effective.enablePwaInstall).toBe(false);
+    expect(effective.enableSkillFilter).toBe(false);
+    expect(effective.enableReadingModes).toBe(false);
+    expect(effective.enableScrollHud).toBe(false);
+    expect(effective.enableSiteTelemetry).toBe(false);
+  });
+
+  it('strips private policy fields from the public settings slice', () => {
+    const full = sanitizePortfolioSettings({
+      chatMaxQuestionsPerVisitor: 42,
+      enableChatLlm: true,
+      chatLlmModel: 'secret-model',
+      alertEmailEnabled: true,
+      alertClassLiveChat: 'urgent',
+      enablePortfolioChat: true,
+    });
+    const pub = toPublicPortfolioSettings(full);
+    expect(pub.enablePortfolioChat).toBe(true);
+    expect(pub).not.toHaveProperty('chatMaxQuestionsPerVisitor');
+    expect(pub).not.toHaveProperty('enableChatLlm');
+    expect(pub).not.toHaveProperty('chatLlmModel');
+    expect(pub).not.toHaveProperty('alertEmailEnabled');
+    expect(pub).not.toHaveProperty('alertClassLiveChat');
+  });
+
+  it('defaults visitor feature switches to enabled', () => {
+    const sanitized = sanitizePortfolioSettings({});
+    expect(sanitized.enableAnnouncements).toBe(true);
+    expect(sanitized.enableResumeStudio).toBe(true);
+    expect(sanitized.enableDigitalCard).toBe(true);
+    expect(sanitized.enableCommandPalette).toBe(true);
+    expect(sanitized.enableTerminal).toBe(true);
+    expect(sanitized.enablePwaInstall).toBe(true);
+    expect(sanitized.enableSkillFilter).toBe(true);
+    expect(sanitized.enableReadingModes).toBe(true);
+    expect(sanitized.enableScrollHud).toBe(true);
+    expect(sanitized.enableSiteTelemetry).toBe(true);
+  });
+
+  it('defaults chat caps to ten questions per visitor', () => {
+    const sanitized = sanitizePortfolioSettings({});
+    expect(sanitized.chatMaxQuestionsPerVisitor).toBe(10);
+    expect(sanitized.enablePortfolioChat).toBe(true);
+    expect(sanitized.enableLiveChat).toBe(true);
+    expect(sanitized.enableChatLlm).toBe(false);
+  });
+
+  it('defaults alert routing with urgent live chat and digest inquiries', () => {
+    const sanitized = sanitizePortfolioSettings({
+      alertClassLiveChat: 'nope' as unknown as 'urgent',
+      alertEmailUrgent: false,
+    });
+    expect(sanitized.alertClassLiveChat).toBe('urgent');
+    expect(sanitized.alertClassNewInquiry).toBe('digest');
+    expect(sanitized.alertEmailEnabled).toBe(true);
+    expect(sanitized.alertEmailUrgent).toBe(false);
+  });
+
+  it('validates admin delegate drafts', () => {
+    const ok = validateAdminDelegateDraft({
+      uid: 'abc123UID',
+      email: 'teammate@example.com',
+    });
+    expect(ok.valid).toBe(true);
+    expect(ok.normalized?.email).toBe('teammate@example.com');
+
+    const bad = validateAdminDelegateDraft({ uid: '', email: 'nope' });
+    expect(bad.valid).toBe(false);
   });
 
   it('validates and evaluates allowlist and blocklist rules with block precedence', () => {

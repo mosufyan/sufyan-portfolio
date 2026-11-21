@@ -24,25 +24,25 @@
 ## CV Download Audit Logs (`/cv_downloads/{downloadId}`) Invariants
 6. **Strict PII Isolation**: `/cv_downloads` contains `visitorEmail`, `visitorPhone`, and `ipAddress`. Public visitors and non-owner signed-in users are strictly forbidden from reading (`get` or `list`) any document. Only verified owner `sufyan.net@gmail.com` (or trusted `/admins/{uid}`) may read/list/delete.
 7. **Immutable Append-Only Audit Trail**: Updates to `/cv_downloads/{downloadId}` are globally denied (`allow update: if false`).
-8. **Strict Schema & Size Bounds on Create**: Every create must provide exact allowlisted keys, valid `downloadId`/`sessionId` IDs matching path, `createdAt == request.time`, valid enum values (`action`, `theme`, `verificationStatus`, `riskLevel`), boolean type checks on risk flags, and capped string lengths.
+8. **Admin-Only Creates**: Client `create` is denied (`allow create: if false`). After OTP verification, Express persists records via the Firebase Admin SDK when `FIREBASE_SERVICE_ACCOUNT_JSON` / `GOOGLE_APPLICATION_CREDENTIALS` is configured. Server-side writes still enforce the same schema blueprint.
 
 ## Additional Dirty Dozen Checks for `/cv_downloads/{downloadId}`
 - Unauthenticated or non-owner signed-in `get` / `list` on `/cv_downloads` -> **DENIED**.
 - Spoofed `sufyan.net@gmail.com` with `email_verified: false` attempting `list` or `delete` on `/cv_downloads` -> **DENIED**.
 - Public visitor attempting `update` on `/cv_downloads/{id}` -> **DENIED**.
-- Public visitor attempting `create` with ghost field (`isVerifiedAdmin: true`) or `downloadId != pathId` or forged `createdAt` -> **DENIED**.
-- Public visitor injecting 50KB `reason` or `userAgent` string (Denial-of-Wallet) -> **DENIED**.
+- Public visitor attempting `create` (any payload) -> **DENIED** (Admin SDK only).
+- Non-owner signed-in user attempting `create` -> **DENIED**.
 
 ## Contact Inquiry Logs (`/contact_messages/{messageId}`) Invariants
 9. **Strict PII Isolation**: `/contact_messages` stores sender emails, phones, message bodies, and IP addresses. Public visitors and non-owner signed-in users are strictly forbidden from reading (`get` or `list`) any record. Only verified `sufyan.net@gmail.com` (or trusted `/admins/{uid}`) may read/list/delete/triage.
-10. **Immutable Core + Owner-Only Triage Updates**: Core message fields (`messageId`, `senderName`, `senderEmail`, `senderPhone`, `subject`, `message`, `ipAddress`, `createdAt`, etc.) are permanently immutable. Visitors creating a record cannot inject `triageStatus`, `ownerNote`, or `triagedAt`. Only verified admins may update `triageStatus`, `ownerNote`, and `triagedAt` (`triagedAt == request.time`).
-11. **Schema & Size Bounds**: Every create/update validates the shared `isValidContactMessageLog` blueprint (`affectedKeys().hasOnly(['triageStatus', 'ownerNote', 'triagedAt'])` on update), preventing Denial-of-Wallet payload bloat.
+10. **Admin-Only Creates + Owner Triage Updates**: Client `create` is denied (`allow create: if false`); Express writes via Admin SDK after OTP. Core message fields are immutable. Only verified admins may update triage fields (`triageStatus`, `ownerNote`, `triagedAt` with `triagedAt == request.time`, plus CRM fields when present).
+11. **Schema & Size Bounds**: Server creates and owner updates validate the shared `isValidContactMessageLog` blueprint (`affectedKeys().hasOnly([...])` on update), preventing Denial-of-Wallet payload bloat.
 
 ## Admin Audit Logs (`/admin_audit_logs/{auditId}`) Invariants
 12. **Owner-Only Governance Trail**: Strictly restricted to verified `sufyan.net@gmail.com` (or `/admins/{uid}`) for `get`, `list`, `create`, and `delete`; updates are globally denied (`allow update: if false`). `actorUid == request.auth.uid` and `createdAt == request.time` are enforced on create.
 
 ## Portfolio Feature & Maintenance Settings (`/portfolio_settings/{settingsId}`) Invariants
-13. **Public Non-PII Config + Owner-Only Mutations**: Only document ID `'global'` may be publicly `get`-read (`list` is denied). Create/update requires verified owner/admin, strict key allowlist, `updatedByUid == request.auth.uid`, and `updatedAt == request.time`. Deletes are denied.
+13. **Public UX Slice + Owner Policy**: Document ID `'public'` may be publicly `get`-read for visitor feature flags / non-sensitive UX. Document ID `'global'` (and other owner policy docs) stay owner-only. `list` is denied. Create/update requires verified owner/admin, strict key allowlist, `updatedByUid == request.auth.uid`, and `updatedAt == request.time`. Deletes are denied.
 
 ## Access Allowlist / Blocklist Rules (`/access_rules/{ruleId}`) Invariants
 14. **PII-Isolated Security Policy**: Rule values (emails, domains, IPs) are strictly owner-only for `get`, `list`, `create`, and `delete` (`update` denied). `createdByUid == request.auth.uid` and `createdAt == request.time` are enforced on create.

@@ -1,16 +1,20 @@
 import { Linkedin } from './icons/Linkedin';
-import { Mail, ArrowUp, QrCode, Terminal } from 'lucide-react';
+import { Mail, ArrowUp, QrCode, Terminal, Shield } from 'lucide-react';
 import { motion } from 'motion/react';
 import { PERSONAL_INFO } from '../data/portfolioData';
-import { Reveal } from './MotionPrimitives';
+import { APP_VERSION_LABEL } from '../version';
+import { useFirebase } from '../contexts/FirebaseContext';
+import { HoverLift, Reveal } from './MotionPrimitives';
 import PWAInstallButton from './PWAInstallButton';
 
 interface FooterProps {
   onOpenDigitalCard?: () => void;
   onOpenTerminal?: () => void;
+  onOpenSecurity?: () => void;
 }
 
-export default function Footer({ onOpenDigitalCard, onOpenTerminal }: FooterProps) {
+export default function Footer({ onOpenDigitalCard, onOpenTerminal, onOpenSecurity }: FooterProps) {
+  const { effectivePortfolioSettings } = useFirebase();
   const scrollToTop = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -21,23 +25,23 @@ export default function Footer({ onOpenDigitalCard, onOpenTerminal }: FooterProp
         <div className="grid grid-cols-1 md:grid-cols-12 gap-10 pb-12 border-b border-slate-800/80">
           {/* Col 1: Brand & Synopsis */}
           <div className="md:col-span-5 space-y-4">
-            <div className="flex items-center gap-2.5">
+            <HoverLift className="inline-flex items-center gap-2.5">
               <motion.div
                 whileHover={{ scale: 1.08, rotate: 360 }}
                 transition={{
                   scale: { type: 'spring', stiffness: 400, damping: 20 },
                   rotate: { duration: 0.65, ease: [0.22, 1, 0.36, 1] },
                 }}
-                className="flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-950/60 border border-cyan-500/40 text-cyan-400 font-bold font-display text-xs"
+                className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-lg bg-cyan-950/60 border border-cyan-500/40 text-cyan-400 font-bold font-display text-xs"
               >
                 MS
               </motion.div>
-              <span className="font-display font-bold text-base text-white tracking-tight">
+              <span className="font-display font-bold text-sm sm:text-base min-[2560px]:text-lg text-white tracking-tight">
                 MOHAMMED SUFYAN
               </span>
-            </div>
+            </HoverLift>
 
-            <p className="text-xs sm:text-sm text-slate-400 leading-relaxed max-w-md font-light">
+            <p className="fluid-body text-slate-400 max-w-md font-light">
               Software Engineer with 13+ years of enterprise engineering experience across{' '}
               <span className="sm:hidden">Cisco</span>
               <span className="hidden sm:inline">Cisco Systems Inc.</span>
@@ -75,6 +79,18 @@ export default function Footer({ onOpenDigitalCard, onOpenTerminal }: FooterProp
               <li>
                 <a href="#contact" className="inline-block hover:text-cyan-400 hover:translate-x-0.5 transition-all">Transmit Message</a>
               </li>
+              {onOpenSecurity && (
+                <li>
+                  <button
+                    type="button"
+                    onClick={onOpenSecurity}
+                    className="inline-flex items-center gap-1.5 hover:text-cyan-400 hover:translate-x-0.5 transition-all cursor-pointer"
+                  >
+                    <Shield className="w-3 h-3" />
+                    Security Architecture
+                  </button>
+                </li>
+              )}
             </ul>
           </div>
 
@@ -100,7 +116,7 @@ export default function Footer({ onOpenDigitalCard, onOpenTerminal }: FooterProp
                 Operating out of San Jose, California (PST) · Global Deployments
               </li>
               <li className="pt-2 flex flex-wrap items-center gap-2">
-                <PWAInstallButton />
+                {effectivePortfolioSettings.enablePwaInstall && <PWAInstallButton />}
                 {onOpenDigitalCard && (
                   <button
                     type="button"
@@ -126,10 +142,19 @@ export default function Footer({ onOpenDigitalCard, onOpenTerminal }: FooterProp
           </div>
         </div>
 
-        {/* Bottom bar */}
+        {/* Bottom bar — version stays muted mono next to copyright (not a badge/pill). */}
         <div className="pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs font-mono text-slate-500 text-center sm:text-left">
-          <div>
-            © {new Date().getFullYear()} Mohammed Sufyan. All rights reserved.
+          <div className="flex flex-wrap items-center justify-center sm:justify-start gap-x-2 gap-y-1">
+            <span>© {new Date().getFullYear()} Mohammed Sufyan. All rights reserved.</span>
+            <span className="hidden sm:inline text-slate-700" aria-hidden="true">
+              ·
+            </span>
+            <span
+              className="text-slate-600 tracking-wide"
+              title={`Portfolio site release ${APP_VERSION_LABEL}`}
+            >
+              {APP_VERSION_LABEL}
+            </span>
           </div>
 
           <div className="flex flex-wrap items-center justify-center sm:justify-end gap-3 sm:gap-4">

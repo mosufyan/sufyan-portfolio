@@ -78,6 +78,7 @@ import {
 } from '../utils/cvShareConfig';
 import { type CvTrackingSummary } from '../utils/cvDownloadLogValidation';
 import AccessGateModal, {
+  ACCESS_SESSION_EXPIRED_MESSAGE,
   isAccessUnlocked,
   trackSubsequentCvEvent,
   type AccessGateAction,
@@ -379,7 +380,14 @@ export default function ResumeModal({
 
   const [cvUnlocked, setCvUnlocked] = useState<boolean>(() => isAccessUnlocked('pdf'));
   const [pendingAction, setPendingAction] = useState<AccessGateAction | null>(null);
-  const { recordCvDownloadLog, portfolioSettings } = useFirebase();
+  const [gateReverifyMessage, setGateReverifyMessage] = useState<string | null>(null);
+  const { recordCvDownloadLog, effectivePortfolioSettings } = useFirebase();
+
+  const requireCvReverify = (action: AccessGateAction, message?: string) => {
+    setCvUnlocked(false);
+    setGateReverifyMessage(message || ACCESS_SESSION_EXPIRED_MESSAGE);
+    setPendingAction(action);
+  };
 
   useEffect(() => {
     if (isOpen) {
@@ -390,6 +398,7 @@ export default function ResumeModal({
       }
     } else {
       setPendingAction(null);
+      setGateReverifyMessage(null);
       setInspectedCert(null);
       setControlsOpen(true);
       setIsBodyScrolled(false);
@@ -911,15 +920,21 @@ export default function ResumeModal({
     setPdfError(null);
     setPdfSuccess(false);
 
-    // Track subsequent PDF exports in parallel so zero latency is added to rendering
-    const trackingPromise: Promise<CvTrackingSummary | null> = isRepeat
-      ? trackSubsequentCvEvent({
-          action: 'pdf',
-          formatLabel: getFormatLabel(),
-          theme: isLight ? 'light' : 'dark',
-          onPersistLog: recordCvDownloadLog,
-        })
-      : Promise.resolve(initialSummary ?? null);
+    let trackingPromise: Promise<CvTrackingSummary | null> = Promise.resolve(initialSummary ?? null);
+    if (isRepeat) {
+      const track = await trackSubsequentCvEvent({
+        action: 'pdf',
+        formatLabel: getFormatLabel(),
+        theme: isLight ? 'light' : 'dark',
+        onPersistLog: recordCvDownloadLog,
+      });
+      if (track.status === 'expired') {
+        setIsGeneratingPdf(false);
+        requireCvReverify('pdf', track.message);
+        return;
+      }
+      trackingPromise = Promise.resolve(track.status === 'ok' ? track.summary : null);
+    }
 
     let cloneHost: HTMLDivElement | null = null;
 
@@ -1302,7 +1317,7 @@ export default function ResumeModal({
 
   const handleRequestPdf = () => {
     if (isGeneratingPdf || selectedSectionCount === 0) return;
-    if (!portfolioSettings.enableCvDownloads) {
+    if (!effectivePortfolioSettings.enableCvDownloads) {
       setPdfError('CV exports are temporarily paused by the portfolio owner.');
       return;
     }
@@ -1311,51 +1326,67 @@ export default function ResumeModal({
       void handleDownloadPdf(undefined, true);
       return;
     }
+    setGateReverifyMessage(null);
     setPendingAction('pdf');
   };
 
   const handleRequestPrint = () => {
     if (selectedSectionCount === 0) return;
-    if (!portfolioSettings.enableCvDownloads) {
+    if (!effectivePortfolioSettings.enableCvDownloads) {
       setPdfError('CV exports are temporarily paused by the portfolio owner.');
       return;
     }
     if (cvUnlocked || isAccessUnlocked('print')) {
       setCvUnlocked(true);
-      void trackSubsequentCvEvent({
-        action: 'print',
-        formatLabel: getFormatLabel(),
-        theme: isLight ? 'light' : 'dark',
-        onPersistLog: recordCvDownloadLog,
-      });
-      handleNativePrint();
+      void (async () => {
+        const track = await trackSubsequentCvEvent({
+          action: 'print',
+          formatLabel: getFormatLabel(),
+          theme: isLight ? 'light' : 'dark',
+          onPersistLog: recordCvDownloadLog,
+        });
+        if (track.status === 'expired') {
+          requireCvReverify('print', track.message);
+          return;
+        }
+        handleNativePrint();
+      })();
       return;
     }
+    setGateReverifyMessage(null);
     setPendingAction('print');
   };
 
   const handleRequestAtsCopy = () => {
     if (selectedSectionCount === 0) return;
-    if (!portfolioSettings.enableCvDownloads) {
+    if (!effectivePortfolioSettings.enableCvDownloads) {
       setPdfError('CV exports are temporarily paused by the portfolio owner.');
       return;
     }
     if (cvUnlocked || isAccessUnlocked('ats')) {
       setCvUnlocked(true);
-      void trackSubsequentCvEvent({
-        action: 'ats',
-        formatLabel: getFormatLabel(),
-        theme: isLight ? 'light' : 'dark',
-        onPersistLog: recordCvDownloadLog,
-      });
-      void handleCopyAtsText();
+      void (async () => {
+        const track = await trackSubsequentCvEvent({
+          action: 'ats',
+          formatLabel: getFormatLabel(),
+          theme: isLight ? 'light' : 'dark',
+          onPersistLog: recordCvDownloadLog,
+        });
+        if (track.status === 'expired') {
+          requireCvReverify('ats', track.message);
+          return;
+        }
+        void handleCopyAtsText();
+      })();
       return;
     }
+    setGateReverifyMessage(null);
     setPendingAction('ats');
   };
 
   const handleAccessVerified = (action: AccessGateAction, trackingSummary?: CvTrackingSummary) => {
     setCvUnlocked(true);
+    setGateReverifyMessage(null);
     setPendingAction(null);
     if (action === 'pdf') {
       void handleDownloadPdf(trackingSummary, false);
@@ -1731,7 +1762,7 @@ export default function ResumeModal({
             onClick={(e) => e.stopPropagation()}
           >
         {/* Fixed Slim Title Bar (always pinned at top of modal with Controls + Close; hidden when printing) */}
-        <div className="relative z-40 shrink-0 border-b border-slate-800 bg-[#080b13]/95 backdrop-blur-md px-3.5 sm:px-6 py-2.5 sm:py-3 print:hidden">
+        <div className="navbar-chrome relative z-40 shrink-0 border-b border-slate-800 bg-[#080b13]/95 backdrop-blur-md px-3.5 sm:px-6 py-2.5 sm:py-3 print:hidden">
           <ModalHeaderScan active={isOpen} />
           <div className="flex items-center justify-between gap-2 sm:gap-3 min-w-0">
             <div className="flex items-center gap-2.5 min-w-0 flex-1">
@@ -1810,7 +1841,7 @@ export default function ResumeModal({
         >
         {/* Scrollable / Collapsible Action Bar & Format Selector (hidden when printing) */}
         {controlsOpen && (
-        <div className="relative border-b border-slate-800 bg-[#080b13] shrink-0 print:hidden">
+        <div className="navbar-chrome relative border-b border-slate-800 bg-[#080b13] shrink-0 print:hidden">
           <div className="flex flex-col gap-2 sm:gap-3 px-3.5 sm:px-6 py-2.5 sm:py-3">
             {/* Actions on their own row — compact on mobile/tablet so CV preview keeps generous height */}
             <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
@@ -3316,7 +3347,11 @@ export default function ResumeModal({
         action={pendingAction === 'install' ? null : pendingAction}
         formatLabel={getFormatLabel()}
         isLight={isLight}
-        onClose={() => setPendingAction(null)}
+        initialError={gateReverifyMessage}
+        onClose={() => {
+          setPendingAction(null);
+          setGateReverifyMessage(null);
+        }}
         onVerified={handleAccessVerified}
       />
     </AnimatePresence>

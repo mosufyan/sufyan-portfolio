@@ -47,7 +47,42 @@ export interface ContactMessageSummary {
   userAgent: string;
 }
 
-export interface ContactMessageLogRecord extends ContactMessageSummary {
+export const LEAD_SOURCES = ['', 'linkedin', 'referral', 'organic', 'other'] as const;
+export type LeadSource = (typeof LEAD_SOURCES)[number];
+
+export const LEAD_PRIORITIES = ['', 'hot', 'warm', 'cold'] as const;
+export type LeadPriority = (typeof LEAD_PRIORITIES)[number];
+
+export const LEAD_OUTCOMES = ['', 'open', 'interview', 'offer', 'closed_won', 'closed_lost'] as const;
+export type LeadOutcome = (typeof LEAD_OUTCOMES)[number];
+
+export interface LeadCrmFields {
+  leadCompany: string;
+  leadRole: string;
+  leadSource: LeadSource;
+  leadPriority: LeadPriority;
+  leadNextAction: string;
+  leadNextActionDueAtMs: number | null;
+  leadOutcome: LeadOutcome;
+}
+
+export const DEFAULT_LEAD_CRM: LeadCrmFields = {
+  leadCompany: '',
+  leadRole: '',
+  leadSource: '',
+  leadPriority: '',
+  leadNextAction: '',
+  leadNextActionDueAtMs: null,
+  leadOutcome: '',
+};
+
+export const LEAD_CRM_CONSTRAINTS = {
+  companyMax: 120,
+  roleMax: 120,
+  nextActionMax: 200,
+} as const;
+
+export interface ContactMessageLogRecord extends ContactMessageSummary, LeadCrmFields {
   triageStatus: ContactTriageStatus;
   ownerNote: string;
   triagedAtMs: number | null;
@@ -67,17 +102,70 @@ export function normalizeContactTriageStatus(raw: unknown): ContactTriageStatus 
   return 'new';
 }
 
+export function sanitizeLeadCrmFields(input: Partial<LeadCrmFields> | null | undefined): LeadCrmFields {
+  if (!input || typeof input !== 'object') return { ...DEFAULT_LEAD_CRM };
+
+  const leadSource = (LEAD_SOURCES as readonly string[]).includes(input.leadSource || '')
+    ? (input.leadSource as LeadSource)
+    : '';
+  const leadPriority = (LEAD_PRIORITIES as readonly string[]).includes(input.leadPriority || '')
+    ? (input.leadPriority as LeadPriority)
+    : '';
+  const leadOutcome = (LEAD_OUTCOMES as readonly string[]).includes(input.leadOutcome || '')
+    ? (input.leadOutcome as LeadOutcome)
+    : '';
+  const due =
+    typeof input.leadNextActionDueAtMs === 'number' &&
+    Number.isFinite(input.leadNextActionDueAtMs) &&
+    input.leadNextActionDueAtMs > 0
+      ? Math.floor(input.leadNextActionDueAtMs)
+      : null;
+
+  return {
+    leadCompany: clampString(input.leadCompany, LEAD_CRM_CONSTRAINTS.companyMax),
+    leadRole: clampString(input.leadRole, LEAD_CRM_CONSTRAINTS.roleMax),
+    leadSource,
+    leadPriority,
+    leadNextAction: clampString(input.leadNextAction, LEAD_CRM_CONSTRAINTS.nextActionMax),
+    leadNextActionDueAtMs: due,
+    leadOutcome,
+  };
+}
+
 export function sanitizeContactTriageUpdate(input: {
   triageStatus: unknown;
   ownerNote: unknown;
-}): { triageStatus: ContactTriageStatus; ownerNote: string } {
+  leadCompany?: unknown;
+  leadRole?: unknown;
+  leadSource?: unknown;
+  leadPriority?: unknown;
+  leadNextAction?: unknown;
+  leadNextActionDueAtMs?: unknown;
+  leadOutcome?: unknown;
+}): { triageStatus: ContactTriageStatus; ownerNote: string } & LeadCrmFields {
+  const lead = sanitizeLeadCrmFields({
+    leadCompany: typeof input.leadCompany === 'string' ? input.leadCompany : '',
+    leadRole: typeof input.leadRole === 'string' ? input.leadRole : '',
+    leadSource: input.leadSource as LeadCrmFields['leadSource'],
+    leadPriority: input.leadPriority as LeadCrmFields['leadPriority'],
+    leadNextAction: typeof input.leadNextAction === 'string' ? input.leadNextAction : '',
+    leadNextActionDueAtMs:
+      typeof input.leadNextActionDueAtMs === 'number' ? input.leadNextActionDueAtMs : null,
+    leadOutcome: input.leadOutcome as LeadCrmFields['leadOutcome'],
+  });
+
   return {
     triageStatus: normalizeContactTriageStatus(input.triageStatus),
     ownerNote:
       typeof input.ownerNote === 'string'
         ? input.ownerNote.trim().slice(0, CONTACT_MESSAGE_LOG_CONSTRAINTS.ownerNoteMaxLength)
         : '',
+    ...lead,
   };
+}
+
+export function emptyLeadCrm(): LeadCrmFields {
+  return { ...DEFAULT_LEAD_CRM };
 }
 
 function clampString(value: unknown, maxLen: number): string {

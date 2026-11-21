@@ -36,7 +36,7 @@ export default function FloatingBackToTop() {
           onClick={scrollToTop}
           aria-label="Back to top"
           title="Back to top"
-          className={`fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] right-[max(1.25rem,env(safe-area-inset-right))] z-40 flex h-11 w-11 items-center justify-center rounded-xl border shadow-lg backdrop-blur-md focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 print:hidden overflow-hidden ${
+          className={`fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] right-[max(4.75rem,calc(env(safe-area-inset-right)+3.5rem))] z-40 flex h-11 w-11 items-center justify-center rounded-xl border shadow-lg backdrop-blur-md focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 print:hidden overflow-hidden ${
             isLight
               ? 'border-sky-300 bg-white/95 text-sky-700 shadow-slate-300/50 hover:bg-sky-50'
               : 'border-cyan-500/40 bg-[#0d121f]/95 text-cyan-300 shadow-cyan-950/40 hover:bg-cyan-950/80 hover:text-white'

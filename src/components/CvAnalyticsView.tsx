@@ -39,18 +39,27 @@ import { useModalPlacement } from '../hooks/useModalPlacement';
 import { useTheme } from '../theme/ThemeProvider';
 import {
   CONTACT_TRIAGE_STATUSES,
+  LEAD_OUTCOMES,
+  LEAD_PRIORITIES,
+  LEAD_SOURCES,
   buildCsvFromContactLogs,
   type ContactMessageLogRecord,
   type ContactTriageStatus,
+  type LeadCrmFields,
 } from '../utils/contactMessageLogValidation';
 import {
   buildCsvFromDownloadLogs,
   type CvDownloadLogRecord,
 } from '../utils/cvDownloadLogValidation';
 import { evaluateAccessRules } from '../utils/ownerGovernance';
+import {
+  OWNER_REPLY_TEMPLATES,
+  composeOwnerReplySubject,
+} from '../utils/ownerConsoleRouting';
 import CvAnalyticsCharts from './CvAnalyticsCharts';
 import ModalHeaderScan from './ModalHeaderScan';
 import { EASE_OUT_EXPO } from './MotionPrimitives';
+import { toUserFacingError } from '../utils/userFacingError';
 import {
   AccessRulesPanel,
   AdminAuditPanel,
@@ -144,6 +153,7 @@ export function CvAnalyticsPanel({
     loadingContactLogs,
     deleteContactMessageLog,
     updateContactMessageTriage,
+    replyToContactMessage,
     accessRules,
     createAccessRule,
     adminAuditLogs,
@@ -163,6 +173,11 @@ export function CvAnalyticsPanel({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [ruleBusyKey, setRuleBusyKey] = useState<string | null>(null);
   const [triageNotesDraft, setTriageNotesDraft] = useState<Record<string, string>>({});
+  const [replyDrafts, setReplyDrafts] = useState<Record<string, { subject: string; body: string }>>(
+    {}
+  );
+  const [crmDrafts, setCrmDrafts] = useState<Record<string, Partial<LeadCrmFields>>>({});
+  const [replyBusyId, setReplyBusyId] = useState<string | null>(null);
   const [savingNoteId, setSavingNoteId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
@@ -474,9 +489,7 @@ export function CvAnalyticsPanel({
       } catch (err) {
         if (!cancelled) {
           setActionError(
-            err instanceof Error
-              ? err.message
-              : 'Unable to export analytics PDF right now.'
+            toUserFacingError(err, 'Unable to export analytics PDF right now.')
           );
         }
       } finally {
@@ -501,7 +514,7 @@ export function CvAnalyticsPanel({
       await deleteCvDownloadLog(downloadId);
       setConfirmDeleteId(null);
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Unable to delete record.');
+      setActionError(toUserFacingError(err, 'Unable to delete record.'));
     } finally {
       setBusyId(null);
     }
@@ -514,7 +527,7 @@ export function CvAnalyticsPanel({
       await deleteContactMessageLog(messageId);
       setConfirmDeleteId(null);
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Unable to delete message record.');
+      setActionError(toUserFacingError(err, 'Unable to delete message record.'));
     } finally {
       setBusyId(null);
     }
@@ -538,7 +551,7 @@ export function CvAnalyticsPanel({
       );
       window.setTimeout(() => setActionSuccess(null), 3500);
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Unable to create rule.');
+      setActionError(toUserFacingError(err, 'Unable to create rule.'));
     } finally {
       setRuleBusyKey(null);
     }
@@ -557,7 +570,7 @@ export function CvAnalyticsPanel({
         ownerNote: noteValue,
       });
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Unable to update inquiry status.');
+      setActionError(toUserFacingError(err, 'Unable to update inquiry status.'));
     } finally {
       setSavingNoteId(null);
     }
@@ -575,7 +588,69 @@ export function CvAnalyticsPanel({
       setActionSuccess(`Saved private note for ${msg.messageId}`);
       window.setTimeout(() => setActionSuccess(null), 3000);
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Unable to save note.');
+      setActionError(toUserFacingError(err, 'Unable to save note.'));
+    } finally {
+      setSavingNoteId(null);
+    }
+  };
+
+  const getReplyDraft = (msg: ContactMessageLogRecord) =>
+    replyDrafts[msg.messageId] || {
+      subject: composeOwnerReplySubject(msg.subject || 'Portfolio inquiry'),
+      body: '',
+    };
+
+  const handleSendReply = async (msg: ContactMessageLogRecord) => {
+    const draft = getReplyDraft(msg);
+    setReplyBusyId(msg.messageId);
+    setActionError(null);
+    try {
+      await replyToContactMessage(msg.messageId, {
+        subject: draft.subject,
+        body: draft.body,
+        markReplied: true,
+      });
+      setActionSuccess(`Reply sent to ${msg.senderEmail}`);
+      setReplyDrafts((prev) => ({
+        ...prev,
+        [msg.messageId]: { subject: draft.subject, body: '' },
+      }));
+      window.setTimeout(() => setActionSuccess(null), 3500);
+    } catch (err) {
+      setActionError(toUserFacingError(err, 'Unable to send reply.'));
+    } finally {
+      setReplyBusyId(null);
+    }
+  };
+
+  const getCrmDraft = (msg: ContactMessageLogRecord): LeadCrmFields => ({
+    leadCompany: crmDrafts[msg.messageId]?.leadCompany ?? msg.leadCompany ?? '',
+    leadRole: crmDrafts[msg.messageId]?.leadRole ?? msg.leadRole ?? '',
+    leadSource: crmDrafts[msg.messageId]?.leadSource ?? msg.leadSource ?? '',
+    leadPriority: crmDrafts[msg.messageId]?.leadPriority ?? msg.leadPriority ?? '',
+    leadNextAction: crmDrafts[msg.messageId]?.leadNextAction ?? msg.leadNextAction ?? '',
+    leadNextActionDueAtMs:
+      crmDrafts[msg.messageId]?.leadNextActionDueAtMs !== undefined
+        ? crmDrafts[msg.messageId]?.leadNextActionDueAtMs ?? null
+        : msg.leadNextActionDueAtMs ?? null,
+    leadOutcome: crmDrafts[msg.messageId]?.leadOutcome ?? msg.leadOutcome ?? '',
+  });
+
+  const handleSaveCrm = async (msg: ContactMessageLogRecord) => {
+    const crm = getCrmDraft(msg);
+    const noteValue = triageNotesDraft[msg.messageId] ?? msg.ownerNote;
+    setSavingNoteId(msg.messageId);
+    setActionError(null);
+    try {
+      await updateContactMessageTriage(msg.messageId, {
+        triageStatus: msg.triageStatus,
+        ownerNote: noteValue,
+        ...crm,
+      });
+      setActionSuccess(`Saved CRM fields for ${msg.senderEmail}`);
+      window.setTimeout(() => setActionSuccess(null), 3000);
+    } catch (err) {
+      setActionError(toUserFacingError(err, 'Unable to save CRM fields.'));
     } finally {
       setSavingNoteId(null);
     }
@@ -1188,6 +1263,233 @@ export function CvAnalyticsPanel({
                               <Check className="w-3 h-3" />
                             )}
                             <span>Save Note</span>
+                          </button>
+                        </div>
+
+                        <div className="space-y-1.5 pt-1 border-t border-dashed border-slate-700/50">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className={`text-[10px] font-mono uppercase ${mutedCls}`}>
+                              Reply from console
+                            </span>
+                            <div className="flex flex-wrap gap-1">
+                              {OWNER_REPLY_TEMPLATES.map((tpl) => (
+                                <button
+                                  key={tpl.id}
+                                  type="button"
+                                  onClick={() =>
+                                    setReplyDrafts((prev) => ({
+                                      ...prev,
+                                      [msg.messageId]: {
+                                        subject: composeOwnerReplySubject(
+                                          msg.subject || 'Portfolio inquiry'
+                                        ),
+                                        body: tpl.body,
+                                      },
+                                    }))
+                                  }
+                                  className={`px-2 py-0.5 rounded border text-[10px] font-mono cursor-pointer ${
+                                    isLight
+                                      ? 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                                      : 'border-slate-700 bg-slate-900/70 text-slate-400 hover:text-white'
+                                  }`}
+                                >
+                                  {tpl.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          <input
+                            type="text"
+                            maxLength={200}
+                            value={getReplyDraft(msg).subject}
+                            onChange={(e) =>
+                              setReplyDrafts((prev) => ({
+                                ...prev,
+                                [msg.messageId]: {
+                                  ...getReplyDraft(msg),
+                                  subject: e.target.value,
+                                },
+                              }))
+                            }
+                            placeholder="Reply subject"
+                            className={`w-full rounded-md border px-2.5 py-1 text-xs focus:outline-none ${inputCls}`}
+                          />
+                          <textarea
+                            rows={3}
+                            maxLength={5000}
+                            value={getReplyDraft(msg).body}
+                            onChange={(e) =>
+                              setReplyDrafts((prev) => ({
+                                ...prev,
+                                [msg.messageId]: {
+                                  ...getReplyDraft(msg),
+                                  body: e.target.value,
+                                },
+                              }))
+                            }
+                            placeholder="Write a reply to the visitor..."
+                            className={`w-full rounded-md border px-2.5 py-1.5 text-xs focus:outline-none resize-y ${inputCls}`}
+                          />
+                          <button
+                            type="button"
+                            disabled={
+                              replyBusyId === msg.messageId ||
+                              getReplyDraft(msg).body.trim().length < 3
+                            }
+                            onClick={() => void handleSendReply(msg)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#34d399] text-slate-950 text-[11px] font-semibold cursor-pointer disabled:opacity-40"
+                          >
+                            {replyBusyId === msg.messageId ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <Mail className="w-3 h-3" />
+                            )}
+                            Send reply &amp; mark Replied
+                          </button>
+                        </div>
+
+                        <div className="space-y-1.5 pt-1 border-t border-dashed border-slate-700/50">
+                          <span className={`text-[10px] font-mono uppercase ${mutedCls}`}>
+                            Lead CRM
+                          </span>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                            <input
+                              type="text"
+                              placeholder="Company"
+                              value={getCrmDraft(msg).leadCompany}
+                              onChange={(e) =>
+                                setCrmDrafts((prev) => ({
+                                  ...prev,
+                                  [msg.messageId]: { ...getCrmDraft(msg), leadCompany: e.target.value },
+                                }))
+                              }
+                              className={`rounded-md border px-2.5 py-1 text-xs focus:outline-none ${inputCls}`}
+                            />
+                            <input
+                              type="text"
+                              placeholder="Role"
+                              value={getCrmDraft(msg).leadRole}
+                              onChange={(e) =>
+                                setCrmDrafts((prev) => ({
+                                  ...prev,
+                                  [msg.messageId]: { ...getCrmDraft(msg), leadRole: e.target.value },
+                                }))
+                              }
+                              className={`rounded-md border px-2.5 py-1 text-xs focus:outline-none ${inputCls}`}
+                            />
+                            <select
+                              value={getCrmDraft(msg).leadSource}
+                              onChange={(e) =>
+                                setCrmDrafts((prev) => ({
+                                  ...prev,
+                                  [msg.messageId]: {
+                                    ...getCrmDraft(msg),
+                                    leadSource: e.target.value as LeadCrmFields['leadSource'],
+                                  },
+                                }))
+                              }
+                              className={`rounded-md border px-2.5 py-1 text-xs focus:outline-none ${inputCls}`}
+                            >
+                              {LEAD_SOURCES.map((s) => (
+                                <option key={s || 'none'} value={s}>
+                                  {s ? `Source: ${s}` : 'Source: —'}
+                                </option>
+                              ))}
+                            </select>
+                            <select
+                              value={getCrmDraft(msg).leadPriority}
+                              onChange={(e) =>
+                                setCrmDrafts((prev) => ({
+                                  ...prev,
+                                  [msg.messageId]: {
+                                    ...getCrmDraft(msg),
+                                    leadPriority: e.target.value as LeadCrmFields['leadPriority'],
+                                  },
+                                }))
+                              }
+                              className={`rounded-md border px-2.5 py-1 text-xs focus:outline-none ${inputCls}`}
+                            >
+                              {LEAD_PRIORITIES.map((p) => (
+                                <option key={p || 'none'} value={p}>
+                                  {p ? `Priority: ${p}` : 'Priority: —'}
+                                </option>
+                              ))}
+                            </select>
+                            <input
+                              type="text"
+                              placeholder="Next action"
+                              value={getCrmDraft(msg).leadNextAction}
+                              onChange={(e) =>
+                                setCrmDrafts((prev) => ({
+                                  ...prev,
+                                  [msg.messageId]: {
+                                    ...getCrmDraft(msg),
+                                    leadNextAction: e.target.value,
+                                  },
+                                }))
+                              }
+                              className={`rounded-md border px-2.5 py-1 text-xs focus:outline-none ${inputCls}`}
+                            />
+                            <input
+                              type="datetime-local"
+                              value={
+                                getCrmDraft(msg).leadNextActionDueAtMs
+                                  ? (() => {
+                                      const d = new Date(getCrmDraft(msg).leadNextActionDueAtMs!);
+                                      const pad = (n: number) => String(n).padStart(2, '0');
+                                      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                                    })()
+                                  : ''
+                              }
+                              onChange={(e) =>
+                                setCrmDrafts((prev) => ({
+                                  ...prev,
+                                  [msg.messageId]: {
+                                    ...getCrmDraft(msg),
+                                    leadNextActionDueAtMs: e.target.value
+                                      ? new Date(e.target.value).getTime()
+                                      : null,
+                                  },
+                                }))
+                              }
+                              className={`rounded-md border px-2.5 py-1 text-xs focus:outline-none ${inputCls}`}
+                            />
+                            <select
+                              value={getCrmDraft(msg).leadOutcome}
+                              onChange={(e) =>
+                                setCrmDrafts((prev) => ({
+                                  ...prev,
+                                  [msg.messageId]: {
+                                    ...getCrmDraft(msg),
+                                    leadOutcome: e.target.value as LeadCrmFields['leadOutcome'],
+                                  },
+                                }))
+                              }
+                              className={`rounded-md border px-2.5 py-1 text-xs focus:outline-none sm:col-span-2 ${inputCls}`}
+                            >
+                              {LEAD_OUTCOMES.map((o) => (
+                                <option key={o || 'none'} value={o}>
+                                  {o ? `Outcome: ${o}` : 'Outcome: —'}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <button
+                            type="button"
+                            disabled={savingNoteId === msg.messageId}
+                            onClick={() => void handleSaveCrm(msg)}
+                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md border text-[11px] font-mono cursor-pointer disabled:opacity-40 ${
+                              isLight
+                                ? 'border-sky-300 bg-sky-50 text-sky-800'
+                                : 'border-cyan-500/40 bg-cyan-950/40 text-cyan-200'
+                            }`}
+                          >
+                            {savingNoteId === msg.messageId ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <Check className="w-3 h-3" />
+                            )}
+                            Save CRM
                           </button>
                         </div>
                       </div>

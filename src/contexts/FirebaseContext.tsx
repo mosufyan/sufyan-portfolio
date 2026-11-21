@@ -25,6 +25,7 @@ import {
   serverTimestamp,
   setDoc,
   updateDoc,
+  where,
   writeBatch,
   type Timestamp,
 } from 'firebase/firestore';
@@ -38,10 +39,12 @@ import {
 } from '../firebase';
 import {
   generateAnnouncementId,
+  isAnnouncementPubliclyVisible,
   isPortfolioOwner,
   type AnnouncementBadge,
   type AnnouncementDraft,
   type AnnouncementRecord,
+  type AnnouncementStatus,
   validateAnnouncementDraft,
 } from '../utils/announcementValidation';
 import {
@@ -53,22 +56,29 @@ import {
   normalizeContactTriageStatus,
   sanitizeContactMessageLogPayload,
   sanitizeContactTriageUpdate,
+  sanitizeLeadCrmFields,
   type ContactMessageLogRecord,
   type ContactMessageSummary,
   type ContactTriageStatus,
+  type LeadCrmFields,
 } from '../utils/contactMessageLogValidation';
 import {
   DEFAULT_PORTFOLIO_SETTINGS,
   generateRuleId,
+  getEffectivePortfolioSettings,
   sanitizeAdminAuditPayload,
   sanitizePortfolioSettings,
+  toPublicPortfolioSettings,
   validateAccessRuleDraft,
+  validateAdminDelegateDraft,
   type AccessRuleDraft,
   type AccessRuleMatchType,
   type AccessRuleRecord,
   type AccessRuleType,
   type AdminAuditEventType,
   type AdminAuditLogRecord,
+  type AdminDelegateDraft,
+  type AdminDelegateRecord,
   type PortfolioSettings,
 } from '../utils/ownerGovernance';
 
@@ -79,13 +89,24 @@ const STARTER_ANNOUNCEMENTS: AnnouncementRecord[] = ANNOUNCEMENTS.map((item) => 
   summary: item.summary,
   badge: 'VERIFIED',
   linkUrl: '',
+  status: 'published' as const,
+  scheduledAtMs: null,
   source: 'starter',
 }));
+
+function triageNoteWithReply(existingNote: string, replyBody: string): string {
+  const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ');
+  const snippet = replyBody.trim().slice(0, 220);
+  const line = `[Reply ${stamp}] ${snippet}`;
+  const merged = existingNote.trim() ? `${existingNote.trim()}\n${line}` : line;
+  return merged.slice(0, 1000);
+}
 
 interface FirebaseContextValue {
   user: User | null;
   authReady: boolean;
   isOwner: boolean;
+  isPrimaryOwner: boolean;
   announcements: AnnouncementRecord[];
   usingStarterFallback: boolean;
   loadingAnnouncements: boolean;
@@ -94,11 +115,14 @@ interface FirebaseContextValue {
   contactMessageLogs: ContactMessageLogRecord[];
   loadingContactLogs: boolean;
   portfolioSettings: PortfolioSettings;
+  effectivePortfolioSettings: PortfolioSettings;
   loadingSettings: boolean;
   adminAuditLogs: AdminAuditLogRecord[];
   loadingAuditLogs: boolean;
   accessRules: AccessRuleRecord[];
   loadingAccessRules: boolean;
+  adminDelegates: AdminDelegateRecord[];
+  loadingDelegates: boolean;
   signInAsOwner: () => Promise<void>;
   signOutOwner: () => Promise<void>;
   createAnnouncement: (draft: AnnouncementDraft, importStarterIfEmpty?: boolean) => Promise<void>;
@@ -111,11 +135,17 @@ interface FirebaseContextValue {
   deleteContactMessageLog: (messageId: string) => Promise<void>;
   updateContactMessageTriage: (
     messageId: string,
-    triage: { triageStatus: ContactTriageStatus; ownerNote: string }
+    triage: { triageStatus: ContactTriageStatus; ownerNote: string } & Partial<LeadCrmFields>
+  ) => Promise<void>;
+  replyToContactMessage: (
+    messageId: string,
+    reply: { subject: string; body: string; markReplied?: boolean }
   ) => Promise<void>;
   savePortfolioSettings: (next: PortfolioSettings) => Promise<void>;
   createAccessRule: (draft: AccessRuleDraft) => Promise<void>;
   deleteAccessRule: (ruleId: string) => Promise<void>;
+  addAdminDelegate: (draft: AdminDelegateDraft) => Promise<void>;
+  removeAdminDelegate: (uid: string) => Promise<void>;
 }
 
 const FirebaseContext = createContext<FirebaseContextValue | null>(null);
@@ -137,7 +167,11 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
   const [loadingAuditLogs, setLoadingAuditLogs] = useState(false);
   const [accessRules, setAccessRules] = useState<AccessRuleRecord[]>([]);
   const [loadingAccessRules, setLoadingAccessRules] = useState(false);
+  const [adminDelegates, setAdminDelegates] = useState<AdminDelegateRecord[]>([]);
+  const [loadingDelegates, setLoadingDelegates] = useState(false);
+  const [isDelegateAdmin, setIsDelegateAdmin] = useState(false);
   const lastPolicyDigestRef = useRef<string>('');
+  const ownerAccessRef = useRef(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (nextUser) => {
@@ -147,52 +181,44 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
     return () => unsubscribe();
   }, []);
 
+  const isPrimaryOwner = isPortfolioOwner(user);
+
+  // Visitors subscribe to portfolio_settings/public (UX flags only).
   useEffect(() => {
     if (!authReady) return;
 
-    const path = 'announcements';
-    const q = query(collection(db, path), orderBy('createdAt', 'desc'));
     const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const items: AnnouncementRecord[] = snapshot.docs.map((docSnap) => {
-          const data = docSnap.data();
-          return {
-            id: docSnap.id,
-            date: typeof data.date === 'string' ? data.date : '',
-            title: typeof data.title === 'string' ? data.title : '',
-            summary: typeof data.summary === 'string' ? data.summary : '',
-            badge: (typeof data.badge === 'string' ? data.badge : 'VERIFIED') as AnnouncementBadge,
-            linkUrl: typeof data.linkUrl === 'string' ? data.linkUrl : '',
-            source: 'cloud',
-          };
-        });
-        setCloudAnnouncements(items);
-        setLoadingAnnouncements(false);
+      doc(db, 'portfolio_settings', 'public'),
+      (docSnap) => {
+        if (docSnap.exists()) {
+          setPortfolioSettings((prev) =>
+            sanitizePortfolioSettings({
+              ...prev,
+              ...(docSnap.data() as Partial<PortfolioSettings>),
+            })
+          );
+        }
+        setLoadingSettings(false);
       },
       (error) => {
-        setLoadingAnnouncements(false);
-        setCloudAnnouncements((prev) => prev ?? []);
-        handleFirestoreError(error, OperationType.GET, path);
+        setLoadingSettings(false);
+        console.warn('Public portfolio settings unavailable:', error);
       }
     );
 
     return () => unsubscribe();
   }, [authReady]);
 
-  // Public singleton portfolio_settings/global subscription
+  // Primary owner also loads portfolio_settings/global (full policy including caps/alerts).
   useEffect(() => {
-    if (!authReady) return;
+    if (!authReady || !isPrimaryOwner) return;
 
     const path = 'portfolio_settings/global';
-    const ref = doc(db, 'portfolio_settings', 'global');
     const unsubscribe = onSnapshot(
-      ref,
+      doc(db, 'portfolio_settings', 'global'),
       (docSnap) => {
         if (docSnap.exists()) {
           setPortfolioSettings(sanitizePortfolioSettings(docSnap.data() as Partial<PortfolioSettings>));
-        } else {
-          setPortfolioSettings({ ...DEFAULT_PORTFOLIO_SETTINGS });
         }
         setLoadingSettings(false);
       },
@@ -203,9 +229,201 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
     );
 
     return () => unsubscribe();
-  }, [authReady]);
+  }, [authReady, isPrimaryOwner]);
 
-  const isOwner = isPortfolioOwner(user);
+  // Secondary admin: listen to admins/{uid} for console access when not primary owner
+  useEffect(() => {
+    if (!authReady || !user || isPrimaryOwner) {
+      setIsDelegateAdmin(false);
+      return;
+    }
+    const path = `admins/${user.uid}`;
+    const unsubscribe = onSnapshot(
+      doc(db, 'admins', user.uid),
+      (snap) => {
+        setIsDelegateAdmin(snap.exists());
+      },
+      (error) => {
+        setIsDelegateAdmin(false);
+        handleFirestoreError(error, OperationType.GET, path);
+      }
+    );
+    return () => unsubscribe();
+  }, [authReady, user, isPrimaryOwner]);
+
+  const isOwner = isPrimaryOwner || isDelegateAdmin;
+  ownerAccessRef.current = isOwner;
+
+  useEffect(() => {
+    if (!authReady) return;
+
+    const path = 'announcements';
+    let cancelled = false;
+    const unsubs: Array<() => void> = [];
+
+    const mapDoc = (docSnap: { id: string; data: () => Record<string, unknown> }): AnnouncementRecord => {
+      const data = docSnap.data();
+      const statusRaw = typeof data.status === 'string' ? data.status : 'published';
+      const status: AnnouncementStatus =
+        statusRaw === 'draft' || statusRaw === 'scheduled' || statusRaw === 'published'
+          ? statusRaw
+          : 'published';
+      const scheduledAtMs =
+        typeof data.scheduledAtMs === 'number' && Number.isFinite(data.scheduledAtMs) && data.scheduledAtMs > 0
+          ? Math.floor(data.scheduledAtMs)
+          : null;
+      return {
+        id: docSnap.id,
+        date: typeof data.date === 'string' ? data.date : '',
+        title: typeof data.title === 'string' ? data.title : '',
+        summary: typeof data.summary === 'string' ? data.summary : '',
+        badge: (typeof data.badge === 'string' ? data.badge : 'VERIFIED') as AnnouncementBadge,
+        linkUrl: typeof data.linkUrl === 'string' ? data.linkUrl : '',
+        status,
+        scheduledAtMs,
+        source: 'cloud',
+      };
+    };
+
+    // Avoid retry-spamming console when a migration write is rejected by rules.
+    const migrationSkipIds = new Set<string>();
+    let migrationInFlight = false;
+
+    if (isOwner) {
+      // Full collection for owners; migrate legacy missing status and auto-publish due scheduled.
+      const q = query(collection(db, path), orderBy('createdAt', 'desc'));
+      unsubs.push(
+        onSnapshot(
+          q,
+          (snapshot) => {
+            if (cancelled) return;
+            void (async () => {
+              if (migrationInFlight) return;
+              const now = Date.now();
+              const candidates = snapshot.docs.filter((docSnap) => {
+                if (migrationSkipIds.has(docSnap.id)) return false;
+                const data = docSnap.data();
+                // Incomplete legacy docs can't satisfy update rules — display-only via mapDoc.
+                if (typeof data.authorUid !== 'string' || !data.authorUid) {
+                  migrationSkipIds.add(docSnap.id);
+                  return false;
+                }
+                if (data.status == null || data.status === '') return true;
+                return (
+                  data.status === 'scheduled' &&
+                  typeof data.scheduledAtMs === 'number' &&
+                  data.scheduledAtMs <= now
+                );
+              });
+              if (candidates.length === 0) return;
+
+              migrationInFlight = true;
+              try {
+                const batch = writeBatch(db);
+                let ops = 0;
+                for (const docSnap of candidates) {
+                  batch.update(doc(db, path, docSnap.id), {
+                    status: 'published',
+                    updatedAt: serverTimestamp(),
+                  });
+                  ops += 1;
+                  if (ops >= 400) break;
+                }
+                await batch.commit();
+              } catch (err) {
+                for (const docSnap of candidates) migrationSkipIds.add(docSnap.id);
+                console.warn(
+                  'Announcement status migration skipped (once per doc):',
+                  err instanceof Error ? err.message : err
+                );
+              } finally {
+                migrationInFlight = false;
+              }
+            })();
+
+            setCloudAnnouncements(snapshot.docs.map(mapDoc));
+            setLoadingAnnouncements(false);
+          },
+          (error) => {
+            setLoadingAnnouncements(false);
+            setCloudAnnouncements((prev) => prev ?? []);
+            handleFirestoreError(error, OperationType.GET, path);
+          }
+        )
+      );
+    } else {
+      // Public: published query + due-scheduled query (rules allow both via isPubliclyVisibleAnnouncement).
+      const publishedById = new Map<string, AnnouncementRecord>();
+      const scheduledById = new Map<string, AnnouncementRecord>();
+
+      const publishMerged = () => {
+        if (cancelled) return;
+        const merged = new Map<string, AnnouncementRecord>();
+        for (const item of publishedById.values()) merged.set(item.id, item);
+        for (const item of scheduledById.values()) {
+          if (!merged.has(item.id)) {
+            merged.set(item.id, { ...item, status: 'published' });
+          }
+        }
+        const list = Array.from(merged.values()).sort((a, b) => {
+          const aMs = a.scheduledAtMs || 0;
+          const bMs = b.scheduledAtMs || 0;
+          return bMs - aMs;
+        });
+        setCloudAnnouncements(list);
+        setLoadingAnnouncements(false);
+      };
+
+      const publishedQ = query(
+        collection(db, path),
+        where('status', '==', 'published'),
+        orderBy('createdAt', 'desc')
+      );
+      const dueScheduledQ = query(
+        collection(db, path),
+        where('status', '==', 'scheduled'),
+        where('scheduledAtMs', '<=', Date.now()),
+        orderBy('scheduledAtMs', 'desc')
+      );
+
+      unsubs.push(
+        onSnapshot(
+          publishedQ,
+          (snapshot) => {
+            publishedById.clear();
+            for (const item of snapshot.docs.map(mapDoc)) publishedById.set(item.id, item);
+            publishMerged();
+          },
+          (error) => {
+            setLoadingAnnouncements(false);
+            setCloudAnnouncements((prev) => prev ?? []);
+            handleFirestoreError(error, OperationType.GET, path);
+          }
+        )
+      );
+      unsubs.push(
+        onSnapshot(
+          dueScheduledQ,
+          (snapshot) => {
+            scheduledById.clear();
+            for (const item of snapshot.docs.map(mapDoc)) scheduledById.set(item.id, item);
+            publishMerged();
+          },
+          (error) => {
+            // Index may still be building; published query alone covers most traffic.
+            console.warn('Due-scheduled announcements query unavailable:', error);
+            scheduledById.clear();
+            publishMerged();
+          }
+        )
+      );
+    }
+
+    return () => {
+      cancelled = true;
+      for (const unsub of unsubs) unsub();
+    };
+  }, [authReady, isOwner]);
 
   // Strictly attach cv_downloads PII stream ONLY when verified portfolio owner is signed in
   useEffect(() => {
@@ -314,6 +532,16 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
             userAgent: typeof d.userAgent === 'string' ? d.userAgent : '',
             triageStatus: normalizeContactTriageStatus(d.triageStatus),
             ownerNote: typeof d.ownerNote === 'string' ? d.ownerNote : '',
+            ...sanitizeLeadCrmFields({
+              leadCompany: typeof d.leadCompany === 'string' ? d.leadCompany : '',
+              leadRole: typeof d.leadRole === 'string' ? d.leadRole : '',
+              leadSource: d.leadSource,
+              leadPriority: d.leadPriority,
+              leadNextAction: typeof d.leadNextAction === 'string' ? d.leadNextAction : '',
+              leadNextActionDueAtMs:
+                typeof d.leadNextActionDueAtMs === 'number' ? d.leadNextActionDueAtMs : null,
+              leadOutcome: d.leadOutcome,
+            }),
             triagedAtMs: triagedMs,
             createdAtMs: ms,
             createdAtIso: new Date(ms).toISOString(),
@@ -424,6 +652,7 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
       settings: PortfolioSettings
     ) => {
       if (!targetUser || !isPortfolioOwner(targetUser)) return;
+      const effective = getEffectivePortfolioSettings(settings);
       const payload = {
         rules: rules.map((r) => ({
           ruleType: r.ruleType,
@@ -431,9 +660,33 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
           value: r.value,
           note: r.note,
         })),
-        strictOtpForAll: settings.strictOtpForAll,
-        enableContactForm: settings.enableContactForm,
-        enableCvDownloads: settings.enableCvDownloads,
+        strictOtpForAll: effective.strictOtpForAll,
+        enableContactForm: effective.enableContactForm,
+        enableCvDownloads: effective.enableCvDownloads,
+        enablePwaInstall: effective.enablePwaInstall,
+        enableSiteTelemetry: effective.enableSiteTelemetry,
+        incidentMode: settings.incidentMode,
+        notifyOnNewInquiry: settings.notifyOnNewInquiry,
+        enablePortfolioChat: effective.enablePortfolioChat,
+        enableLiveChat: effective.enableLiveChat,
+        enableChatLlm: effective.enableChatLlm,
+        chatMaxQuestionsPerVisitor: settings.chatMaxQuestionsPerVisitor,
+        chatMaxLlmPerVisitor: settings.chatMaxLlmPerVisitor,
+        chatMaxLiveSessionsPerVisitor: settings.chatMaxLiveSessionsPerVisitor,
+        chatRateWindowHours: settings.chatRateWindowHours,
+        chatLlmModel: settings.chatLlmModel,
+        chatShowSuggestions: settings.chatShowSuggestions,
+        chatOfferLiveAgent: settings.chatOfferLiveAgent,
+        alertEmailEnabled: settings.alertEmailEnabled,
+        alertEmailUrgent: settings.alertEmailUrgent,
+        alertEmailWarning: settings.alertEmailWarning,
+        alertEmailDigest: settings.alertEmailDigest,
+        alertClassNewInquiry: settings.alertClassNewInquiry,
+        alertClassLiveChat: settings.alertClassLiveChat,
+        alertClassRiskDownload: settings.alertClassRiskDownload,
+        alertClassUnusualTraffic: settings.alertClassUnusualTraffic,
+        alertClassChatLimit: settings.alertClassChatLimit,
+        alertClassOverdueCrm: settings.alertClassOverdueCrm,
       };
       const digest = JSON.stringify(payload);
       if (digest === lastPolicyDigestRef.current) return;
@@ -473,10 +726,18 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
     syncOwnerPolicyToServer,
   ]);
 
+  const assertOwnerActor = useCallback((): User => {
+    const actor = auth.currentUser;
+    if (!actor || !ownerAccessRef.current) {
+      throw new Error('Only a verified portfolio owner or delegate admin can perform this action.');
+    }
+    return actor;
+  }, []);
+
   const recordAdminAudit = useCallback(
     async (eventType: AdminAuditEventType, summary: string, actorOverride?: User | null) => {
       const actor = actorOverride ?? auth.currentUser;
-      if (!actor || !isPortfolioOwner(actor)) return;
+      if (!actor || !(isPortfolioOwner(actor) || ownerAccessRef.current)) return;
 
       let tz = '';
       try {
@@ -523,6 +784,23 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
 
   const signOutOwner = useCallback(async () => {
     const currentUser = auth.currentUser;
+    if (currentUser) {
+      // Mark live-chat presence offline before the ID token becomes unusable.
+      try {
+        const token = await currentUser.getIdToken();
+        await fetch('/api/owner/presence', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ online: false }),
+          keepalive: true,
+        });
+      } catch {
+        /* non-fatal — presence TTL will expire */
+      }
+    }
     if (currentUser && isPortfolioOwner(currentUser)) {
       const host = typeof window !== 'undefined' ? window.location.hostname : 'unknown';
       await recordAdminAudit('owner_logout', `Owner console sign-out from ${host}`, currentUser).catch(
@@ -534,10 +812,7 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
   }, [recordAdminAudit]);
 
   const importStarterAnnouncements = useCallback(async () => {
-    const currentUser = auth.currentUser;
-    if (!currentUser || !isPortfolioOwner(currentUser)) {
-      throw new Error('Only the verified portfolio owner can import starter announcements.');
-    }
+    const currentUser = assertOwnerActor();
 
     const batch = writeBatch(db);
     for (const starter of STARTER_ANNOUNCEMENTS) {
@@ -545,6 +820,7 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
       if (!check.valid) continue;
       batch.set(doc(db, 'announcements', starter.id), {
         ...check.normalized,
+        scheduledAtMs: check.normalized.scheduledAtMs ?? 0,
         authorUid: currentUser.uid,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
@@ -559,14 +835,11 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'announcements');
     }
-  }, [recordAdminAudit]);
+  }, [assertOwnerActor, recordAdminAudit]);
 
   const createAnnouncement = useCallback(
     async (draft: AnnouncementDraft, importStarterIfEmpty = true) => {
-      const currentUser = auth.currentUser;
-      if (!currentUser || !isPortfolioOwner(currentUser)) {
-        throw new Error('Only the verified portfolio owner can publish announcements.');
-      }
+      const currentUser = assertOwnerActor();
 
       const validation = validateAnnouncementDraft(draft);
       if (!validation.valid) {
@@ -582,27 +855,25 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
       try {
         await setDoc(doc(db, 'announcements', id), {
           ...validation.normalized,
+          scheduledAtMs: validation.normalized.scheduledAtMs ?? 0,
           authorUid: currentUser.uid,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
         void recordAdminAudit(
           'announcement_mutated',
-          `Published announcement: ${validation.normalized.title.slice(0, 120)}`
+          `${validation.normalized.status === 'published' ? 'Published' : 'Saved'} announcement: ${validation.normalized.title.slice(0, 120)}`
         ).catch(() => {});
       } catch (error) {
         handleFirestoreError(error, OperationType.CREATE, docPath);
       }
     },
-    [cloudAnnouncements?.length, importStarterAnnouncements, recordAdminAudit]
+    [assertOwnerActor, cloudAnnouncements?.length, importStarterAnnouncements, recordAdminAudit]
   );
 
   const updateAnnouncement = useCallback(
     async (id: string, draft: AnnouncementDraft) => {
-      const currentUser = auth.currentUser;
-      if (!currentUser || !isPortfolioOwner(currentUser)) {
-        throw new Error('Only the verified portfolio owner can edit announcements.');
-      }
+      assertOwnerActor();
 
       const validation = validateAnnouncementDraft(draft);
       if (!validation.valid) {
@@ -612,7 +883,13 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
       const docPath = `announcements/${id}`;
       try {
         await updateDoc(doc(db, 'announcements', id), {
-          ...validation.normalized,
+          date: validation.normalized.date,
+          title: validation.normalized.title,
+          summary: validation.normalized.summary,
+          badge: validation.normalized.badge,
+          linkUrl: validation.normalized.linkUrl,
+          status: validation.normalized.status,
+          scheduledAtMs: validation.normalized.scheduledAtMs ?? 0,
           updatedAt: serverTimestamp(),
         });
         void recordAdminAudit(
@@ -623,15 +900,12 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
         handleFirestoreError(error, OperationType.UPDATE, docPath);
       }
     },
-    [recordAdminAudit]
+    [assertOwnerActor, recordAdminAudit]
   );
 
   const deleteAnnouncement = useCallback(
     async (id: string) => {
-      const currentUser = auth.currentUser;
-      if (!currentUser || !isPortfolioOwner(currentUser)) {
-        throw new Error('Only the verified portfolio owner can delete announcements.');
-      }
+      assertOwnerActor();
 
       const docPath = `announcements/${id}`;
       try {
@@ -641,29 +915,32 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
         handleFirestoreError(error, OperationType.DELETE, docPath);
       }
     },
-    [recordAdminAudit]
+    [assertOwnerActor, recordAdminAudit]
   );
 
   const recordCvDownloadLog = useCallback(async (summary: CvTrackingSummary) => {
     const sanitized = sanitizeCvDownloadLogPayload(summary);
     if (!sanitized) return;
 
-    const docPath = `cv_downloads/${sanitized.downloadId}`;
+    // Client creates are denied — Admin SDK / server persists after OTP.
+    // Keep this as a soft no-op fallback for older clients.
     try {
       await setDoc(doc(db, 'cv_downloads', sanitized.downloadId), {
         ...sanitized,
         createdAt: serverTimestamp(),
       });
     } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, docPath);
+      const code =
+        error && typeof error === 'object' && 'code' in error
+          ? String((error as { code?: string }).code || '')
+          : '';
+      if (code.includes('permission-denied')) return;
+      console.warn('CV download log client write skipped:', error);
     }
   }, []);
 
   const deleteCvDownloadLog = useCallback(async (downloadId: string) => {
-    const currentUser = auth.currentUser;
-    if (!currentUser || !isPortfolioOwner(currentUser)) {
-      throw new Error('Only the verified portfolio owner can remove download logs.');
-    }
+    assertOwnerActor();
 
     const docPath = `cv_downloads/${downloadId}`;
     try {
@@ -671,28 +948,30 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, docPath);
     }
-  }, []);
+  }, [assertOwnerActor]);
 
   const recordContactMessageLog = useCallback(async (summary: ContactMessageSummary) => {
     const sanitized = sanitizeContactMessageLogPayload(summary);
     if (!sanitized) return;
 
-    const docPath = `contact_messages/${sanitized.messageId}`;
+    // Client creates are denied — Admin SDK / server persists after OTP.
     try {
       await setDoc(doc(db, 'contact_messages', sanitized.messageId), {
         ...sanitized,
         createdAt: serverTimestamp(),
       });
     } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, docPath);
+      const code =
+        error && typeof error === 'object' && 'code' in error
+          ? String((error as { code?: string }).code || '')
+          : '';
+      if (code.includes('permission-denied')) return;
+      console.warn('Contact message log client write skipped:', error);
     }
   }, []);
 
   const deleteContactMessageLog = useCallback(async (messageId: string) => {
-    const currentUser = auth.currentUser;
-    if (!currentUser || !isPortfolioOwner(currentUser)) {
-      throw new Error('Only the verified portfolio owner can remove message logs.');
-    }
+    assertOwnerActor();
 
     const docPath = `contact_messages/${messageId}`;
     try {
@@ -700,46 +979,134 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, docPath);
     }
-  }, []);
+  }, [assertOwnerActor]);
 
   const updateContactMessageTriage = useCallback(
     async (
       messageId: string,
-      triage: { triageStatus: ContactTriageStatus; ownerNote: string }
+      triage: { triageStatus: ContactTriageStatus; ownerNote: string } & Partial<LeadCrmFields>
     ) => {
-      const currentUser = auth.currentUser;
-      if (!currentUser || !isPortfolioOwner(currentUser)) {
-        throw new Error('Only the verified portfolio owner can triage inquiries.');
-      }
-
-      const sanitized = sanitizeContactTriageUpdate(triage);
+      assertOwnerActor();
+      const existing = contactMessageLogs.find((m) => m.messageId === messageId);
+      const sanitized = sanitizeContactTriageUpdate({
+        triageStatus: triage.triageStatus,
+        ownerNote: triage.ownerNote,
+        leadCompany: triage.leadCompany ?? existing?.leadCompany,
+        leadRole: triage.leadRole ?? existing?.leadRole,
+        leadSource: triage.leadSource ?? existing?.leadSource,
+        leadPriority: triage.leadPriority ?? existing?.leadPriority,
+        leadNextAction: triage.leadNextAction ?? existing?.leadNextAction,
+        leadNextActionDueAtMs:
+          triage.leadNextActionDueAtMs !== undefined
+            ? triage.leadNextActionDueAtMs
+            : existing?.leadNextActionDueAtMs,
+        leadOutcome: triage.leadOutcome ?? existing?.leadOutcome,
+      });
       const docPath = `contact_messages/${messageId}`;
+      // Firestore rejects `undefined` with invalid-argument — keep every field concrete.
+      const patch = {
+        triageStatus: sanitized.triageStatus,
+        ownerNote: sanitized.ownerNote || '',
+        leadCompany: sanitized.leadCompany || '',
+        leadRole: sanitized.leadRole || '',
+        leadSource: sanitized.leadSource || '',
+        leadPriority: sanitized.leadPriority || '',
+        leadNextAction: sanitized.leadNextAction || '',
+        leadNextActionDueAtMs:
+          typeof sanitized.leadNextActionDueAtMs === 'number' &&
+          Number.isFinite(sanitized.leadNextActionDueAtMs)
+            ? Math.floor(sanitized.leadNextActionDueAtMs)
+            : 0,
+        leadOutcome: sanitized.leadOutcome || '',
+        triagedAt: serverTimestamp(),
+      };
       try {
-        await updateDoc(doc(db, 'contact_messages', messageId), {
-          triageStatus: sanitized.triageStatus,
-          ownerNote: sanitized.ownerNote,
-          triagedAt: serverTimestamp(),
-        });
+        await updateDoc(doc(db, 'contact_messages', messageId), patch);
         void recordAdminAudit(
           'triage_updated',
           `Triaged ${messageId} as ${sanitized.triageStatus.toUpperCase()}${
-            sanitized.ownerNote ? ' with private note' : ''
-          }`
+            sanitized.leadPriority ? ` [${sanitized.leadPriority}]` : ''
+          }${sanitized.ownerNote ? ' with private note' : ''}`
         ).catch(() => {});
       } catch (error) {
         handleFirestoreError(error, OperationType.UPDATE, docPath);
       }
     },
-    [recordAdminAudit]
+    [assertOwnerActor, contactMessageLogs, recordAdminAudit]
+  );
+
+  const replyToContactMessage = useCallback(
+    async (
+      messageId: string,
+      reply: { subject: string; body: string; markReplied?: boolean }
+    ) => {
+      const currentUser = assertOwnerActor();
+      const target = contactMessageLogs.find((m) => m.messageId === messageId);
+      if (!target) {
+        throw new Error('Inquiry not found in the current console session.');
+      }
+
+      const subject = reply.subject.trim().slice(0, 200);
+      const body = reply.body.trim().slice(0, 5000);
+      if (subject.length < 3 || body.length < 3) {
+        throw new Error('Reply subject and body must be at least 3 characters.');
+      }
+
+      const idToken = await currentUser.getIdToken();
+      const res = await fetch('/api/owner/reply-message', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          messageId,
+          toEmail: target.senderEmail,
+          toName: target.senderName,
+          subject,
+          body,
+          originalSubject: target.subject,
+        }),
+      });
+      const payload = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        triageUpdated?: boolean;
+      };
+      if (!res.ok) {
+        throw new Error(payload.error || 'Unable to send reply email.');
+      }
+
+      // Prefer server Admin triage; fall back to client update only if needed.
+      if (reply.markReplied !== false && payload.triageUpdated !== true) {
+        try {
+          await updateContactMessageTriage(messageId, {
+            triageStatus: 'replied',
+            ownerNote: triageNoteWithReply(target.ownerNote, body),
+          });
+        } catch (triageError) {
+          console.warn('Reply email sent but triage update failed:', triageError);
+          throw new Error(
+            'Reply email was sent, but status couldn’t be marked Replied. Refresh and set status manually.'
+          );
+        }
+      }
+
+      void recordAdminAudit(
+        'owner_reply_sent',
+        `Replied to ${target.senderEmail} (${messageId})`
+      ).catch(() => {});
+    },
+    [assertOwnerActor, contactMessageLogs, recordAdminAudit, updateContactMessageTriage]
   );
 
   const savePortfolioSettings = useCallback(
     async (next: PortfolioSettings) => {
-      const currentUser = auth.currentUser;
-      if (!currentUser || !isPortfolioOwner(currentUser)) {
-        throw new Error('Only the verified portfolio owner can update site controls.');
+      const currentUser = assertOwnerActor();
+      if (!isPortfolioOwner(currentUser)) {
+        throw new Error('Only the primary portfolio owner can update site controls.');
       }
 
+      const previousIncident = portfolioSettings.incidentMode;
       const clean = sanitizePortfolioSettings(next);
       const docPath = 'portfolio_settings/global';
       try {
@@ -748,23 +1115,35 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
           updatedByUid: currentUser.uid,
           updatedAt: serverTimestamp(),
         });
+        // Visitor-readable UX slice (no alert routing / rate caps / LLM model).
+        await setDoc(doc(db, 'portfolio_settings', 'public'), {
+          ...toPublicPortfolioSettings(clean),
+          updatedByUid: currentUser.uid,
+          updatedAt: serverTimestamp(),
+        });
         await syncOwnerPolicyToServer(currentUser, accessRules, clean);
         void recordAdminAudit(
           'settings_updated',
-          `Site settings saved (maintenance=${clean.maintenanceMode}, contact=${clean.enableContactForm}, cv=${clean.enableCvDownloads}, strictOtp=${clean.strictOtpForAll})`
+          `Site settings saved (incident=${clean.incidentMode}, maintenance=${clean.maintenanceMode}, contact=${clean.enableContactForm}, cv=${clean.enableCvDownloads}, strictOtp=${clean.strictOtpForAll}, alerts=${clean.notifyOnNewInquiry}, chat=${clean.enablePortfolioChat}, llm=${clean.enableChatLlm}, maxQ=${clean.chatMaxQuestionsPerVisitor})`
         ).catch(() => {});
+        if (previousIncident !== clean.incidentMode) {
+          void recordAdminAudit(
+            'incident_mode_toggled',
+            clean.incidentMode ? 'Incident mode ENABLED' : 'Incident mode DISABLED'
+          ).catch(() => {});
+        }
       } catch (error) {
         handleFirestoreError(error, OperationType.WRITE, docPath);
       }
     },
-    [accessRules, recordAdminAudit, syncOwnerPolicyToServer]
+    [accessRules, assertOwnerActor, portfolioSettings.incidentMode, recordAdminAudit, syncOwnerPolicyToServer]
   );
 
   const createAccessRule = useCallback(
     async (draft: AccessRuleDraft) => {
-      const currentUser = auth.currentUser;
-      if (!currentUser || !isPortfolioOwner(currentUser)) {
-        throw new Error('Only the verified portfolio owner can manage access rules.');
+      const currentUser = assertOwnerActor();
+      if (!isPortfolioOwner(currentUser)) {
+        throw new Error('Only the primary portfolio owner can create access rules.');
       }
 
       const check = validateAccessRuleDraft(draft);
@@ -789,14 +1168,14 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
         handleFirestoreError(error, OperationType.CREATE, docPath);
       }
     },
-    [recordAdminAudit]
+    [assertOwnerActor, recordAdminAudit]
   );
 
   const deleteAccessRule = useCallback(
     async (ruleId: string) => {
-      const currentUser = auth.currentUser;
-      if (!currentUser || !isPortfolioOwner(currentUser)) {
-        throw new Error('Only the verified portfolio owner can delete access rules.');
+      const currentUser = assertOwnerActor();
+      if (!isPortfolioOwner(currentUser)) {
+        throw new Error('Only the primary portfolio owner can delete access rules.');
       }
 
       const target = accessRules.find((r) => r.ruleId === ruleId);
@@ -811,17 +1190,119 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
         handleFirestoreError(error, OperationType.DELETE, docPath);
       }
     },
-    [accessRules, recordAdminAudit]
+    [accessRules, assertOwnerActor, recordAdminAudit]
+  );
+
+  // Primary owner can list/manage delegate admins
+  useEffect(() => {
+    if (!authReady || !isPrimaryOwner) {
+      setAdminDelegates([]);
+      setLoadingDelegates(false);
+      return;
+    }
+
+    setLoadingDelegates(true);
+    const path = 'admins';
+    const unsubscribe = onSnapshot(
+      collection(db, path),
+      (snapshot) => {
+        const items: AdminDelegateRecord[] = snapshot.docs.map((docSnap) => {
+          const d = docSnap.data();
+          const ts = d.createdAt as Timestamp | undefined;
+          const ms = ts && typeof ts.toMillis === 'function' ? ts.toMillis() : Date.now();
+          return {
+            uid: typeof d.uid === 'string' ? d.uid : docSnap.id,
+            email: typeof d.email === 'string' ? d.email : '',
+            role: 'admin',
+            createdByUid: typeof d.createdByUid === 'string' ? d.createdByUid : '',
+            createdAtMs: ms,
+            createdAtIso: new Date(ms).toISOString(),
+          };
+        });
+        setAdminDelegates(items);
+        setLoadingDelegates(false);
+      },
+      (error) => {
+        setLoadingDelegates(false);
+        handleFirestoreError(error, OperationType.GET, path);
+      }
+    );
+    return () => unsubscribe();
+  }, [authReady, isPrimaryOwner]);
+
+  const addAdminDelegate = useCallback(
+    async (draft: AdminDelegateDraft) => {
+      const currentUser = assertOwnerActor();
+      if (!isPortfolioOwner(currentUser)) {
+        throw new Error('Only the primary portfolio owner can manage delegate admins.');
+      }
+      const check = validateAdminDelegateDraft(draft);
+      if (!check.valid || !check.normalized) {
+        throw new Error(check.error || 'Invalid delegate values.');
+      }
+      if (check.normalized.email === currentUser.email?.toLowerCase()) {
+        throw new Error('Primary owner is already an admin.');
+      }
+
+      const docPath = `admins/${check.normalized.uid}`;
+      try {
+        await setDoc(doc(db, 'admins', check.normalized.uid), {
+          uid: check.normalized.uid,
+          email: check.normalized.email,
+          role: 'admin',
+          createdByUid: currentUser.uid,
+          createdAt: serverTimestamp(),
+        });
+        void recordAdminAudit(
+          'delegate_added',
+          `Added delegate admin ${check.normalized.email}`
+        ).catch(() => {});
+      } catch (error) {
+        handleFirestoreError(error, OperationType.CREATE, docPath);
+      }
+    },
+    [assertOwnerActor, recordAdminAudit]
+  );
+
+  const removeAdminDelegate = useCallback(
+    async (uid: string) => {
+      const currentUser = assertOwnerActor();
+      if (!isPortfolioOwner(currentUser)) {
+        throw new Error('Only the primary portfolio owner can manage delegate admins.');
+      }
+      const target = adminDelegates.find((d) => d.uid === uid);
+      const docPath = `admins/${uid}`;
+      try {
+        await deleteDoc(doc(db, 'admins', uid));
+        void recordAdminAudit(
+          'delegate_removed',
+          `Removed delegate admin ${target?.email || uid}`
+        ).catch(() => {});
+      } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, docPath);
+      }
+    },
+    [adminDelegates, assertOwnerActor, recordAdminAudit]
   );
 
   const usingStarterFallback = (cloudAnnouncements?.length ?? 0) === 0;
-  const announcements = usingStarterFallback ? STARTER_ANNOUNCEMENTS : cloudAnnouncements!;
+  const allAnnouncements = usingStarterFallback ? STARTER_ANNOUNCEMENTS : cloudAnnouncements!;
+  const announcements = useMemo(() => {
+    if (isOwner) return allAnnouncements;
+    return allAnnouncements.filter((item) => isAnnouncementPubliclyVisible(item));
+  }, [allAnnouncements, isOwner]);
+
+  const effectivePortfolioSettings = useMemo(
+    () => getEffectivePortfolioSettings(portfolioSettings),
+    [portfolioSettings]
+  );
 
   const value = useMemo<FirebaseContextValue>(
     () => ({
       user,
       authReady,
       isOwner,
+      isPrimaryOwner,
       announcements,
       usingStarterFallback,
       loadingAnnouncements,
@@ -830,11 +1311,14 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
       contactMessageLogs,
       loadingContactLogs,
       portfolioSettings,
+      effectivePortfolioSettings,
       loadingSettings,
       adminAuditLogs,
       loadingAuditLogs,
       accessRules,
       loadingAccessRules,
+      adminDelegates,
+      loadingDelegates,
       signInAsOwner,
       signOutOwner,
       createAnnouncement,
@@ -846,14 +1330,18 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
       recordContactMessageLog,
       deleteContactMessageLog,
       updateContactMessageTriage,
+      replyToContactMessage,
       savePortfolioSettings,
       createAccessRule,
       deleteAccessRule,
+      addAdminDelegate,
+      removeAdminDelegate,
     }),
     [
       user,
       authReady,
       isOwner,
+      isPrimaryOwner,
       announcements,
       usingStarterFallback,
       loadingAnnouncements,
@@ -862,11 +1350,14 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
       contactMessageLogs,
       loadingContactLogs,
       portfolioSettings,
+      effectivePortfolioSettings,
       loadingSettings,
       adminAuditLogs,
       loadingAuditLogs,
       accessRules,
       loadingAccessRules,
+      adminDelegates,
+      loadingDelegates,
       signInAsOwner,
       signOutOwner,
       createAnnouncement,
@@ -878,9 +1369,12 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
       recordContactMessageLog,
       deleteContactMessageLog,
       updateContactMessageTriage,
+      replyToContactMessage,
       savePortfolioSettings,
       createAccessRule,
       deleteAccessRule,
+      addAdminDelegate,
+      removeAdminDelegate,
     ]
   );
 

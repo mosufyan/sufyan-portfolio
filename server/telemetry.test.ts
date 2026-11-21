@@ -13,10 +13,13 @@ import {
   signSessionReceipt,
   verifyOtpChallenge,
   verifySessionReceipt,
+  OTP_CHALLENGE_TTL_MS,
+  VERIFIED_SESSION_TTL_MS,
   type IpIntelligence,
   type OtpChallengeRecord,
   type OtpPendingPayload,
 } from './telemetry';
+import { SESSION_EXPIRED_CODE, SESSION_EXPIRED_MESSAGES } from './sessionPolicy.ts';
 
 describe('extractClientIp & private IP classification', () => {
   it('prefers proxy headers and normalizes IPv4-mapped IPv6 addresses', () => {
@@ -208,5 +211,27 @@ describe('OTP challenge & signed session receipts', () => {
     expect(verified?.sessionId).toBe('SES-123456');
     expect(verifySessionReceipt(`${receipt}x`, secret)).toBeNull();
     expect(maskEmailAddress('alex.rivera@company.com')).toBe('al*********@company.com');
+  });
+
+  it('rejects CV session receipts older than the verified-session TTL', () => {
+    expect(VERIFIED_SESSION_TTL_MS).toBe(12 * 60 * 60 * 1000);
+    expect(OTP_CHALLENGE_TTL_MS).toBe(10 * 60 * 1000);
+
+    const receipt = signSessionReceipt(
+      {
+        sessionId: 'SES-EXPIRED',
+        name: 'Alex',
+        email: 'alex@company.com',
+        phone: '',
+        reason: 'Recruiting role',
+        verificationStatus: 'otp_verified',
+        issuedAt: Date.now() - VERIFIED_SESSION_TTL_MS - 1_000,
+      },
+      secret
+    );
+
+    expect(verifySessionReceipt(receipt, secret)).toBeNull();
+    expect(SESSION_EXPIRED_MESSAGES.cv).toMatch(/re-verify/i);
+    expect(SESSION_EXPIRED_CODE).toBe('session_expired');
   });
 });

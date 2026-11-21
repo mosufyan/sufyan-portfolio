@@ -16,6 +16,8 @@ import {
   ShieldCheck,
   PauseCircle,
   Loader2,
+  Reply,
+  Target,
 } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { PERSONAL_INFO } from '../data/portfolioData';
@@ -34,6 +36,7 @@ import { downloadVCard } from '../utils/vcard';
 import HeaderSpotlight from './HeaderSpotlight';
 import { Reveal, EASE_OUT_EXPO } from './MotionPrimitives';
 import SectionScanLine from './SectionScanLine';
+import { toUserFacingError } from '../utils/userFacingError';
 
 interface ContactProps {
   onOpenDigitalCard?: () => void;
@@ -91,7 +94,7 @@ function formatSanJoseTime(): string {
 
 export default function Contact({ onOpenDigitalCard }: ContactProps) {
   const { theme, isLight } = useTheme();
-  const { recordContactMessageLog, portfolioSettings } = useFirebase();
+  const { recordContactMessageLog, portfolioSettings, effectivePortfolioSettings } = useFirebase();
   const shouldReduceMotion = useReducedMotion();
   const [formData, setFormData] = useState({
     name: '',
@@ -142,7 +145,7 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
   const showingOtpPanel = Boolean(otpStep && (status === 'otp' || status === 'sending'));
 
   useEffect(() => {
-    if (!turnstileSiteKey || showingOtpPanel || !portfolioSettings.enableContactForm) return;
+    if (!turnstileSiteKey || showingOtpPanel || !effectivePortfolioSettings.enableContactForm) return;
     const container = turnstileContainerRef.current;
     if (!container) return;
 
@@ -195,7 +198,7 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
         turnstileWidgetIdRef.current = null;
       }
     };
-  }, [turnstileSiteKey, isLight, showingOtpPanel, portfolioSettings.enableContactForm]);
+  }, [turnstileSiteKey, isLight, showingOtpPanel, effectivePortfolioSettings.enableContactForm]);
 
   const copyEmail = () => {
     navigator.clipboard
@@ -249,7 +252,7 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!portfolioSettings.enableContactForm) {
+    if (!effectivePortfolioSettings.enableContactForm) {
       setStatus('error');
       setErrorMsg(
         'Direct form submissions are temporarily paused. Please use the email button below.'
@@ -315,6 +318,7 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
         challengeToken?: string;
         maskedEmail?: string;
         contactSummary?: ContactMessageSummary;
+        telemetryPersistedByServer?: boolean;
       };
 
       if (!response.ok) {
@@ -352,7 +356,7 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
       }
 
       // Fallback in case server returned direct completion
-      if (data.ok === true && data.contactSummary) {
+      if (data.ok === true && data.contactSummary && !data.telemetryPersistedByServer) {
         void recordContactMessageLog(data.contactSummary).catch((err) => {
           console.warn('Firestore contact log skipped:', err);
         });
@@ -370,7 +374,7 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
       setTimeout(() => setStatus('idle'), 6000);
     } catch (err) {
       setStatus('error');
-      setErrorMsg(err instanceof Error ? err.message : 'Unable to send message right now.');
+      setErrorMsg(toUserFacingError(err, 'Unable to send message right now.'));
     }
   };
 
@@ -403,13 +407,14 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
         ok?: boolean;
         provider?: string;
         contactSummary?: ContactMessageSummary;
+        telemetryPersistedByServer?: boolean;
       };
 
       if (!response.ok || data.ok !== true) {
         throw new Error(data.error || 'Invalid verification code. Please check and try again.');
       }
 
-      if (data.contactSummary) {
+      if (data.contactSummary && !data.telemetryPersistedByServer) {
         void recordContactMessageLog(data.contactSummary).catch((err) => {
           console.warn('Firestore contact log skipped:', err);
         });
@@ -430,25 +435,29 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
       setTimeout(() => setStatus('idle'), 6000);
     } catch (err) {
       setStatus('otp');
-      setErrorMsg(err instanceof Error ? err.message : 'Verification failed. Please try again.');
+      setErrorMsg(toUserFacingError(err, 'Verification failed. Please try again.'));
     }
   };
 
   return (
-    <section id="contact" className="relative py-16 lg:py-24 border-b border-slate-800/80 bg-[#06080d]">
+    <section id="contact" className="relative py-16 lg:py-24 2xl:py-28 border-b border-slate-800/80 bg-[#06080d]">
       <SectionScanLine />
+      <div
+        aria-hidden="true"
+        className="ambient-orb ambient-orb-delayed pointer-events-none absolute -right-20 bottom-10 h-72 w-72 rounded-full bg-cyan-500/10 blur-3xl print:hidden"
+      />
       <div className="page-shell">
         {/* Main 2-column split */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-stretch">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10 min-[2560px]:gap-14 items-stretch">
           {/* Left Column: Direct channels and bio */}
-          <Reveal className="lg:col-span-5 flex flex-col justify-between space-y-8">
+          <Reveal className="lg:col-span-5 flex flex-col gap-8 lg:gap-10">
             <div>
               <HeaderSpotlight>
                 <div className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-cyan-400 tracking-wider uppercase mb-2">
                   <MessageSquare className="w-3.5 h-3.5" />
                   <span>INITIATE COLLABORATION</span>
                 </div>
-                <h2 className="text-3xl sm:text-4xl font-display font-bold text-white tracking-tight leading-tight">
+                <h2 className="fluid-title font-display font-bold text-white tracking-tight">
                   Let&apos;s Connect &amp; Collaborate
                 </h2>
                 <p className="mt-3 text-sm sm:text-base text-slate-300 leading-relaxed font-light">
@@ -470,8 +479,83 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
               </div>
             </div>
 
+            {/* Collaboration brief — fills the mid-column without becoming a stats dashboard */}
+            <div
+              className={`rounded-xl border px-4 py-4 space-y-3.5 ${
+                isLight
+                  ? 'border-slate-200 bg-slate-50/80'
+                  : 'border-slate-800 bg-[#0b101d]/90'
+              }`}
+            >
+              <div className="flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider text-cyan-400">
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Collaboration brief</span>
+              </div>
+              <ul className="space-y-3">
+                <li className="flex items-start gap-3">
+                  <span
+                    className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${
+                      isLight
+                        ? 'border-sky-200 bg-sky-50 text-sky-700'
+                        : 'border-cyan-500/30 bg-cyan-950/50 text-cyan-400'
+                    }`}
+                  >
+                    <Reply className="w-3.5 h-3.5" />
+                  </span>
+                  <div className="min-w-0">
+                    <div className={`text-[10px] font-mono uppercase tracking-wider ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
+                      Typical reply
+                    </div>
+                    <p className={`text-sm leading-snug mt-0.5 ${isLight ? 'text-slate-800' : 'text-slate-100'}`}>
+                      Within 24–48 hours on Pacific time — sooner for OTP-verified inquiries.
+                    </p>
+                  </div>
+                </li>
+                <li className="flex items-start gap-3">
+                  <span
+                    className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${
+                      isLight
+                        ? 'border-sky-200 bg-sky-50 text-sky-700'
+                        : 'border-cyan-500/30 bg-cyan-950/50 text-cyan-400'
+                    }`}
+                  >
+                    <Target className="w-3.5 h-3.5" />
+                  </span>
+                  <div className="min-w-0">
+                    <div className={`text-[10px] font-mono uppercase tracking-wider ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
+                      Best fit
+                    </div>
+                    <p className={`text-sm leading-snug mt-0.5 ${isLight ? 'text-slate-800' : 'text-slate-100'}`}>
+                      Software Engineer roles across security data platforms, multi-cloud systems, and applied AI — San Jose / hybrid.
+                    </p>
+                  </div>
+                </li>
+                <li className="flex items-start gap-3">
+                  <span
+                    className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${
+                      isLight
+                        ? 'border-sky-200 bg-sky-50 text-sky-700'
+                        : 'border-cyan-500/30 bg-cyan-950/50 text-cyan-400'
+                    }`}
+                  >
+                    <MessageSquare className="w-3.5 h-3.5" />
+                  </span>
+                  <div className="min-w-0">
+                    <div className={`text-[10px] font-mono uppercase tracking-wider ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
+                      Prefer
+                    </div>
+                    <p className={`text-sm leading-snug mt-0.5 ${isLight ? 'text-slate-800' : 'text-slate-100'}`}>
+                      {effectivePortfolioSettings.enablePortfolioChat
+                        ? 'This form (email OTP) · LinkedIn · portfolio chat when verified.'
+                        : 'This form (email OTP) · LinkedIn · direct email for time-sensitive notes.'}
+                    </p>
+                  </div>
+                </li>
+              </ul>
+            </div>
+
             {/* Direct Channel Cards */}
-            <div className="space-y-3">
+            <div className="space-y-3 lg:mt-auto">
               {/* Email Card */}
               <motion.div
                 whileHover={{ x: 4 }}
@@ -600,7 +684,7 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
                 </span>
               </div>
 
-              {!portfolioSettings.enableContactForm ? (
+              {!effectivePortfolioSettings.enableContactForm ? (
                 <div
                   className={`rounded-xl border p-6 space-y-4 ${
                     isLight
@@ -615,8 +699,9 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
                         Web Inquiries Temporarily Paused
                       </h4>
                       <p className="text-xs sm:text-sm opacity-90 leading-relaxed">
-                        {portfolioSettings.maintenanceMode && portfolioSettings.maintenanceMessage
-                          ? portfolioSettings.maintenanceMessage
+                        {effectivePortfolioSettings.maintenanceMode &&
+                        effectivePortfolioSettings.maintenanceMessage
+                          ? effectivePortfolioSettings.maintenanceMessage
                           : 'Direct web form submissions are temporarily paused. Please reach out directly via email or LinkedIn.'}
                       </p>
                     </div>
@@ -986,7 +1071,7 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
                       </div>
 
                       {turnstileSiteKey && (
-                        <div className="pt-1 flex justify-start">
+                        <div className="pt-1 flex w-full justify-center">
                           <div ref={turnstileContainerRef} />
                         </div>
                       )}

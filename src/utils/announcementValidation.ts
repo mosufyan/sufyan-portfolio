@@ -24,12 +24,18 @@ export const ANNOUNCEMENT_CONSTRAINTS = {
   linkUrlPattern: /^$|^https:\/\/[^\s]+$/,
 } as const;
 
+export const ANNOUNCEMENT_STATUSES = ['draft', 'scheduled', 'published'] as const;
+export type AnnouncementStatus = (typeof ANNOUNCEMENT_STATUSES)[number];
+
 export interface AnnouncementDraft {
   date: string;
   title: string;
   summary: string;
   badge: AnnouncementBadge;
   linkUrl: string;
+  status: AnnouncementStatus;
+  /** Epoch ms when a scheduled item should become public; null when not scheduled. */
+  scheduledAtMs: number | null;
 }
 
 export interface AnnouncementRecord extends AnnouncementDraft {
@@ -50,6 +56,8 @@ export function sanitizeAnnouncementDraft(input: {
   summary: string;
   badge?: string;
   linkUrl?: string;
+  status?: string;
+  scheduledAtMs?: number | null;
 }): AnnouncementDraft {
   const cleanBadge = (ANNOUNCEMENT_BADGES as readonly string[]).includes(input.badge || '')
     ? (input.badge as AnnouncementBadge)
@@ -59,6 +67,17 @@ export function sanitizeAnnouncementDraft(input: {
   const cleanTitle = input.title.trim().slice(0, ANNOUNCEMENT_CONSTRAINTS.titleMaxLength);
   const cleanSummary = input.summary.trim().slice(0, ANNOUNCEMENT_CONSTRAINTS.summaryMaxLength);
   const cleanLinkUrl = (input.linkUrl || '').trim().slice(0, ANNOUNCEMENT_CONSTRAINTS.linkUrlMaxLength);
+  const status: AnnouncementStatus =
+    input.status === 'draft' || input.status === 'scheduled' || input.status === 'published'
+      ? input.status
+      : 'published';
+  const scheduledAtMs =
+    status === 'scheduled' &&
+    typeof input.scheduledAtMs === 'number' &&
+    Number.isFinite(input.scheduledAtMs) &&
+    input.scheduledAtMs > 0
+      ? Math.floor(input.scheduledAtMs)
+      : null;
 
   return {
     date: cleanDate,
@@ -66,6 +85,8 @@ export function sanitizeAnnouncementDraft(input: {
     summary: cleanSummary,
     badge: cleanBadge,
     linkUrl: cleanLinkUrl,
+    status: status === 'scheduled' && !scheduledAtMs ? 'draft' : status,
+    scheduledAtMs: status === 'scheduled' ? scheduledAtMs : null,
   };
 }
 
@@ -75,6 +96,8 @@ export function validateAnnouncementDraft(input: {
   summary: string;
   badge?: string;
   linkUrl?: string;
+  status?: string;
+  scheduledAtMs?: number | null;
 }): {
   valid: boolean;
   errors: string[];
@@ -98,12 +121,27 @@ export function validateAnnouncementDraft(input: {
   ) {
     errors.push('Reference URL must start with https:// and contain no spaces.');
   }
+  if (normalized.status === 'scheduled' && !normalized.scheduledAtMs) {
+    errors.push('Scheduled announcements require a future publish time.');
+  }
 
   return {
     valid: errors.length === 0,
     errors,
     normalized,
   };
+}
+
+/** Whether an announcement should appear on the public portfolio right now. */
+export function isAnnouncementPubliclyVisible(
+  item: Pick<AnnouncementDraft, 'status' | 'scheduledAtMs'>,
+  nowMs = Date.now()
+): boolean {
+  if (item.status === 'published') return true;
+  if (item.status === 'scheduled' && item.scheduledAtMs != null && item.scheduledAtMs <= nowMs) {
+    return true;
+  }
+  return false;
 }
 
 export function generateAnnouncementId(): string {

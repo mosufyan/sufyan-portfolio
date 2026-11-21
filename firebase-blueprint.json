@@ -36,6 +36,16 @@
           "maxLength": 300,
           "pattern": "^$|^https://[^\\s]+$"
         },
+        "status": {
+          "type": "string",
+          "description": "Publication workflow state.",
+          "enum": ["draft", "scheduled", "published"]
+        },
+        "scheduledAtMs": {
+          "type": "integer",
+          "description": "Epoch ms when a scheduled announcement becomes public; 0 when not scheduled.",
+          "minimum": 0
+        },
         "authorUid": {
           "type": "string",
           "description": "Firebase Auth UID of the portfolio owner who authored the announcement.",
@@ -59,6 +69,8 @@
         "summary",
         "badge",
         "linkUrl",
+        "status",
+        "scheduledAtMs",
         "authorUid",
         "createdAt",
         "updatedAt"
@@ -66,16 +78,40 @@
     },
     "AdminRecord": {
       "title": "AdminRecord",
-      "description": "Server-provisioned RBAC marker identifying authorized portfolio administrators by UID.",
+      "description": "Delegate admin roster entry managed by the primary portfolio owner.",
       "type": "object",
       "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID matching the document ID.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "email": {
+          "type": "string",
+          "description": "Verified Google account email for the delegate.",
+          "minLength": 3,
+          "maxLength": 254
+        },
         "role": {
           "type": "string",
           "enum": ["admin"],
           "maxLength": 16
+        },
+        "createdByUid": {
+          "type": "string",
+          "description": "Primary owner UID who granted access.",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server-assigned creation timestamp."
         }
       },
-      "required": ["role"]
+      "required": ["uid", "email", "role", "createdByUid", "createdAt"]
     },
     "CvDownloadLog": {
       "title": "CvDownloadLog",
@@ -445,7 +481,11 @@
             "rule_created",
             "rule_deleted",
             "triage_updated",
-            "announcement_mutated"
+            "announcement_mutated",
+            "owner_reply_sent",
+            "delegate_added",
+            "delegate_removed",
+            "incident_mode_toggled"
           ],
           "minLength": 4,
           "maxLength": 32
@@ -543,6 +583,19 @@
           "type": "boolean",
           "description": "Whether the navbar Announcements indicator is highlighted."
         },
+        "incidentMode": {
+          "type": "boolean",
+          "description": "One-click lockdown forcing maintenance, paused contact/CV, and strict OTP."
+        },
+        "incidentMessage": {
+          "type": "string",
+          "description": "Visitor-facing message shown while incident mode is active.",
+          "maxLength": 300
+        },
+        "notifyOnNewInquiry": {
+          "type": "boolean",
+          "description": "Whether new verified inquiries are tagged as [ALERT] in owner notification emails."
+        },
         "updatedByUid": {
           "type": "string",
           "description": "Firebase Auth UID of the owner who saved settings.",
@@ -564,6 +617,9 @@
         "enableCvDownloads",
         "strictOtpForAll",
         "showAnnouncementsBadge",
+        "incidentMode",
+        "incidentMessage",
+        "notifyOnNewInquiry",
         "updatedByUid",
         "updatedAt"
       ]

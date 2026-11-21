@@ -23,16 +23,20 @@ export default function Philosophy({ readingMode = 'deep' }: PhilosophyProps) {
   ];
 
   return (
-    <section id="philosophy" className="py-16 lg:py-24 border-b border-slate-800/80 bg-[#06080d] relative overflow-hidden">
+    <section id="philosophy" className="py-16 lg:py-24 2xl:py-28 border-b border-slate-800/80 bg-[#06080d] relative overflow-hidden">
       <SectionScanLine />
+      <div
+        aria-hidden="true"
+        className="ambient-orb pointer-events-none absolute -left-24 top-16 h-64 w-64 rounded-full bg-cyan-500/8 blur-3xl print:hidden"
+      />
       <div className="page-shell">
         <Reveal className="mb-10 lg:mb-12">
           <HeaderSpotlight>
             <div className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-cyan-400 tracking-wider uppercase mb-2">
               <Compass className="w-3.5 h-3.5" />
-              <span>ENGINEERING THESIS</span>
+              <span className="text-shimmer">ENGINEERING THESIS</span>
             </div>
-            <h2 className="text-2xl sm:text-3xl lg:text-4xl font-display font-bold text-white tracking-tight">
+            <h2 className="fluid-title font-display font-bold text-white tracking-tight">
               Philosophy
             </h2>
           </HeaderSpotlight>
@@ -53,7 +57,7 @@ export default function Philosophy({ readingMode = 'deep' }: PhilosophyProps) {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true, amount: 0.4 }}
                 transition={{ duration: 0.5, delay: 0.08, ease: EASE_OUT_EXPO }}
-                className={`text-xl sm:text-2xl font-serif font-normal leading-relaxed tracking-tight ${
+                className={`fluid-lead font-serif font-normal tracking-tight ${
                   isLight ? 'text-slate-900' : 'text-white'
                 }`}
               >

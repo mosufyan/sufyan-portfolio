@@ -234,7 +234,7 @@ export default function Experience({
                 <Briefcase className="w-3.5 h-3.5" />
                 <span>PROFESSIONAL TIMELINE</span>
               </div>
-              <h2 className="text-2xl sm:text-3xl lg:text-4xl font-display font-bold text-white tracking-tight">
+              <h2 className="fluid-title font-display font-bold text-white tracking-tight">
                 Professional Experience &amp; Leadership
               </h2>
               <p className="mt-2 text-sm sm:text-base text-slate-400 max-w-3xl">

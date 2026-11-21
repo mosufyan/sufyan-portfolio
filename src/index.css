@@ -22,6 +22,19 @@
     }
   }
 
+  /* Large desktop / 4K / TV wall displays */
+  @media (min-width: 2560px) {
+    :root {
+      --page-max: 112rem;
+    }
+  }
+
+  @media (min-width: 3840px) {
+    :root {
+      --page-max: 140rem;
+    }
+  }
+
   html {
     background-color: #06080d;
     color: #e2e8f0;
@@ -93,6 +106,99 @@
 @media (min-width: 1024px) {
   .page-shell {
     padding-inline: max(2rem, env(safe-area-inset-left), env(safe-area-inset-right));
+  }
+}
+
+@media (min-width: 2560px) {
+  .page-shell {
+    padding-inline: max(3rem, env(safe-area-inset-left), env(safe-area-inset-right));
+  }
+}
+
+@media (min-width: 3840px) {
+  .page-shell {
+    padding-inline: max(4.5rem, env(safe-area-inset-left), env(safe-area-inset-right));
+  }
+}
+
+/* Fluid type scale: phones → tablets → desktops → TV walls */
+.fluid-display {
+  font-size: clamp(1.75rem, 1.05rem + 2.4vw, 5.25rem);
+  line-height: 1.08;
+}
+
+.fluid-title {
+  font-size: clamp(1.35rem, 1rem + 1.1vw, 2.75rem);
+  line-height: 1.15;
+}
+
+.fluid-body {
+  font-size: clamp(0.875rem, 0.82rem + 0.28vw, 1.2rem);
+  line-height: 1.65;
+}
+
+.fluid-lead {
+  font-size: clamp(1rem, 0.92rem + 0.55vw, 1.65rem);
+  line-height: 1.45;
+}
+
+/* Soft ambient motion for section atmospheres (respects reduced-motion) */
+@keyframes ambient-drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.45;
+  }
+  50% {
+    transform: translate3d(2%, -1.5%, 0) scale(1.06);
+    opacity: 0.7;
+  }
+}
+
+@keyframes shimmer-sweep {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 200% 50%;
+  }
+}
+
+.ambient-orb {
+  animation: ambient-drift 14s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+.ambient-orb-delayed {
+  animation-delay: -7s;
+}
+
+.text-shimmer {
+  background-image: linear-gradient(
+    110deg,
+    rgba(148, 163, 184, 0.55) 0%,
+    rgba(34, 211, 238, 0.95) 45%,
+    rgba(148, 163, 184, 0.55) 90%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer-sweep 4.5s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ambient-orb,
+  .ambient-orb-delayed,
+  .text-shimmer {
+    animation: none !important;
+  }
+
+  .text-shimmer {
+    color: inherit;
+    background: none;
+    -webkit-background-clip: unset;
+    background-clip: unset;
   }
 }
 

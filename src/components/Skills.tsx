@@ -14,7 +14,7 @@ import {
   formatSkillFilterSummary,
 } from '../utils/skillMatcher';
 import HeaderSpotlight from './HeaderSpotlight';
-import { Reveal, StaggerContainer, StaggerItem, EASE_OUT_EXPO, SpotlightCard } from './MotionPrimitives';
+import { Reveal, SoftRise, StaggerContainer, StaggerItem, EASE_OUT_EXPO, SpotlightCard } from './MotionPrimitives';
 import SectionScanLine from './SectionScanLine';
 import type { PortfolioReadingMode } from './UnifiedScrollHud';
 
@@ -136,7 +136,7 @@ export default function Skills({ selectedSkills, onSelectSkill, onApplySkills, r
             <Cpu className="w-3.5 h-3.5" />
             <span>DISCIPLINE TAXONOMY</span>
           </div>
-          <h2 className="text-2xl sm:text-3xl lg:text-4xl font-display font-bold text-white tracking-tight">
+          <h2 className="fluid-title font-display font-bold text-white tracking-tight">
             Technical Skills &amp; Architecture Disciplines
           </h2>
           <p className="mt-2 text-sm sm:text-base text-slate-400 max-w-3xl">
@@ -237,15 +237,16 @@ export default function Skills({ selectedSkills, onSelectSkill, onApplySkills, r
           </AnimatePresence>
         </Reveal>
 
-        {/* 6-Card Grid */}
-        <StaggerContainer className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 print:grid-cols-2 gap-6">
+        {/* Discipline grid — fluid columns from phone → tablet → desktop → ultra-wide */}
+        <SoftRise>
+        <StaggerContainer className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 min-[2560px]:grid-cols-3 print:grid-cols-2 gap-4 sm:gap-6 min-[2560px]:gap-8">
           {TECHNICAL_DISCIPLINES.map((discipline) => {
             return (
               <StaggerItem key={discipline.id} className="h-full">
                 <SpotlightCard
                   whileHover={{ y: -4 }}
                   transition={{ duration: 0.25, ease: EASE_OUT_EXPO }}
-                  className="h-full rounded-2xl border border-slate-800 bg-[#0d121f]/70 p-6 flex flex-col justify-between hover:border-cyan-500/40 transition-colors hover:shadow-lg hover:shadow-cyan-950/25 group print:break-inside-avoid"
+                  className="h-full rounded-2xl border border-slate-800 bg-[#0d121f]/70 p-5 sm:p-6 min-[2560px]:p-8 flex flex-col justify-between hover:border-cyan-500/40 transition-colors hover:shadow-lg hover:shadow-cyan-950/25 group print:break-inside-avoid"
                 >
                   <div>
                     {/* Top card banner */}
@@ -315,6 +316,7 @@ export default function Skills({ selectedSkills, onSelectSkill, onApplySkills, r
             );
           })}
         </StaggerContainer>
+        </SoftRise>
       </div>
     </section>
   );

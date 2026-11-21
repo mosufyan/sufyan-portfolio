@@ -1,0 +1,8 @@
+# Paths Semgrep should skip (in addition to .gitignore).
+node_modules/
+dist/
+dev-dist/
+build/
+coverage/
+.tools/
+.git/

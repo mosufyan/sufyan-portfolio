@@ -9,7 +9,6 @@ import { fileURLToPath } from 'url';
 import {
   MAX_FIELD_LENGTHS,
   applySecurityHeaders,
-  createRateLimitBucket,
   escapeHtml,
   isAiStudioPreviewHost,
   isAllowedRequestOrigin,
@@ -17,10 +16,8 @@ import {
   isDisallowedFetchSite,
   isFormSubmitFallbackAllowed,
   isHoneypotTriggered,
-  isRateLimited,
   isValidEmailAddress,
   isValidPhoneNumber,
-  rateLimitRetryAfterSeconds,
   resolveAllowedOrigins,
   resolveSafeBaseUrl,
   sanitizeDisplayName,
@@ -31,7 +28,8 @@ import {
 import { getEmailPalette, parseEmailTheme, type EmailTheme } from './server/emailTheme.ts';
 import {
   assessVisitorRisk,
-  createOtpChallenge,
+  configureOtpRedisBridge,
+  createOtpChallengeAsync,
   extractClientIp,
   generateDownloadId,
   generateSessionId,
@@ -40,19 +38,92 @@ import {
   signSessionReceipt,
   validatePhoneDetails,
   verifyEmailMxRecord,
-  verifyOtpChallenge,
+  verifyOtpChallengeAsync,
   verifySessionReceipt,
   type ContactOtpPendingPayload,
   type OtpChallengeRecord,
   type VerificationStatus,
   type VisitorTelemetryReport,
 } from './server/telemetry.ts';
+import { SESSION_EXPIRED_CODE, SESSION_EXPIRED_MESSAGES } from './server/sessionPolicy.ts';
+import { APP_VERSION, APP_VERSION_LABEL } from './server/appVersion.ts';
+import {
+  checkDistributedRateLimit,
+  isDistributedStoreEnabled,
+  loadDistributedOwnerPolicy,
+  redisDel,
+  redisGetJson,
+  redisSetJson,
+  saveDistributedOwnerPolicy,
+  type RateLimitNamespace,
+} from './server/distributedStore.ts';
+import {
+  bumpMetric,
+  captureException,
+  evaluateGoldPathHardening,
+  getObservabilitySnapshot,
+  postSlackAlert,
+  requestContextMiddleware,
+  structuredLog,
+} from './server/observability.ts';
+import {
+  adminGetContactMessage,
+  adminMarkContactReplied,
+  adminWriteContactMessage,
+  adminWriteCvDownload,
+  isFirebaseAdminConfigured,
+} from './server/firebaseAdmin.ts';
+import { answerPortfolioQuestion, listChatSuggestions } from './server/chatKnowledge.ts';
+import {
+  answerPortfolioQuestionSmart,
+  isPortfolioVectorConfigured,
+  syncPortfolioVectors,
+} from './server/portfolioVector.ts';
+import {
+  chatSessionAuthError,
+  extractChatReceipt as extractChatReceiptToken,
+  signChatSessionReceipt as signChatSessionReceiptToken,
+  verifyChatSessionReceipt as verifyChatSessionReceiptToken,
+} from './server/chatReceipt.ts';
+import {
+  appendChatMessage,
+  bumpBotQuestion,
+  bumpLiveRequest,
+  bumpLlmCall,
+  closeChatSession,
+  createChatSession,
+  getChatSessionAsync,
+  getChatStats,
+  isOwnerOnline,
+  listChatSessions,
+  publicSessionView,
+  startNewChatThread,
+  clearOwnerPresence,
+  touchOwnerPresence,
+} from './server/chatSessions.ts';
+import {
+  buildVisitorKey,
+  checkChatLimitAsync,
+  consumeChatLimitAsync,
+  getChatUsageTotals,
+  type ChatLimitPolicy,
+} from './server/chatLimits.ts';
+import { enrichAnswerWithGrokLlm, isGrokLlmConfigured } from './server/grokLlm.ts';
 import { buildDynamicSocialSvg, SHARE_CARD_TRACKS, type ShareTrackId } from './src/utils/ogShare.ts';
 import {
+  DEFAULT_PORTFOLIO_SETTINGS,
   evaluateAccessRules,
+  sanitizeOwnerAlertClass,
   validateAccessRuleDraft,
   type CompactAccessRule,
+  type OwnerAlertClass,
 } from './src/utils/ownerGovernance.ts';
+import {
+  drainDigestItems,
+  formatDigestQueueText,
+  prefsFromPortfolioSettings,
+  routeOwnerNotification,
+} from './server/ownerNotify.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -61,9 +132,9 @@ function readFirebaseProjectId(): string {
   try {
     const raw = fs.readFileSync(path.join(__dirname, 'firebase-applet-config.json'), 'utf8');
     const parsed = JSON.parse(raw) as { projectId?: string };
-    return parsed.projectId || 'elite-choir-53kqt';
+    return parsed.projectId || 'mohammed-sufyan-portfolio';
   } catch {
-    return 'elite-choir-53kqt';
+    return 'mohammed-sufyan-portfolio';
   }
 }
 
@@ -73,27 +144,189 @@ const DESTINATION_EMAIL = process.env.CONTACT_TO_EMAIL || 'sufyan.net@gmail.com'
 const TURNSTILE_SECRET = process.env.TURNSTILE_SECRET_KEY?.trim() || '';
 const TURNSTILE_SITE_KEY =
   process.env.VITE_TURNSTILE_SITE_KEY?.trim() || process.env.TURNSTILE_SITE_KEY?.trim() || '';
-const OTP_SECRET =
-  process.env.SESSION_SECRET?.trim() ||
-  TURNSTILE_SECRET ||
-  crypto.randomBytes(32).toString('hex');
+const SESSION_SECRET_ENV = process.env.SESSION_SECRET?.trim() || '';
+if (process.env.NODE_ENV === 'production' && !SESSION_SECRET_ENV) {
+  throw new Error(
+    'SESSION_SECRET is required in production for OTP HMAC and session receipts.'
+  );
+}
+const OTP_SECRET = SESSION_SECRET_ENV || crypto.randomBytes(32).toString('hex');
 const FORCE_CV_OTP = (process.env.FORCE_CV_OTP || '').toLowerCase() === 'true';
 const ALLOWED_ORIGINS = resolveAllowedOrigins(process.env.APP_URL, PORT);
-const contactRateLimitMap = createRateLimitBucket();
-const cvAccessRateLimitMap = createRateLimitBucket();
-const cvEventRateLimitMap = createRateLimitBucket();
-const otpEmailRateLimitMap = createRateLimitBucket();
 const otpChallengeStore = new Map<string, OtpChallengeRecord>();
 const contactOtpChallengeStore = new Map<string, OtpChallengeRecord<ContactOtpPendingPayload>>();
+interface ChatLiveOtpPayload {
+  name: string;
+  email: string;
+  company: string;
+  interest: string;
+  openingMessage: string;
+  theme: EmailTheme;
+  userAgent: string;
+  ipAddress: string;
+}
+const chatLiveOtpStore = new Map<string, OtpChallengeRecord<ChatLiveOtpPayload>>();
+
+configureOtpRedisBridge({
+  enabled: () => isDistributedStoreEnabled(),
+  setJson: redisSetJson,
+  getJson: redisGetJson,
+  del: redisDel,
+});
+
+function signChatSessionReceipt(sessionId: string, email: string): string {
+  return signChatSessionReceiptToken(sessionId, email, OTP_SECRET);
+}
+
+function verifyChatSessionReceipt(
+  receipt: string | undefined,
+  sessionId: string
+): { ok: true; email: string } | { ok: false; reason: 'expired' | 'invalid' } {
+  return verifyChatSessionReceiptToken(receipt, sessionId, OTP_SECRET);
+}
 
 interface RuntimeOwnerPolicy {
   rules: CompactAccessRule[];
   strictOtpForAll: boolean;
   enableContactForm: boolean;
   enableCvDownloads: boolean;
+  enablePwaInstall: boolean;
+  enableSiteTelemetry: boolean;
+  incidentMode: boolean;
+  notifyOnNewInquiry: boolean;
+  enablePortfolioChat: boolean;
+  enableLiveChat: boolean;
+  enableChatLlm: boolean;
+  chatMaxQuestionsPerVisitor: number;
+  chatMaxLlmPerVisitor: number;
+  chatMaxLiveSessionsPerVisitor: number;
+  chatRateWindowHours: number;
+  chatLlmModel: string;
+  chatShowSuggestions: boolean;
+  chatOfferLiveAgent: boolean;
+  alertEmailEnabled: boolean;
+  alertEmailUrgent: boolean;
+  alertEmailWarning: boolean;
+  alertEmailDigest: boolean;
+  alertClassNewInquiry: OwnerAlertClass;
+  alertClassLiveChat: OwnerAlertClass;
+  alertClassRiskDownload: OwnerAlertClass;
+  alertClassUnusualTraffic: OwnerAlertClass;
+  alertClassChatLimit: OwnerAlertClass;
+  alertClassOverdueCrm: OwnerAlertClass;
+}
+
+function chatLimitPolicyFromRuntime(policy: RuntimeOwnerPolicy): ChatLimitPolicy {
+  return {
+    maxQuestionsPerVisitor: policy.chatMaxQuestionsPerVisitor,
+    maxLlmPerVisitor: policy.chatMaxLlmPerVisitor,
+    maxLiveSessionsPerVisitor: policy.chatMaxLiveSessionsPerVisitor,
+    rateWindowHours: policy.chatRateWindowHours,
+  };
+}
+
+function clampPolicyInt(value: unknown, fallback: number, min: number, max: number): number {
+  const n = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(n)));
 }
 
 const POLICY_CACHE_PATH = path.join(__dirname, '.owner-policy-cache.json');
+const TELEMETRY_CACHE_PATH = path.join(__dirname, '.owner-telemetry-cache.json');
+
+interface SiteTelemetryState {
+  pageviews: number;
+  ogShares: number;
+  ogByTrack: Record<string, number>;
+  updatedAtIso: string;
+}
+
+function normalizeShareTrack(track?: string): ShareTrackId {
+  // Literal returns so static analysis cannot treat the key as user-controlled.
+  if (track === 'security') return 'security';
+  if (track === 'platform') return 'platform';
+  if (track === 'ai') return 'ai';
+  return 'executive';
+}
+
+function sanitizeOgByTrack(raw: unknown): Record<string, number> {
+  const out: Record<string, number> = Object.create(null);
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  const src = raw as Record<string, unknown>;
+  for (const id of ['executive', 'security', 'platform', 'ai'] as const) {
+    const n = Number(src[id]);
+    if (Number.isFinite(n) && n > 0) out[id] = Math.floor(n);
+  }
+  return out;
+}
+
+function loadSiteTelemetry(): SiteTelemetryState {
+  const defaults: SiteTelemetryState = {
+    pageviews: 0,
+    ogShares: 0,
+    ogByTrack: {},
+    updatedAtIso: new Date().toISOString(),
+  };
+  try {
+    if (!fs.existsSync(TELEMETRY_CACHE_PATH)) return defaults;
+    const parsed = JSON.parse(fs.readFileSync(TELEMETRY_CACHE_PATH, 'utf8')) as Partial<SiteTelemetryState>;
+    return {
+      pageviews: Number(parsed.pageviews) || 0,
+      ogShares: Number(parsed.ogShares) || 0,
+      ogByTrack: sanitizeOgByTrack(parsed.ogByTrack),
+      updatedAtIso: typeof parsed.updatedAtIso === 'string' ? parsed.updatedAtIso : defaults.updatedAtIso,
+    };
+  } catch {
+    return defaults;
+  }
+}
+
+let siteTelemetry: SiteTelemetryState = loadSiteTelemetry();
+let telemetryFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
+function persistSiteTelemetryToDisk(): void {
+  try {
+    fs.writeFileSync(TELEMETRY_CACHE_PATH, JSON.stringify(siteTelemetry, null, 2), 'utf8');
+  } catch {
+    /* non-fatal */
+  }
+}
+
+function scheduleSiteTelemetryFlush(): void {
+  if (telemetryFlushTimer) return;
+  telemetryFlushTimer = setTimeout(() => {
+    telemetryFlushTimer = null;
+    persistSiteTelemetryToDisk();
+  }, 2000);
+}
+
+function bumpSiteTelemetry(kind: 'pageview' | 'og_share', track?: string): void {
+  const next: SiteTelemetryState = {
+    pageviews: siteTelemetry.pageviews + (kind === 'pageview' ? 1 : 0),
+    ogShares: siteTelemetry.ogShares + (kind === 'og_share' ? 1 : 0),
+    ogByTrack: { ...siteTelemetry.ogByTrack },
+    updatedAtIso: new Date().toISOString(),
+  };
+  if (kind === 'og_share') {
+    // Assign via literal property names (avoids remote-property-injection).
+    switch (normalizeShareTrack(track)) {
+      case 'security':
+        next.ogByTrack.security = (next.ogByTrack.security || 0) + 1;
+        break;
+      case 'platform':
+        next.ogByTrack.platform = (next.ogByTrack.platform || 0) + 1;
+        break;
+      case 'ai':
+        next.ogByTrack.ai = (next.ogByTrack.ai || 0) + 1;
+        break;
+      default:
+        next.ogByTrack.executive = (next.ogByTrack.executive || 0) + 1;
+        break;
+    }
+  }
+  siteTelemetry = next;
+  scheduleSiteTelemetryFlush();
+}
 
 function loadInitialOwnerPolicy(): RuntimeOwnerPolicy {
   const defaults: RuntimeOwnerPolicy = {
@@ -101,6 +334,30 @@ function loadInitialOwnerPolicy(): RuntimeOwnerPolicy {
     strictOtpForAll: false,
     enableContactForm: true,
     enableCvDownloads: true,
+    enablePwaInstall: DEFAULT_PORTFOLIO_SETTINGS.enablePwaInstall,
+    enableSiteTelemetry: DEFAULT_PORTFOLIO_SETTINGS.enableSiteTelemetry,
+    incidentMode: false,
+    notifyOnNewInquiry: true,
+    enablePortfolioChat: DEFAULT_PORTFOLIO_SETTINGS.enablePortfolioChat,
+    enableLiveChat: DEFAULT_PORTFOLIO_SETTINGS.enableLiveChat,
+    enableChatLlm: DEFAULT_PORTFOLIO_SETTINGS.enableChatLlm,
+    chatMaxQuestionsPerVisitor: DEFAULT_PORTFOLIO_SETTINGS.chatMaxQuestionsPerVisitor,
+    chatMaxLlmPerVisitor: DEFAULT_PORTFOLIO_SETTINGS.chatMaxLlmPerVisitor,
+    chatMaxLiveSessionsPerVisitor: DEFAULT_PORTFOLIO_SETTINGS.chatMaxLiveSessionsPerVisitor,
+    chatRateWindowHours: DEFAULT_PORTFOLIO_SETTINGS.chatRateWindowHours,
+    chatLlmModel: DEFAULT_PORTFOLIO_SETTINGS.chatLlmModel,
+    chatShowSuggestions: DEFAULT_PORTFOLIO_SETTINGS.chatShowSuggestions,
+    chatOfferLiveAgent: DEFAULT_PORTFOLIO_SETTINGS.chatOfferLiveAgent,
+    alertEmailEnabled: DEFAULT_PORTFOLIO_SETTINGS.alertEmailEnabled,
+    alertEmailUrgent: DEFAULT_PORTFOLIO_SETTINGS.alertEmailUrgent,
+    alertEmailWarning: DEFAULT_PORTFOLIO_SETTINGS.alertEmailWarning,
+    alertEmailDigest: DEFAULT_PORTFOLIO_SETTINGS.alertEmailDigest,
+    alertClassNewInquiry: DEFAULT_PORTFOLIO_SETTINGS.alertClassNewInquiry,
+    alertClassLiveChat: DEFAULT_PORTFOLIO_SETTINGS.alertClassLiveChat,
+    alertClassRiskDownload: DEFAULT_PORTFOLIO_SETTINGS.alertClassRiskDownload,
+    alertClassUnusualTraffic: DEFAULT_PORTFOLIO_SETTINGS.alertClassUnusualTraffic,
+    alertClassChatLimit: DEFAULT_PORTFOLIO_SETTINGS.alertClassChatLimit,
+    alertClassOverdueCrm: DEFAULT_PORTFOLIO_SETTINGS.alertClassOverdueCrm,
   };
   try {
     if (!fs.existsSync(POLICY_CACHE_PATH)) return defaults;
@@ -110,9 +367,278 @@ function loadInitialOwnerPolicy(): RuntimeOwnerPolicy {
       strictOtpForAll: Boolean(parsed.strictOtpForAll),
       enableContactForm: typeof parsed.enableContactForm === 'boolean' ? parsed.enableContactForm : true,
       enableCvDownloads: typeof parsed.enableCvDownloads === 'boolean' ? parsed.enableCvDownloads : true,
+      enablePwaInstall:
+        typeof parsed.enablePwaInstall === 'boolean'
+          ? parsed.enablePwaInstall
+          : DEFAULT_PORTFOLIO_SETTINGS.enablePwaInstall,
+      enableSiteTelemetry:
+        typeof parsed.enableSiteTelemetry === 'boolean'
+          ? parsed.enableSiteTelemetry
+          : DEFAULT_PORTFOLIO_SETTINGS.enableSiteTelemetry,
+      incidentMode: Boolean(parsed.incidentMode),
+      notifyOnNewInquiry:
+        typeof parsed.notifyOnNewInquiry === 'boolean' ? parsed.notifyOnNewInquiry : true,
+      enablePortfolioChat:
+        typeof parsed.enablePortfolioChat === 'boolean'
+          ? parsed.enablePortfolioChat
+          : defaults.enablePortfolioChat,
+      enableLiveChat:
+        typeof parsed.enableLiveChat === 'boolean' ? parsed.enableLiveChat : defaults.enableLiveChat,
+      enableChatLlm:
+        typeof parsed.enableChatLlm === 'boolean' ? parsed.enableChatLlm : defaults.enableChatLlm,
+      chatMaxQuestionsPerVisitor: clampPolicyInt(
+        parsed.chatMaxQuestionsPerVisitor,
+        defaults.chatMaxQuestionsPerVisitor,
+        1,
+        200
+      ),
+      chatMaxLlmPerVisitor: clampPolicyInt(
+        parsed.chatMaxLlmPerVisitor,
+        defaults.chatMaxLlmPerVisitor,
+        0,
+        100
+      ),
+      chatMaxLiveSessionsPerVisitor: clampPolicyInt(
+        parsed.chatMaxLiveSessionsPerVisitor,
+        defaults.chatMaxLiveSessionsPerVisitor,
+        0,
+        50
+      ),
+      chatRateWindowHours: clampPolicyInt(
+        parsed.chatRateWindowHours,
+        defaults.chatRateWindowHours,
+        1,
+        168
+      ),
+      chatLlmModel:
+        typeof parsed.chatLlmModel === 'string'
+          ? parsed.chatLlmModel.slice(0, 64)
+          : defaults.chatLlmModel,
+      chatShowSuggestions:
+        typeof parsed.chatShowSuggestions === 'boolean'
+          ? parsed.chatShowSuggestions
+          : defaults.chatShowSuggestions,
+      chatOfferLiveAgent:
+        typeof parsed.chatOfferLiveAgent === 'boolean'
+          ? parsed.chatOfferLiveAgent
+          : defaults.chatOfferLiveAgent,
+      alertEmailEnabled:
+        typeof parsed.alertEmailEnabled === 'boolean'
+          ? parsed.alertEmailEnabled
+          : defaults.alertEmailEnabled,
+      alertEmailUrgent:
+        typeof parsed.alertEmailUrgent === 'boolean'
+          ? parsed.alertEmailUrgent
+          : defaults.alertEmailUrgent,
+      alertEmailWarning:
+        typeof parsed.alertEmailWarning === 'boolean'
+          ? parsed.alertEmailWarning
+          : defaults.alertEmailWarning,
+      alertEmailDigest:
+        typeof parsed.alertEmailDigest === 'boolean'
+          ? parsed.alertEmailDigest
+          : defaults.alertEmailDigest,
+      alertClassNewInquiry: sanitizeOwnerAlertClass(
+        parsed.alertClassNewInquiry,
+        defaults.alertClassNewInquiry
+      ),
+      alertClassLiveChat: sanitizeOwnerAlertClass(
+        parsed.alertClassLiveChat,
+        defaults.alertClassLiveChat
+      ),
+      alertClassRiskDownload: sanitizeOwnerAlertClass(
+        parsed.alertClassRiskDownload,
+        defaults.alertClassRiskDownload
+      ),
+      alertClassUnusualTraffic: sanitizeOwnerAlertClass(
+        parsed.alertClassUnusualTraffic,
+        defaults.alertClassUnusualTraffic
+      ),
+      alertClassChatLimit: sanitizeOwnerAlertClass(
+        parsed.alertClassChatLimit,
+        defaults.alertClassChatLimit
+      ),
+      alertClassOverdueCrm: sanitizeOwnerAlertClass(
+        parsed.alertClassOverdueCrm,
+        defaults.alertClassOverdueCrm
+      ),
     };
   } catch {
     return defaults;
+  }
+}
+
+function buildOwnerAlertEmailHtml(input: {
+  alertClass: 'urgent' | 'warning';
+  title: string;
+  detail: string;
+  theme?: EmailTheme;
+  timestamp?: string;
+}): string {
+  const p = getEmailPalette(parseEmailTheme(input.theme));
+  const isUrgent = input.alertClass === 'urgent';
+  const badgeBg = isUrgent ? (p.theme === 'light' ? '#ffe4e6' : '#4c0519') : p.badgeSuccessBg;
+  const badgeBorder = isUrgent ? (p.theme === 'light' ? '#fb7185' : '#e11d48') : p.badgeSuccessBorder;
+  const badgeText = isUrgent ? (p.theme === 'light' ? '#be123c' : '#fb7185') : p.badgeSuccessText;
+  const accentBar = isUrgent ? '#e11d48' : '#d97706';
+  const safeTitle = escapeHtml(input.title);
+  const safeDetail = escapeHtml(input.detail).replace(/\r?\n/g, '<br />');
+  const safeTime = escapeHtml(input.timestamp || new Date().toUTCString());
+  const consoleUrl = cleanSecretEnv(process.env.APP_URL) || 'https://www.mohammedsufyan.com';
+  const safeConsoleUrl = escapeHtml(consoleUrl.replace(/\/$/, ''));
+
+  return `<!DOCTYPE html>
+<html lang="en" data-theme="${p.theme}">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="${p.theme}" />
+  <meta name="supported-color-schemes" content="${p.theme}" />
+  <title>${isUrgent ? 'Urgent' : 'Warning'} Alert — ${safeTitle}</title>
+</head>
+<body style="margin:0;padding:0;background-color:${p.pageBg};font-family:'Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:${p.text};">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:${p.pageBg};padding:32px 16px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background-color:${p.cardBg};border:1px solid ${p.border};border-radius:16px;overflow:hidden;">
+          <tr>
+            <td style="padding:24px 28px;background-color:${p.headerBg};border-bottom:1px solid ${p.border};">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                <tr>
+                  <td style="vertical-align:middle;">
+                    <table role="presentation" cellspacing="0" cellpadding="0">
+                      <tr>
+                        <td style="width:38px;height:38px;border-radius:10px;background-color:${p.accentSoftBg};border:1px solid ${p.accentDeep};text-align:center;vertical-align:middle;font-weight:700;font-size:14px;color:${p.accent};font-family:monospace;">
+                          MS
+                        </td>
+                        <td style="padding-left:12px;">
+                          <div style="font-size:15px;font-weight:700;color:${p.textStrong};letter-spacing:0.02em;">
+                            MOHAMMED SUFYAN
+                          </div>
+                          <div style="font-size:11px;font-family:monospace;color:${p.accent};text-transform:uppercase;letter-spacing:0.08em;margin-top:2px;">
+                            Owner Alert Dispatch
+                          </div>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                  <td align="right" style="vertical-align:middle;">
+                    <span style="display:inline-block;padding:5px 10px;border-radius:6px;background-color:${badgeBg};border:1px solid ${badgeBorder};color:${badgeText};font-size:10px;font-family:monospace;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">
+                      ${isUrgent ? 'URGENT' : 'WARNING'}
+                    </span>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:24px 28px 16px 28px;">
+              <div style="font-size:11px;font-family:monospace;color:${p.accent};text-transform:uppercase;letter-spacing:0.1em;margin-bottom:6px;">
+                ${isUrgent ? 'IMMEDIATE ATTENTION' : 'OWNER NOTICE'}
+              </div>
+              <h1 style="margin:0;font-size:21px;font-weight:700;color:${p.textStrong};line-height:1.3;">
+                ${safeTitle}
+              </h1>
+              <p style="margin:8px 0 0 0;font-size:12px;font-family:monospace;color:${p.textMuted};">
+                Dispatched ${safeTime} · Theme ${p.theme}
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:8px 28px 20px 28px;">
+              <div style="background-color:${p.panelBg};border:1px solid ${p.border};border-left:3px solid ${accentBar};border-radius:12px;padding:18px 20px;">
+                <div style="font-size:10px;font-family:monospace;color:${badgeText};text-transform:uppercase;letter-spacing:0.1em;margin-bottom:10px;">
+                  Alert Detail
+                </div>
+                <div style="font-size:14px;line-height:1.65;color:${p.text};">
+                  ${safeDetail}
+                </div>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 28px 28px 28px;">
+              <a href="${safeConsoleUrl}/#owner/chat" style="display:inline-block;padding:11px 20px;background-color:${p.ctaBg};color:${p.ctaText};font-size:13px;font-weight:700;text-decoration:none;border-radius:8px;">
+                Open Owner Console
+              </a>
+              <div style="margin-top:12px;font-size:12px;font-family:monospace;color:${p.textMuted};">
+                Alerts · Chat · Messages · ${safeConsoleUrl}
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 28px;background-color:${p.footerBg};border-top:1px solid ${p.border};font-size:11px;font-family:monospace;color:${p.textSoft};">
+              Mohammed Sufyan Portfolio · Automated owner alert · Matches visitor ${p.theme} theme
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+}
+
+async function emitOwnerAlert(input: {
+  eventType:
+    | 'new_inquiry'
+    | 'live_chat'
+    | 'risk_download'
+    | 'unusual_traffic'
+    | 'chat_limit'
+    | 'overdue_crm';
+  title: string;
+  detail: string;
+  dedupeKey: string;
+  /** Visitor site theme so the alert email matches their light/dark choice. */
+  theme?: EmailTheme;
+}): Promise<void> {
+  try {
+    const prefs = prefsFromPortfolioSettings(runtimeOwnerPolicy);
+    const theme = parseEmailTheme(input.theme);
+    await routeOwnerNotification({
+      prefs,
+      eventType: input.eventType,
+      title: input.title,
+      detail: input.detail,
+      dedupeKey: input.dedupeKey,
+      sendImmediate: async ({ subject, title, detail, alertClass }) => {
+        bumpMetric('alertsDispatched');
+        if (alertClass === 'urgent' || alertClass === 'warning') {
+          void postSlackAlert({ title, detail, alertClass });
+        }
+        if (!isDirectEmailTransportConfigured()) return;
+        const timestamp = new Date().toUTCString();
+        const html = buildOwnerAlertEmailHtml({
+          alertClass,
+          title,
+          detail,
+          theme,
+          timestamp,
+        });
+        const text = [
+          `${alertClass.toUpperCase()} — ${title}`,
+          '==============================',
+          detail,
+          '',
+          `Theme: ${theme}`,
+          'Open Owner Console → Alerts / Chat / Messages',
+          cleanSecretEnv(process.env.APP_URL) || 'https://www.mohammedsufyan.com',
+        ].join('\n');
+        await dispatchEmailMessage({
+          to: DESTINATION_EMAIL,
+          fromDisplayName: 'Portfolio Alerts',
+          subjectLine: subject,
+          html,
+          text,
+        });
+      },
+    });
+  } catch (err) {
+    structuredLog('warn', 'owner_alert_failed', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    void captureException(err, { source: 'emitOwnerAlert', dedupeKey: input.dedupeKey });
   }
 }
 
@@ -125,6 +651,36 @@ function saveRuntimeOwnerPolicy(next: RuntimeOwnerPolicy): void {
   } catch {
     /* non-fatal in read-only filesystem */
   }
+  void saveDistributedOwnerPolicy(next);
+}
+
+async function enforceRateLimit(
+  res: Response,
+  namespace: RateLimitNamespace,
+  key: string,
+  options: { maxRequests?: number; error: string }
+): Promise<boolean> {
+  const result = await checkDistributedRateLimit(namespace, key, {
+    maxRequests: options.maxRequests,
+  });
+  if (!result.limited) return false;
+  res.setHeader('Retry-After', String(result.retryAfterSeconds));
+  res.status(429).json({ error: options.error });
+  return true;
+}
+
+async function tryPersistCvTracking(
+  summary: ReturnType<typeof buildTrackingSummaryForClient>
+): Promise<boolean> {
+  if (!isFirebaseAdminConfigured()) return false;
+  return adminWriteCvDownload(summary.downloadId, { ...summary });
+}
+
+async function tryPersistContactSummary(summary: Record<string, unknown>): Promise<boolean> {
+  if (!isFirebaseAdminConfigured()) return false;
+  const messageId = typeof summary.messageId === 'string' ? summary.messageId : '';
+  if (!messageId) return false;
+  return adminWriteContactMessage(messageId, summary);
 }
 
 let cachedFirebaseCerts: { certs: Record<string, string>; expiresAt: number } | null = null;
@@ -149,7 +705,24 @@ async function getFirebasePublicCerts(): Promise<Record<string, string>> {
   return certs;
 }
 
-async function verifyOwnerFirebaseIdToken(authHeader: string | undefined): Promise<{ ok: true; email: string; uid: string } | { ok: false; error: string }> {
+function readFirebaseDatabaseId(): string {
+  try {
+    const raw = fs.readFileSync(path.join(__dirname, 'firebase-applet-config.json'), 'utf8');
+    const parsed = JSON.parse(raw) as { firestoreDatabaseId?: string };
+    return parsed.firestoreDatabaseId || '(default)';
+  } catch {
+    return '(default)';
+  }
+}
+
+const FIRESTORE_DATABASE_ID = readFirebaseDatabaseId();
+
+async function verifyFirebaseIdTokenPayload(
+  authHeader: string | undefined
+): Promise<
+  | { ok: true; email: string; uid: string; emailVerified: boolean; rawToken: string }
+  | { ok: false; error: string }
+> {
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return { ok: false, error: 'Missing owner authorization token.' };
   }
@@ -204,17 +777,57 @@ async function verifyOwnerFirebaseIdToken(authHeader: string | undefined): Promi
       return { ok: false, error: 'Token expired or audience mismatch.' };
     }
 
-    if (
-      !payload.email ||
-      payload.email.toLowerCase() !== DESTINATION_EMAIL.toLowerCase() ||
-      payload.email_verified !== true
-    ) {
-      return { ok: false, error: 'Restricted to verified portfolio owner.' };
+    if (!payload.email || payload.email_verified !== true) {
+      return { ok: false, error: 'Verified email claim required.' };
     }
 
-    return { ok: true, email: payload.email, uid: payload.sub };
+    return {
+      ok: true,
+      email: payload.email,
+      uid: payload.sub,
+      emailVerified: true,
+      rawToken: token,
+    };
   } catch {
     return { ok: false, error: 'Failed to verify owner authorization token.' };
+  }
+}
+
+async function verifyOwnerFirebaseIdToken(
+  authHeader: string | undefined
+): Promise<{ ok: true; email: string; uid: string } | { ok: false; error: string }> {
+  const verified = await verifyFirebaseIdTokenPayload(authHeader);
+  if (!verified.ok) return verified;
+  if (verified.email.toLowerCase() !== DESTINATION_EMAIL.toLowerCase()) {
+    return { ok: false, error: 'Restricted to verified portfolio owner.' };
+  }
+  return { ok: true, email: verified.email, uid: verified.uid };
+}
+
+/** Primary owner or Firestore-confirmed delegate admin. */
+async function verifyConsoleActorToken(
+  authHeader: string | undefined
+): Promise<{ ok: true; email: string; uid: string; role: 'owner' | 'delegate' } | { ok: false; error: string }> {
+  const verified = await verifyFirebaseIdTokenPayload(authHeader);
+  if (!verified.ok) return verified;
+
+  if (verified.email.toLowerCase() === DESTINATION_EMAIL.toLowerCase()) {
+    return { ok: true, email: verified.email, uid: verified.uid, role: 'owner' };
+  }
+
+  try {
+    const dbPath = encodeURIComponent(FIRESTORE_DATABASE_ID);
+    const url = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/${dbPath}/documents/admins/${encodeURIComponent(verified.uid)}`;
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${verified.rawToken}` },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) {
+      return { ok: false, error: 'Restricted to verified portfolio owner or delegate admin.' };
+    }
+    return { ok: true, email: verified.email, uid: verified.uid, role: 'delegate' };
+  } catch {
+    return { ok: false, error: 'Unable to verify console actor privileges.' };
   }
 }
 
@@ -749,7 +1362,7 @@ function buildOtpEmailHtml(
   name: string,
   code: string,
   theme: EmailTheme,
-  purpose: 'cv' | 'contact' = 'cv'
+  purpose: 'cv' | 'contact' | 'chat' = 'cv'
 ): string {
   const p = getEmailPalette(theme);
   const safeName = escapeHtml(name || 'there');
@@ -757,7 +1370,15 @@ function buildOtpEmailHtml(
   const actionPhrase =
     purpose === 'contact'
       ? 'authenticate your email and transmit your message on <strong>mohammedsufyan.com</strong>'
-      : 'unlock your CV download on <strong>mohammedsufyan.com</strong>';
+      : purpose === 'chat'
+        ? 'verify your email and start a live portfolio chat on <strong>mohammedsufyan.com</strong>'
+        : 'unlock your CV download on <strong>mohammedsufyan.com</strong>';
+  const headerLabel =
+    purpose === 'contact'
+      ? 'Contact Transmission Verification'
+      : purpose === 'chat'
+        ? 'Live Chat Verification'
+        : 'Portfolio Access Verification';
 
   return `<!DOCTYPE html>
 <html lang="en" data-theme="${p.theme}">
@@ -775,7 +1396,7 @@ function buildOtpEmailHtml(
             <td style="padding:22px 26px;background-color:${p.headerBg};border-bottom:1px solid ${p.border};">
               <div style="font-size:15px;font-weight:700;color:${p.textStrong};">MOHAMMED SUFYAN</div>
               <div style="font-size:11px;font-family:monospace;color:${p.accent};text-transform:uppercase;margin-top:2px;">
-                ${purpose === 'contact' ? 'Contact Transmission Verification' : 'Portfolio Access Verification'}
+                ${headerLabel}
               </div>
             </td>
           </tr>
@@ -980,7 +1601,7 @@ async function dispatchEmailMessage(params: DispatchEmailParams): Promise<{ prov
       transportErrors.push(`FormSubmit: ${msg}`);
     }
   } else if (!isCustomRecipient) {
-    transportErrors.push('FormSubmit fallback disabled in production (set ALLOW_FORMSUBMIT_FALLBACK=true to enable)');
+    transportErrors.push('FormSubmit fallback disabled (set ALLOW_FORMSUBMIT_FALLBACK=true to enable)');
   }
 
   if (transportErrors.length > 0) {
@@ -999,9 +1620,10 @@ async function sendContactEmail(payload: ContactPayload): Promise<{ provider: st
   const safeHeaderName = sanitizeDisplayName(payload.name) || 'Portfolio Visitor';
   const safeHeaderSubject = payload.subject ? sanitizeHeaderValue(payload.subject) : '';
   const safeHeaderEmail = sanitizeHeaderValue(payload.email);
+  const alertTag = runtimeOwnerPolicy.notifyOnNewInquiry ? '[ALERT] ' : '';
   const subjectLine = safeHeaderSubject
-    ? `[Portfolio Inquiry] ${safeHeaderSubject} — ${safeHeaderName}`
-    : `[Portfolio Inquiry] New message from ${safeHeaderName}`;
+    ? `${alertTag}[Portfolio Inquiry] ${safeHeaderSubject} — ${safeHeaderName}`
+    : `${alertTag}[Portfolio Inquiry] New message from ${safeHeaderName}`;
   const html = buildPortfolioEmailHtml(payload, timestamp);
   const text = buildPlainTextEmail(payload, timestamp);
 
@@ -1021,25 +1643,191 @@ async function sendContactEmail(payload: ContactPayload): Promise<{ provider: st
   });
 }
 
+function buildOwnerReplyEmailHtml(params: {
+  toName: string;
+  body: string;
+  originalSubject?: string;
+  theme?: EmailTheme;
+  timestamp?: string;
+}): string {
+  const p = getEmailPalette(parseEmailTheme(params.theme ?? 'light'));
+  const safeName = escapeHtml(sanitizeDisplayName(params.toName) || 'there');
+  const safeBody = escapeHtml(params.body).replace(/\r?\n/g, '<br />');
+  const safeTime = escapeHtml(params.timestamp || new Date().toUTCString());
+  const siteUrl = (cleanSecretEnv(process.env.APP_URL) || 'https://www.mohammedsufyan.com').replace(
+    /\/$/,
+    ''
+  );
+  const safeSiteUrl = escapeHtml(siteUrl);
+  const originalBlock = params.originalSubject
+    ? `<div style="margin-top:16px;padding-top:14px;border-top:1px solid ${p.border};">
+        <div style="font-size:10px;font-family:monospace;color:${p.textSoft};text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">
+          In reply to
+        </div>
+        <div style="font-size:13px;color:${p.textMuted};line-height:1.5;">
+          ${escapeHtml(params.originalSubject)}
+        </div>
+      </div>`
+    : '';
+
+  return `<!DOCTYPE html>
+<html lang="en" data-theme="${p.theme}">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="${p.theme}" />
+  <meta name="supported-color-schemes" content="${p.theme}" />
+  <title>Reply from Mohammed Sufyan</title>
+</head>
+<body style="margin:0;padding:0;background-color:${p.pageBg};font-family:'Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:${p.text};">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:${p.pageBg};padding:32px 16px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background-color:${p.cardBg};border:1px solid ${p.border};border-radius:16px;overflow:hidden;">
+          <tr>
+            <td style="padding:24px 28px;background-color:${p.headerBg};border-bottom:1px solid ${p.border};">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                <tr>
+                  <td style="vertical-align:middle;">
+                    <table role="presentation" cellspacing="0" cellpadding="0">
+                      <tr>
+                        <td style="width:38px;height:38px;border-radius:10px;background-color:${p.accentSoftBg};border:1px solid ${p.accentDeep};text-align:center;vertical-align:middle;font-weight:700;font-size:14px;color:${p.accent};font-family:monospace;">
+                          MS
+                        </td>
+                        <td style="padding-left:12px;">
+                          <div style="font-size:15px;font-weight:700;color:${p.textStrong};letter-spacing:0.02em;">
+                            MOHAMMED SUFYAN
+                          </div>
+                          <div style="font-size:11px;font-family:monospace;color:${p.accent};text-transform:uppercase;letter-spacing:0.08em;margin-top:2px;">
+                            Portfolio Owner Reply
+                          </div>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                  <td align="right" style="vertical-align:middle;">
+                    <span style="display:inline-block;padding:5px 10px;border-radius:6px;background-color:${p.badgeSuccessBg};border:1px solid ${p.badgeSuccessBorder};color:${p.badgeSuccessText};font-size:10px;font-family:monospace;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">
+                      REPLY
+                    </span>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:24px 28px 12px 28px;">
+              <div style="font-size:11px;font-family:monospace;color:${p.accent};text-transform:uppercase;letter-spacing:0.1em;margin-bottom:6px;">
+                Direct reply
+              </div>
+              <h1 style="margin:0;font-size:20px;font-weight:700;color:${p.textStrong};line-height:1.3;">
+                Hi ${safeName},
+              </h1>
+              <p style="margin:8px 0 0 0;font-size:12px;font-family:monospace;color:${p.textMuted};">
+                Sent ${safeTime}
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:8px 28px 24px 28px;">
+              <div style="background-color:${p.panelBg};border:1px solid ${p.border};border-left:3px solid ${p.accent};border-radius:12px;padding:18px 20px;">
+                <div style="font-size:14px;line-height:1.65;color:${p.text};">
+                  ${safeBody}
+                </div>
+                ${originalBlock}
+              </div>
+              <p style="margin:20px 0 0 0;font-size:13px;color:${p.textMuted};line-height:1.5;">
+                — Mohammed Sufyan<br />
+                <a href="${safeSiteUrl}" style="color:${p.accent};text-decoration:none;">${safeSiteUrl.replace(/^https?:\/\//, '')}</a>
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 28px;background-color:${p.footerBg};border-top:1px solid ${p.border};font-size:11px;font-family:monospace;color:${p.textSoft};">
+              Mohammed Sufyan Portfolio · Owner reply from the console · You can reply to this email directly
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+}
+
+async function sendOwnerReplyEmail(params: {
+  toEmail: string;
+  toName: string;
+  subject: string;
+  body: string;
+  originalSubject?: string;
+  theme?: EmailTheme;
+}): Promise<{ provider: string }> {
+  const safeName = sanitizeDisplayName(params.toName) || 'there';
+  const safeSubject = sanitizeHeaderValue(params.subject).slice(0, 200);
+  const timestamp = new Date().toUTCString();
+  const html = buildOwnerReplyEmailHtml({
+    toName: safeName,
+    body: params.body,
+    originalSubject: params.originalSubject,
+    theme: params.theme ?? 'light',
+    timestamp,
+  });
+  const text = [
+    `Hi ${safeName},`,
+    '',
+    params.body.trim(),
+    '',
+    params.originalSubject ? `In reply to: ${params.originalSubject}` : '',
+    '',
+    '— Mohammed Sufyan',
+    cleanSecretEnv(process.env.APP_URL) || 'https://www.mohammedsufyan.com',
+  ]
+    .filter((line, i, arr) => !(line === '' && arr[i - 1] === ''))
+    .join('\n')
+    .trim();
+
+  const ownerReplyTo =
+    cleanSecretEnv(process.env.CONTACT_TO_EMAIL) ||
+    cleanSecretEnv(process.env.GMAIL_USER) ||
+    undefined;
+
+  structuredLog('info', 'owner_reply_email_built', {
+    htmlBytes: html.length,
+    branded: html.includes('Portfolio Owner Reply'),
+    theme: params.theme ?? 'light',
+  });
+
+  return dispatchEmailMessage({
+    to: params.toEmail,
+    fromDisplayName: 'Mohammed Sufyan',
+    replyTo: ownerReplyTo,
+    subjectLine: safeSubject,
+    html,
+    text,
+  });
+}
+
 async function sendVisitorOtpEmail(params: {
   email: string;
   name: string;
   code: string;
   theme: EmailTheme;
-  purpose?: 'cv' | 'contact';
+  purpose?: 'cv' | 'contact' | 'chat';
 }): Promise<{ provider: string }> {
   const purpose = params.purpose ?? 'cv';
   const html = buildOtpEmailHtml(params.name, params.code, params.theme, purpose);
-  const text = `Hi ${params.name || 'there'},\n\nYour verification code for mohammedsufyan.com (${
-    purpose === 'contact' ? 'Transmit Message' : 'CV Access'
-  }) is: ${params.code}\n\nThis code expires in 10 minutes.`;
+  const purposeLabel =
+    purpose === 'contact' ? 'Transmit Message' : purpose === 'chat' ? 'Live Chat' : 'CV Access';
+  const text = `Hi ${params.name || 'there'},\n\nYour verification code for mohammedsufyan.com (${purposeLabel}) is: ${params.code}\n\nThis code expires in 10 minutes.`;
   return dispatchEmailMessage({
     to: params.email,
     fromDisplayName: 'Mohammed Sufyan Portfolio',
     subjectLine:
       purpose === 'contact'
         ? `${params.code} — Verification Code to Send Your Message`
-        : `${params.code} — Verification Code for Mohammed Sufyan's CV`,
+        : purpose === 'chat'
+          ? `${params.code} — Verification Code for Live Portfolio Chat`
+          : `${params.code} — Verification Code for Mohammed Sufyan's CV`,
     html,
     text,
   });
@@ -1124,6 +1912,18 @@ function buildTrackingSummaryForClient(
 }
 
 async function startServer() {
+  runtimeOwnerPolicy = await loadDistributedOwnerPolicy(runtimeOwnerPolicy);
+
+  if (isPortfolioVectorConfigured()) {
+    void syncPortfolioVectors().then((result) => {
+      if (result.ok) {
+        console.log(`Portfolio vector index synced (${result.count} chunks).`);
+      } else {
+        console.warn(`Portfolio vector sync skipped/failed: ${result.error || 'unknown'}`);
+      }
+    });
+  }
+
   const app = express();
   app.disable('x-powered-by');
   // Only trust X-Forwarded-* when explicitly enabled or in production behind a reverse proxy
@@ -1140,6 +1940,8 @@ async function startServer() {
   } else if (process.env.NODE_ENV === 'production') {
     app.set('trust proxy', 1);
   }
+
+  app.use(requestContextMiddleware);
 
   app.use((req: Request, res: Response, next: NextFunction) => {
     const isDev = process.env.NODE_ENV !== 'production';
@@ -1158,7 +1960,9 @@ async function startServer() {
       typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : undefined;
     const isSensitivePost =
       req.method === 'POST' &&
-      (req.path.startsWith('/api/contact') || req.path.startsWith('/api/cv-'));
+      (req.path.startsWith('/api/contact') ||
+        req.path.startsWith('/api/cv-') ||
+        req.path.startsWith('/api/chat'));
 
     if (isBlockedBotUserAgent(userAgent, isSensitivePost)) {
       res.status(403).json({
@@ -1214,20 +2018,118 @@ async function startServer() {
     return false;
   }
 
-  app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
+  app.use((err: unknown, req: Request, res: Response, next: NextFunction) => {
     if (err instanceof SyntaxError && 'body' in err) {
       res.status(400).json({ error: 'Invalid JSON request payload.' });
       return;
     }
+    void captureException(err, { requestId: req.requestId, path: req.path });
     next(err);
   });
 
   app.get('/api/health', (_req: Request, res: Response) => {
+    const gold = evaluateGoldPathHardening();
+    const strict =
+      (process.env.STRICT_PROD_HARDENING || '').toLowerCase() === 'true' &&
+      process.env.NODE_ENV === 'production';
+    const degraded = strict && !gold.productionReady;
+    res.status(degraded ? 503 : 200).json({
+      ok: !degraded,
+      status: degraded ? 'degraded' : 'healthy',
+      version: APP_VERSION,
+      versionLabel: APP_VERSION_LABEL,
+      timestamp: new Date().toISOString(),
+      emailTransportConfigured: isDirectEmailTransportConfigured(),
+      turnstileConfigured: Boolean(TURNSTILE_SECRET && TURNSTILE_SITE_KEY),
+      sessionSecretConfigured: Boolean(process.env.SESSION_SECRET?.trim()),
+      incidentMode: runtimeOwnerPolicy.incidentMode,
+      distributedStore: isDistributedStoreEnabled() ? 'redis' : 'memory',
+      serverTelemetryWrites: isFirebaseAdminConfigured(),
+      observability: {
+        sentry: Boolean((process.env.SENTRY_DSN || '').trim()),
+        slack: Boolean((process.env.SLACK_ALERT_WEBHOOK_URL || '').trim()),
+      },
+      goldPath: {
+        score: gold.score,
+        max: gold.max,
+        productionReady: gold.productionReady,
+        items: gold.items,
+      },
+    });
+  });
+
+  /** Public boolean status for the Security Architecture page (no secrets). */
+  app.get('/api/status', (_req: Request, res: Response) => {
+    const gold = evaluateGoldPathHardening();
     res.status(200).json({
       ok: true,
-      status: 'healthy',
+      version: APP_VERSION,
+      versionLabel: APP_VERSION_LABEL,
       timestamp: new Date().toISOString(),
+      controls: {
+        turnstile: Boolean(TURNSTILE_SECRET && TURNSTILE_SITE_KEY),
+        redis: isDistributedStoreEnabled(),
+        adminWrites: isFirebaseAdminConfigured(),
+        mail: isDirectEmailTransportConfigured(),
+        incidentMode: runtimeOwnerPolicy.incidentMode,
+        sentry: Boolean((process.env.SENTRY_DSN || '').trim()),
+        slackAlerts: Boolean((process.env.SLACK_ALERT_WEBHOOK_URL || '').trim()),
+        sessionSecret: Boolean(process.env.SESSION_SECRET?.trim()),
+        appCheck: Boolean(
+          (process.env.VITE_RECAPTCHA_SITE_KEY || '').trim() ||
+            (process.env.RECAPTCHA_SITE_KEY || '').trim()
+        ),
+        piiClientCreatesDenied: true,
+        cspReporting: true,
+        httpsIpIntel: true,
+      },
+      goldPathScore: `${gold.score}/${gold.max}`,
     });
+  });
+
+  /** Lightweight probe for external uptime monitors (Better Stack / UptimeRobot / Cloud Monitoring). */
+  app.get('/api/uptime', (_req: Request, res: Response) => {
+    const gold = evaluateGoldPathHardening();
+    const strict =
+      (process.env.STRICT_PROD_HARDENING || '').toLowerCase() === 'true' &&
+      process.env.NODE_ENV === 'production';
+    const ready = !strict || gold.productionReady;
+    res.status(ready ? 200 : 503).json({
+      ok: ready,
+      service: 'sufyan-portfolio',
+      ts: Date.now(),
+      redis: isDistributedStoreEnabled(),
+      mail: isDirectEmailTransportConfigured(),
+    });
+  });
+
+  app.post(
+    '/api/csp-report',
+    express.json({
+      type: ['application/csp-report', 'application/reports+json', 'application/json'],
+      limit: '16kb',
+    }),
+    (req: Request, res: Response) => {
+      const report = req.body;
+      structuredLog('warn', 'csp_violation', {
+        requestId: req.requestId,
+        report: typeof report === 'object' ? report : String(report).slice(0, 500),
+      });
+      res.status(204).end();
+    }
+  );
+
+  app.get('/.well-known/security.txt', (_req: Request, res: Response) => {
+    const expires = new Date();
+    expires.setFullYear(expires.getFullYear() + 1);
+    const body = [
+      'Contact: mailto:sufyan.net@gmail.com',
+      'Expires: ' + expires.toISOString(),
+      'Preferred-Languages: en',
+      'Canonical: https://www.mohammedsufyan.com/.well-known/security.txt',
+      'Policy: https://www.mohammedsufyan.com/#security',
+    ].join('\n');
+    res.type('text/plain').status(200).send(body + '\n');
   });
 
   app.get('/api/access-config', (_req: Request, res: Response) => {
@@ -1235,7 +2137,189 @@ async function startServer() {
       turnstileSiteKey: TURNSTILE_SITE_KEY,
       otpSupported: isDirectEmailTransportConfigured(),
       forceOtp: FORCE_CV_OTP || runtimeOwnerPolicy.strictOtpForAll,
+      serverTelemetryPreferred: isFirebaseAdminConfigured(),
     });
+  });
+
+  app.get('/api/owner/observability', async (req: Request, res: Response) => {
+    const authCheck = await verifyConsoleActorToken(req.headers.authorization);
+    if (!authCheck.ok) {
+      res.status(401).json({ error: authCheck.error });
+      return;
+    }
+    if (
+      await enforceRateLimit(res, 'telemetry', `owner-obs:${authCheck.uid}`, {
+        maxRequests: 60,
+        error: 'Owner observability rate limit exceeded.',
+      })
+    ) {
+      return;
+    }
+    res.status(200).json({
+      ok: true,
+      metrics: getObservabilitySnapshot(),
+      goldPath: evaluateGoldPathHardening(),
+      chat: getChatStats(),
+    });
+  });
+
+  app.get('/api/owner/telemetry', async (req: Request, res: Response) => {
+    const authCheck = await verifyConsoleActorToken(req.headers.authorization);
+    if (!authCheck.ok) {
+      res.status(401).json({ error: authCheck.error });
+      return;
+    }
+    if (
+      await enforceRateLimit(res, 'telemetry', `owner-tel:${authCheck.uid}`, {
+        maxRequests: 60,
+        error: 'Owner telemetry rate limit exceeded.',
+      })
+    ) {
+      return;
+    }
+    res.status(200).json(siteTelemetry);
+  });
+
+  app.post('/api/telemetry/event', async (req: Request, res: Response) => {
+    try {
+      if (!req.is('application/json')) {
+        res.status(415).json({ error: 'Content-Type must be application/json.' });
+        return;
+      }
+      if (rejectDisallowedOrigin(req, res)) return;
+      if (!runtimeOwnerPolicy.enableSiteTelemetry || runtimeOwnerPolicy.incidentMode) {
+        res.status(204).end();
+        return;
+      }
+      const clientIp = extractClientIp(req);
+      if (
+        await enforceRateLimit(res, 'telemetry', clientIp, {
+          maxRequests: 60,
+          error: 'Telemetry rate limit exceeded.',
+        })
+      ) {
+        return;
+      }
+      const raw = (req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {}) as {
+        type?: unknown;
+        track?: unknown;
+      };
+      const type = raw.type === 'og_share' ? 'og_share' : raw.type === 'pageview' ? 'pageview' : null;
+      if (!type) {
+        res.status(400).json({ error: 'type must be pageview or og_share.' });
+        return;
+      }
+      const track =
+        typeof raw.track === 'string' ? normalizeShareTrack(raw.track.slice(0, 32)) : undefined;
+      bumpSiteTelemetry(type, track);
+      res.status(204).end();
+    } catch {
+      res.status(500).json({ error: 'Unable to record telemetry event.' });
+    }
+  });
+
+  /** Browser ErrorBoundary / client crash reports → structured log + optional Sentry. */
+  app.post('/api/telemetry/client-error', async (req: Request, res: Response) => {
+    try {
+      if (!req.is('application/json')) {
+        res.status(415).json({ error: 'Content-Type must be application/json.' });
+        return;
+      }
+      if (rejectDisallowedOrigin(req, res)) return;
+      const clientIp = extractClientIp(req);
+      if (
+        await enforceRateLimit(res, 'telemetry', `cerr:${clientIp}`, {
+          maxRequests: 20,
+          error: 'Client error report rate limit exceeded.',
+        })
+      ) {
+        return;
+      }
+      const raw = (req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {}) as {
+        message?: unknown;
+        stack?: unknown;
+        componentStack?: unknown;
+      };
+      const message =
+        typeof raw.message === 'string' ? raw.message.trim().slice(0, 500) : 'client_error';
+      const stack = typeof raw.stack === 'string' ? raw.stack.trim().slice(0, 2000) : undefined;
+      const componentStack =
+        typeof raw.componentStack === 'string' ? raw.componentStack.trim().slice(0, 2000) : undefined;
+      structuredLog('error', 'client_error', {
+        requestId: req.requestId,
+        message,
+        stack,
+        componentStack,
+      });
+      void captureException(new Error(message), {
+        source: 'client',
+        requestId: req.requestId,
+        stack,
+        componentStack,
+      });
+      res.status(204).end();
+    } catch {
+      res.status(500).json({ error: 'Unable to record client error.' });
+    }
+  });
+
+  app.post('/api/owner/digest-email', async (req: Request, res: Response) => {
+    try {
+      if (!req.is('application/json')) {
+        res.status(415).json({ error: 'Content-Type must be application/json.' });
+        return;
+      }
+      if (rejectDisallowedOrigin(req, res)) return;
+      const authCheck = await verifyConsoleActorToken(req.headers.authorization);
+      if (!authCheck.ok) {
+        res.status(401).json({ error: authCheck.error });
+        return;
+      }
+      if (
+        await enforceRateLimit(res, 'contact', `owner-digest:${authCheck.uid}`, {
+          maxRequests: 10,
+          error: 'Owner digest rate limit exceeded.',
+        })
+      ) {
+        return;
+      }
+      const raw = (req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {}) as {
+        subject?: unknown;
+        body?: unknown;
+        theme?: unknown;
+      };
+      const subject =
+        typeof raw.subject === 'string' && raw.subject.trim()
+          ? sanitizeHeaderValue(raw.subject).slice(0, 200)
+          : 'Portfolio owner digest';
+      const body =
+        typeof raw.body === 'string' ? raw.body.trim().slice(0, 20000) : '';
+      const digestTheme = parseEmailTheme(raw.theme);
+      const queued = drainDigestItems();
+      const queuedText = formatDigestQueueText(queued);
+      const combined = [queuedText, body].filter(Boolean).join('\n\n').trim();
+      if (combined.length < 20) {
+        res.status(400).json({ error: 'Digest body is too short.' });
+        return;
+      }
+      const html = buildOwnerAlertEmailHtml({
+        alertClass: 'warning',
+        title: subject,
+        detail: combined.slice(0, 20000),
+        theme: digestTheme,
+      });
+      const result = await dispatchEmailMessage({
+        to: DESTINATION_EMAIL,
+        fromDisplayName: 'Portfolio Owner Digest',
+        subjectLine: subject,
+        html,
+        text: combined.slice(0, 20000),
+      });
+      res.status(200).json({ ok: true, provider: result.provider, queuedAlerts: queued.length });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to send digest email.';
+      res.status(500).json({ error: message });
+    }
   });
 
   app.post('/api/owner/policy-sync', async (req: Request, res: Response) => {
@@ -1251,12 +2335,44 @@ async function startServer() {
         res.status(401).json({ error: authCheck.error });
         return;
       }
+      if (
+        await enforceRateLimit(res, 'contact', `owner-policy:${authCheck.uid}`, {
+          maxRequests: 30,
+          error: 'Owner policy sync rate limit exceeded.',
+        })
+      ) {
+        return;
+      }
 
       const raw = (req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {}) as {
         rules?: unknown;
         strictOtpForAll?: unknown;
         enableContactForm?: unknown;
         enableCvDownloads?: unknown;
+        enablePwaInstall?: unknown;
+        enableSiteTelemetry?: unknown;
+        incidentMode?: unknown;
+        notifyOnNewInquiry?: unknown;
+        enablePortfolioChat?: unknown;
+        enableLiveChat?: unknown;
+        enableChatLlm?: unknown;
+        chatMaxQuestionsPerVisitor?: unknown;
+        chatMaxLlmPerVisitor?: unknown;
+        chatMaxLiveSessionsPerVisitor?: unknown;
+        chatRateWindowHours?: unknown;
+        chatLlmModel?: unknown;
+        chatShowSuggestions?: unknown;
+        chatOfferLiveAgent?: unknown;
+        alertEmailEnabled?: unknown;
+        alertEmailUrgent?: unknown;
+        alertEmailWarning?: unknown;
+        alertEmailDigest?: unknown;
+        alertClassNewInquiry?: unknown;
+        alertClassLiveChat?: unknown;
+        alertClassRiskDownload?: unknown;
+        alertClassUnusualTraffic?: unknown;
+        alertClassChatLimit?: unknown;
+        alertClassOverdueCrm?: unknown;
       };
 
       const normalizedRules: CompactAccessRule[] = [];
@@ -1275,20 +2391,131 @@ async function startServer() {
         }
       }
 
+      const incidentMode =
+        typeof raw.incidentMode === 'boolean' ? raw.incidentMode : runtimeOwnerPolicy.incidentMode;
+
       saveRuntimeOwnerPolicy({
         rules: normalizedRules,
         strictOtpForAll:
           typeof raw.strictOtpForAll === 'boolean'
             ? raw.strictOtpForAll
-            : runtimeOwnerPolicy.strictOtpForAll,
-        enableContactForm:
-          typeof raw.enableContactForm === 'boolean'
+            : runtimeOwnerPolicy.strictOtpForAll || incidentMode,
+        enableContactForm: incidentMode
+          ? false
+          : typeof raw.enableContactForm === 'boolean'
             ? raw.enableContactForm
             : runtimeOwnerPolicy.enableContactForm,
-        enableCvDownloads:
-          typeof raw.enableCvDownloads === 'boolean'
+        enableCvDownloads: incidentMode
+          ? false
+          : typeof raw.enableCvDownloads === 'boolean'
             ? raw.enableCvDownloads
             : runtimeOwnerPolicy.enableCvDownloads,
+        enablePwaInstall: incidentMode
+          ? false
+          : typeof raw.enablePwaInstall === 'boolean'
+            ? raw.enablePwaInstall
+            : runtimeOwnerPolicy.enablePwaInstall,
+        enableSiteTelemetry: incidentMode
+          ? false
+          : typeof raw.enableSiteTelemetry === 'boolean'
+            ? raw.enableSiteTelemetry
+            : runtimeOwnerPolicy.enableSiteTelemetry,
+        incidentMode,
+        notifyOnNewInquiry:
+          typeof raw.notifyOnNewInquiry === 'boolean'
+            ? raw.notifyOnNewInquiry
+            : runtimeOwnerPolicy.notifyOnNewInquiry,
+        enablePortfolioChat: incidentMode
+          ? false
+          : typeof raw.enablePortfolioChat === 'boolean'
+            ? raw.enablePortfolioChat
+            : runtimeOwnerPolicy.enablePortfolioChat,
+        enableLiveChat: incidentMode
+          ? false
+          : typeof raw.enableLiveChat === 'boolean'
+            ? raw.enableLiveChat
+            : runtimeOwnerPolicy.enableLiveChat,
+        enableChatLlm: incidentMode
+          ? false
+          : typeof raw.enableChatLlm === 'boolean'
+            ? raw.enableChatLlm
+            : runtimeOwnerPolicy.enableChatLlm,
+        chatMaxQuestionsPerVisitor: clampPolicyInt(
+          raw.chatMaxQuestionsPerVisitor,
+          runtimeOwnerPolicy.chatMaxQuestionsPerVisitor,
+          1,
+          200
+        ),
+        chatMaxLlmPerVisitor: clampPolicyInt(
+          raw.chatMaxLlmPerVisitor,
+          runtimeOwnerPolicy.chatMaxLlmPerVisitor,
+          0,
+          100
+        ),
+        chatMaxLiveSessionsPerVisitor: clampPolicyInt(
+          raw.chatMaxLiveSessionsPerVisitor,
+          runtimeOwnerPolicy.chatMaxLiveSessionsPerVisitor,
+          0,
+          50
+        ),
+        chatRateWindowHours: clampPolicyInt(
+          raw.chatRateWindowHours,
+          runtimeOwnerPolicy.chatRateWindowHours,
+          1,
+          168
+        ),
+        chatLlmModel:
+          typeof raw.chatLlmModel === 'string'
+            ? raw.chatLlmModel.slice(0, 64)
+            : runtimeOwnerPolicy.chatLlmModel,
+        chatShowSuggestions:
+          typeof raw.chatShowSuggestions === 'boolean'
+            ? raw.chatShowSuggestions
+            : runtimeOwnerPolicy.chatShowSuggestions,
+        chatOfferLiveAgent:
+          typeof raw.chatOfferLiveAgent === 'boolean'
+            ? raw.chatOfferLiveAgent
+            : runtimeOwnerPolicy.chatOfferLiveAgent,
+        alertEmailEnabled:
+          typeof raw.alertEmailEnabled === 'boolean'
+            ? raw.alertEmailEnabled
+            : runtimeOwnerPolicy.alertEmailEnabled,
+        alertEmailUrgent:
+          typeof raw.alertEmailUrgent === 'boolean'
+            ? raw.alertEmailUrgent
+            : runtimeOwnerPolicy.alertEmailUrgent,
+        alertEmailWarning:
+          typeof raw.alertEmailWarning === 'boolean'
+            ? raw.alertEmailWarning
+            : runtimeOwnerPolicy.alertEmailWarning,
+        alertEmailDigest:
+          typeof raw.alertEmailDigest === 'boolean'
+            ? raw.alertEmailDigest
+            : runtimeOwnerPolicy.alertEmailDigest,
+        alertClassNewInquiry: sanitizeOwnerAlertClass(
+          raw.alertClassNewInquiry,
+          runtimeOwnerPolicy.alertClassNewInquiry
+        ),
+        alertClassLiveChat: sanitizeOwnerAlertClass(
+          raw.alertClassLiveChat,
+          runtimeOwnerPolicy.alertClassLiveChat
+        ),
+        alertClassRiskDownload: sanitizeOwnerAlertClass(
+          raw.alertClassRiskDownload,
+          runtimeOwnerPolicy.alertClassRiskDownload
+        ),
+        alertClassUnusualTraffic: sanitizeOwnerAlertClass(
+          raw.alertClassUnusualTraffic,
+          runtimeOwnerPolicy.alertClassUnusualTraffic
+        ),
+        alertClassChatLimit: sanitizeOwnerAlertClass(
+          raw.alertClassChatLimit,
+          runtimeOwnerPolicy.alertClassChatLimit
+        ),
+        alertClassOverdueCrm: sanitizeOwnerAlertClass(
+          raw.alertClassOverdueCrm,
+          runtimeOwnerPolicy.alertClassOverdueCrm
+        ),
       });
 
       res.status(200).json({ ok: true, ruleCount: normalizedRules.length });
@@ -1297,15 +2524,115 @@ async function startServer() {
     }
   });
 
-  app.get(['/api/og-card.svg', '/og-card.svg'], (req: Request, res: Response) => {
+  app.post('/api/owner/reply-message', async (req: Request, res: Response) => {
+    try {
+      if (!req.is('application/json')) {
+        res.status(415).json({ error: 'Content-Type must be application/json.' });
+        return;
+      }
+      if (rejectDisallowedOrigin(req, res)) return;
+
+      const authCheck = await verifyConsoleActorToken(req.headers.authorization);
+      if (!authCheck.ok) {
+        res.status(401).json({ error: authCheck.error });
+        return;
+      }
+
+      const raw = (req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {}) as {
+        messageId?: unknown;
+        toEmail?: unknown;
+        toName?: unknown;
+        subject?: unknown;
+        body?: unknown;
+        originalSubject?: unknown;
+      };
+
+      const toEmailRaw = typeof raw.toEmail === 'string' ? raw.toEmail.trim().toLowerCase() : '';
+      const toNameRaw = typeof raw.toName === 'string' ? raw.toName.trim() : '';
+      const subject = typeof raw.subject === 'string' ? raw.subject.trim() : '';
+      const body = typeof raw.body === 'string' ? raw.body.trim() : '';
+      const messageId = typeof raw.messageId === 'string' ? raw.messageId.trim() : '';
+      const originalSubject =
+        typeof raw.originalSubject === 'string' ? raw.originalSubject.trim().slice(0, 200) : '';
+
+      if (!messageId || messageId.length < 4) {
+        res.status(400).json({ error: 'A valid inquiry messageId is required to send a reply.' });
+        return;
+      }
+      if (subject.length < 3 || body.length < 3) {
+        res.status(400).json({ error: 'Reply subject and body must be at least 3 characters.' });
+        return;
+      }
+
+      // Always bind recipient to the stored inquiry (prevents arbitrary outbound mail relay).
+      if (!isFirebaseAdminConfigured()) {
+        res.status(503).json({
+          error:
+            'Owner replies require Firebase Admin SDK binding. Set FIREBASE_SERVICE_ACCOUNT_JSON and retry.',
+        });
+        return;
+      }
+      const inquiry = await adminGetContactMessage(messageId);
+      if (!inquiry) {
+        res.status(404).json({ error: 'Inquiry not found for reply binding.' });
+        return;
+      }
+      if (toEmailRaw && toEmailRaw !== inquiry.senderEmail) {
+        res.status(403).json({ error: 'Reply recipient must match the inquiry sender email.' });
+        return;
+      }
+      const toEmail = inquiry.senderEmail;
+      const toName = toNameRaw || inquiry.senderName;
+
+      if (
+        await enforceRateLimit(res, 'contact', `owner-reply:${authCheck.email || authCheck.uid || 'actor'}`, {
+          maxRequests: 30,
+          error: 'Too many owner replies. Please wait a few minutes.',
+        })
+      ) {
+        return;
+      }
+
+      const result = await sendOwnerReplyEmail({
+        toEmail,
+        toName,
+        subject: subject.slice(0, 200),
+        body: body.slice(0, 5000),
+        originalSubject,
+        // Outbound professional replies default to light; honor inquiry theme when set.
+        theme: parseEmailTheme(inquiry.theme ?? 'light'),
+      });
+
+      // Mark triage via Admin SDK so client Firestore rules can't block a successful send.
+      const triageUpdated = await adminMarkContactReplied(messageId, body.slice(0, 5000));
+
+      res.status(200).json({
+        ok: true,
+        provider: result.provider,
+        messageId,
+        triageUpdated,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Unable to send owner reply email.';
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.get(['/api/og-card.svg', '/og-card.svg'], async (req: Request, res: Response) => {
+    const clientIp = extractClientIp(req);
+    const ogLimit = await checkDistributedRateLimit('telemetry', `og:${clientIp}`, { maxRequests: 120 });
+    if (ogLimit.limited) {
+      res.setHeader('Retry-After', String(ogLimit.retryAfterSeconds));
+      res.status(429).type('text/plain').send('Rate limit exceeded.');
+      return;
+    }
     const rawTrack = typeof req.query.track === 'string' ? req.query.track : undefined;
-    const track: ShareTrackId =
-      rawTrack === 'security' || rawTrack === 'platform' || rawTrack === 'ai'
-        ? rawTrack
-        : 'executive';
+    const track = normalizeShareTrack(rawTrack);
     const theme = req.query.theme === 'light' ? 'light' : 'dark';
     const skillLabel =
       typeof req.query.skill === 'string' ? req.query.skill.slice(0, 60) : undefined;
+    bumpSiteTelemetry('og_share', track);
     const svg = buildDynamicSocialSvg({ track, theme, skillLabel });
     res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8');
     res.setHeader('Cache-Control', 'public, max-age=300');
@@ -1329,11 +2656,11 @@ async function startServer() {
       }
 
       const clientIp = extractClientIp(req);
-      if (isRateLimited(clientIp, contactRateLimitMap)) {
-        res.setHeader('Retry-After', String(rateLimitRetryAfterSeconds(clientIp, contactRateLimitMap)));
-        res.status(429).json({
+      if (
+        await enforceRateLimit(res, 'contact', clientIp, {
           error: 'Too many messages sent from this connection. Please wait a few minutes and try again.',
-        });
+        })
+      ) {
         return;
       }
 
@@ -1422,14 +2749,13 @@ async function startServer() {
       }
 
       const normalizedOtpEmail = `contact:${cleanEmail.toLowerCase()}`;
-      if (isRateLimited(normalizedOtpEmail, otpEmailRateLimitMap, { maxRequests: 5 })) {
-        res.setHeader(
-          'Retry-After',
-          String(rateLimitRetryAfterSeconds(normalizedOtpEmail, otpEmailRateLimitMap))
-        );
-        res.status(429).json({
-          error: 'Too many verification codes sent to this email. Please check your inbox or wait a few minutes.',
-        });
+      if (
+        await enforceRateLimit(res, 'otp-email', normalizedOtpEmail, {
+          maxRequests: 5,
+          error:
+            'Too many verification codes sent to this email. Please check your inbox or wait a few minutes.',
+        })
+      ) {
         return;
       }
 
@@ -1457,7 +2783,7 @@ async function startServer() {
       });
       const cleanTheme = parseEmailTheme(body.theme);
 
-      const challenge = createOtpChallenge(
+      const challenge = await createOtpChallengeAsync(
         contactOtpChallengeStore,
         {
           name: cleanName,
@@ -1474,6 +2800,7 @@ async function startServer() {
         },
         OTP_SECRET
       );
+      bumpMetric('otpIssued');
 
       await sendVisitorOtpEmail({
         email: cleanEmail,
@@ -1517,11 +2844,11 @@ async function startServer() {
       }
 
       const clientIp = extractClientIp(req);
-      if (isRateLimited(clientIp, contactRateLimitMap)) {
-        res.setHeader('Retry-After', String(rateLimitRetryAfterSeconds(clientIp, contactRateLimitMap)));
-        res.status(429).json({
+      if (
+        await enforceRateLimit(res, 'contact', clientIp, {
           error: 'Too many verification attempts. Please wait a few minutes and try again.',
-        });
+        })
+      ) {
         return;
       }
 
@@ -1538,7 +2865,7 @@ async function startServer() {
         return;
       }
 
-      const verified = verifyOtpChallenge(
+      const verified = await verifyOtpChallengeAsync(
         contactOtpChallengeStore,
         { challengeId, challengeToken, code },
         OTP_SECRET
@@ -1547,6 +2874,7 @@ async function startServer() {
         res.status(400).json({ error: verified.error });
         return;
       }
+      bumpMetric('otpVerified');
 
       const p = verified.payload;
       const accessCheck = evaluateAccessRules(runtimeOwnerPolicy.rules, {
@@ -1577,32 +2905,46 @@ async function startServer() {
         telemetryNote,
       });
 
+      const contactSummary = {
+        messageId,
+        senderName: p.name.slice(0, 120),
+        senderEmail: p.email.slice(0, 254),
+        senderPhone: p.phone.slice(0, 40),
+        subject: p.subject.slice(0, 200),
+        message: p.message.slice(0, 5000),
+        theme: p.theme,
+        ipAddress: p.ip.ipAddress.slice(0, 64),
+        country: p.ip.country.slice(0, 80),
+        region: p.ip.region.slice(0, 80),
+        city: p.ip.city.slice(0, 80),
+        isp: p.ip.isp.slice(0, 120),
+        asn: p.ip.asn.slice(0, 64),
+        timezone: p.ip.timezone.slice(0, 64),
+        clientTimezone: p.clientTimezone.slice(0, 64),
+        isVpnSuspected: p.risk.isVpnSuspected,
+        riskLevel: p.risk.riskLevel,
+        riskReasons: p.risk.riskReasons.join(', ').slice(0, 240),
+        referrer: p.referrer.slice(0, 200),
+        userAgent: p.userAgent.slice(0, 220),
+      };
+      const telemetryPersistedByServer = await tryPersistContactSummary(contactSummary);
+
+      void emitOwnerAlert({
+        eventType: 'new_inquiry',
+        title: `New inquiry from ${p.name}`,
+        detail: `${p.email}${p.subject ? ` · ${p.subject}` : ''} · risk ${p.risk.riskLevel}${
+          p.risk.isVpnSuspected ? ' · VPN/proxy suspected' : ''
+        }`,
+        dedupeKey: `inquiry:${messageId}`,
+        theme: p.theme,
+      });
+
       res.status(200).json({
         ok: true,
         provider: result.provider,
         message: `Email verified & transmitted directly to ${DESTINATION_EMAIL}.`,
-        contactSummary: {
-          messageId,
-          senderName: p.name.slice(0, 120),
-          senderEmail: p.email.slice(0, 254),
-          senderPhone: p.phone.slice(0, 40),
-          subject: p.subject.slice(0, 200),
-          message: p.message.slice(0, 5000),
-          theme: p.theme,
-          ipAddress: p.ip.ipAddress.slice(0, 64),
-          country: p.ip.country.slice(0, 80),
-          region: p.ip.region.slice(0, 80),
-          city: p.ip.city.slice(0, 80),
-          isp: p.ip.isp.slice(0, 120),
-          asn: p.ip.asn.slice(0, 64),
-          timezone: p.ip.timezone.slice(0, 64),
-          clientTimezone: p.clientTimezone.slice(0, 64),
-          isVpnSuspected: p.risk.isVpnSuspected,
-          riskLevel: p.risk.riskLevel,
-          riskReasons: p.risk.riskReasons.join(', ').slice(0, 240),
-          referrer: p.referrer.slice(0, 200),
-          userAgent: p.userAgent.slice(0, 220),
-        },
+        contactSummary,
+        telemetryPersistedByServer,
       });
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : 'Unable to verify message OTP.';
@@ -1621,11 +2963,11 @@ async function startServer() {
       if (rejectDisallowedOrigin(req, res)) return;
 
       const clientIp = extractClientIp(req);
-      if (isRateLimited(clientIp, cvAccessRateLimitMap)) {
-        res.setHeader('Retry-After', String(rateLimitRetryAfterSeconds(clientIp, cvAccessRateLimitMap)));
-        res.status(429).json({
+      if (
+        await enforceRateLimit(res, 'cv-access', clientIp, {
           error: 'Too many requests from this connection. Please wait a few minutes and try again.',
-        });
+        })
+      ) {
         return;
       }
 
@@ -1666,6 +3008,12 @@ async function startServer() {
               ? 'install'
               : 'pdf';
 
+      if (cleanAction === 'install' && !runtimeOwnerPolicy.enablePwaInstall) {
+        res.status(503).json({
+          error: 'App install is temporarily unavailable. Please try again later.',
+        });
+        return;
+      }
       if (!runtimeOwnerPolicy.enableCvDownloads && cleanAction !== 'install') {
         res.status(503).json({
           error: 'CV exports are temporarily paused by the portfolio owner. Please check back shortly or contact directly.',
@@ -1785,18 +3133,17 @@ async function startServer() {
         }
 
         const normalizedCvOtpEmail = `cv:${cleanEmail.toLowerCase()}`;
-        if (isRateLimited(normalizedCvOtpEmail, otpEmailRateLimitMap, { maxRequests: 5 })) {
-          res.setHeader(
-            'Retry-After',
-            String(rateLimitRetryAfterSeconds(normalizedCvOtpEmail, otpEmailRateLimitMap))
-          );
-          res.status(429).json({
-            error: 'Too many verification codes sent to this email. Please wait a few minutes before requesting another code.',
-          });
+        if (
+          await enforceRateLimit(res, 'otp-email', normalizedCvOtpEmail, {
+            maxRequests: 5,
+            error:
+              'Too many verification codes sent to this email. Please wait a few minutes before requesting another code.',
+          })
+        ) {
           return;
         }
 
-        const challenge = createOtpChallenge(
+        const challenge = await createOtpChallengeAsync(
           otpChallengeStore,
           {
             name: cleanName,
@@ -1816,6 +3163,7 @@ async function startServer() {
           },
           OTP_SECRET
         );
+        bumpMetric('otpIssued');
 
         await sendVisitorOtpEmail({
           email: cleanEmail,
@@ -1878,13 +3226,29 @@ async function startServer() {
         OTP_SECRET
       );
 
+      const trackingSummary = buildTrackingSummaryForClient(accessPayload, telemetry, false);
+      const telemetryPersistedByServer = await tryPersistCvTracking(trackingSummary);
+
+      if (telemetry.risk.isVpnSuspected || telemetry.risk.riskLevel === 'high') {
+        void emitOwnerAlert({
+          eventType: 'risk_download',
+          title: `High-risk CV access from ${cleanName}`,
+          detail: `${cleanEmail} · ${telemetry.risk.riskLevel} · IP ${telemetry.ip.ipAddress || 'unknown'}${
+            telemetry.risk.isVpnSuspected ? ' · VPN/proxy suspected' : ''
+          }`,
+          dedupeKey: `cvrisk:${cleanEmail.toLowerCase()}:${Math.floor(Date.now() / 3_600_000)}`,
+          theme: cleanTheme,
+        });
+      }
+
       res.status(200).json({
         ok: true,
         status: 'verified',
         provider: result.provider,
         verificationStatus,
         sessionReceipt,
-        trackingSummary: buildTrackingSummaryForClient(accessPayload, telemetry, false),
+        trackingSummary,
+        telemetryPersistedByServer,
         message:
           cleanAction === 'install'
             ? 'Access verified. Preparing app install.'
@@ -1907,11 +3271,11 @@ async function startServer() {
       if (rejectDisallowedOrigin(req, res)) return;
 
       const clientIp = extractClientIp(req);
-      if (isRateLimited(clientIp, cvAccessRateLimitMap)) {
-        res.setHeader('Retry-After', String(rateLimitRetryAfterSeconds(clientIp, cvAccessRateLimitMap)));
-        res.status(429).json({
+      if (
+        await enforceRateLimit(res, 'cv-access', clientIp, {
           error: 'Too many verification attempts. Please wait a few minutes and try again.',
-        });
+        })
+      ) {
         return;
       }
 
@@ -1928,7 +3292,7 @@ async function startServer() {
         return;
       }
 
-      const verified = verifyOtpChallenge(
+      const verified = await verifyOtpChallengeAsync(
         otpChallengeStore,
         { challengeId, challengeToken, code },
         OTP_SECRET
@@ -1937,8 +3301,15 @@ async function startServer() {
         res.status(400).json({ error: verified.error });
         return;
       }
+      bumpMetric('otpVerified');
 
       const p = verified.payload;
+      if (p.action === 'install' && !runtimeOwnerPolicy.enablePwaInstall) {
+        res.status(503).json({
+          error: 'App install is temporarily unavailable. Please try again later.',
+        });
+        return;
+      }
       if (!runtimeOwnerPolicy.enableCvDownloads && p.action !== 'install') {
         res.status(503).json({
           error: 'CV exports are temporarily paused by the portfolio owner. Please check back shortly.',
@@ -1997,13 +3368,17 @@ async function startServer() {
         OTP_SECRET
       );
 
+      const trackingSummary = buildTrackingSummaryForClient(accessPayload, telemetry, false);
+      const telemetryPersistedByServer = await tryPersistCvTracking(trackingSummary);
+
       res.status(200).json({
         ok: true,
         status: 'verified',
         provider: result.provider,
         verificationStatus,
         sessionReceipt,
-        trackingSummary: buildTrackingSummaryForClient(accessPayload, telemetry, false),
+        trackingSummary,
+        telemetryPersistedByServer,
         message:
           p.action === 'install'
             ? 'Email OTP verified. Preparing app install.'
@@ -2026,8 +3401,12 @@ async function startServer() {
       if (rejectDisallowedOrigin(req, res)) return;
 
       const clientIp = extractClientIp(req);
-      if (isRateLimited(clientIp, cvEventRateLimitMap, { maxRequests: 40 })) {
-        res.status(429).json({ error: 'Rate limit exceeded.' });
+      if (
+        await enforceRateLimit(res, 'cv-event', clientIp, {
+          maxRequests: 40,
+          error: 'Rate limit exceeded.',
+        })
+      ) {
         return;
       }
 
@@ -2047,7 +3426,10 @@ async function startServer() {
       const receiptToken = typeof body.sessionReceipt === 'string' ? body.sessionReceipt : undefined;
       const verifiedSession = verifySessionReceipt(receiptToken, OTP_SECRET);
       if (!verifiedSession) {
-        res.status(401).json({ error: 'Session verification expired. Please re-verify.' });
+        res.status(401).json({
+          error: SESSION_EXPIRED_MESSAGES.cv,
+          code: SESSION_EXPIRED_CODE,
+        });
         return;
       }
 
@@ -2060,6 +3442,12 @@ async function startServer() {
               ? 'install'
               : 'pdf';
 
+      if (cleanAction === 'install' && !runtimeOwnerPolicy.enablePwaInstall) {
+        res.status(503).json({
+          error: 'App install is temporarily unavailable. Please try again later.',
+        });
+        return;
+      }
       if (!runtimeOwnerPolicy.enableCvDownloads && cleanAction !== 'install') {
         res.status(503).json({
           error: 'CV exports are temporarily paused by the portfolio owner.',
@@ -2129,15 +3517,686 @@ async function startServer() {
         );
       }
 
+      const trackingSummary = buildTrackingSummaryForClient(accessPayload, telemetry, true);
+      const telemetryPersistedByServer = await tryPersistCvTracking(trackingSummary);
+
       res.status(200).json({
         ok: true,
-        trackingSummary: buildTrackingSummaryForClient(accessPayload, telemetry, true),
+        trackingSummary,
+        telemetryPersistedByServer,
       });
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : 'Unable to record event.';
       console.error('CV subsequent event error:', errMsg);
       res.status(500).json({ error: 'Unable to record export event.' });
     }
+  });
+
+  // ——— Portfolio chatbot + OTP-gated live agent ———
+  app.get('/api/chat/status', (_req: Request, res: Response) => {
+    const stats = getChatStats();
+    const chatEnabled = runtimeOwnerPolicy.enablePortfolioChat && !runtimeOwnerPolicy.incidentMode;
+    const liveEnabled =
+      chatEnabled && runtimeOwnerPolicy.enableLiveChat && isDirectEmailTransportConfigured();
+    res.status(200).json({
+      ok: true,
+      enabled: chatEnabled,
+      ownerOnline: stats.ownerOnline,
+      liveChatAvailable: liveEnabled,
+      llmConfigured: isGrokLlmConfigured() && runtimeOwnerPolicy.enableChatLlm,
+      vectorConfigured: isPortfolioVectorConfigured(),
+      limits: {
+        maxQuestionsPerVisitor: runtimeOwnerPolicy.chatMaxQuestionsPerVisitor,
+        maxLlmPerVisitor: runtimeOwnerPolicy.chatMaxLlmPerVisitor,
+        maxLiveSessionsPerVisitor: runtimeOwnerPolicy.chatMaxLiveSessionsPerVisitor,
+        rateWindowHours: runtimeOwnerPolicy.chatRateWindowHours,
+      },
+      suggestions: runtimeOwnerPolicy.chatShowSuggestions ? listChatSuggestions() : [],
+      offerLiveAgent: runtimeOwnerPolicy.chatOfferLiveAgent,
+    });
+  });
+
+  app.post('/api/chat/ask', async (req: Request, res: Response) => {
+    try {
+      if (!req.is('application/json')) {
+        res.status(415).json({ error: 'Content-Type must be application/json.' });
+        return;
+      }
+      if (rejectDisallowedOrigin(req, res)) return;
+      if (!runtimeOwnerPolicy.enablePortfolioChat || runtimeOwnerPolicy.incidentMode) {
+        res.status(503).json({ error: 'Portfolio chat is temporarily unavailable.' });
+        return;
+      }
+      const clientIp = extractClientIp(req);
+      if (
+        await enforceRateLimit(res, 'chat', clientIp, {
+          maxRequests: 40,
+          error: 'Too many chat questions from this connection. Please wait a few minutes.',
+        })
+      ) {
+        return;
+      }
+      const raw = (req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {}) as {
+        question?: unknown;
+        visitorId?: unknown;
+        sessionId?: unknown;
+        receipt?: unknown;
+      };
+      const question = typeof raw.question === 'string' ? raw.question.trim() : '';
+      const visitorId = typeof raw.visitorId === 'string' ? raw.visitorId.trim() : '';
+      const sessionId = typeof raw.sessionId === 'string' ? raw.sessionId.trim() : '';
+      const receipt = extractChatReceipt(req, raw.receipt);
+      if (question.length < 3) {
+        res.status(400).json({ error: 'Please enter a question (at least 3 characters).' });
+        return;
+      }
+
+      let sessionEmail = '';
+      if (sessionId && receipt) {
+        const auth = verifyChatSessionReceipt(receipt, sessionId);
+        if (!auth.ok) {
+          res.status(401).json(chatSessionAuthError(auth));
+          return;
+        }
+        const session = await getChatSessionAsync(sessionId);
+        if (!session || session.visitorEmail !== auth.email || session.status === 'closed') {
+          res.status(404).json({ error: 'Chat session not found or closed.' });
+          return;
+        }
+        sessionEmail = auth.email;
+      }
+
+      // Never trust client visitorId as a quota boundary — IP for anonymous, email after OTP.
+      const visitorKey = buildVisitorKey({
+        ipAddress: clientIp,
+        email: sessionEmail || undefined,
+      });
+      void visitorId; // retained for future analytics only
+      const limitPolicy = chatLimitPolicyFromRuntime(runtimeOwnerPolicy);
+      const questionLimit = await consumeChatLimitAsync(visitorKey, 'question', limitPolicy);
+      if (!questionLimit.allowed) {
+        void emitOwnerAlert({
+          eventType: 'chat_limit',
+          title: 'Visitor chat question limit reached',
+          detail: `A visitor hit the per-window chat question cap (${runtimeOwnerPolicy.chatMaxQuestionsPerVisitor}).`,
+          dedupeKey: `chatlimit:${visitorKey}:${Math.floor(Date.now() / 3_600_000)}`,
+        });
+        res.status(429).json({
+          error: questionLimit.reason,
+          remaining: questionLimit.remaining,
+          resetAtMs: questionLimit.resetAtMs,
+        });
+        return;
+      }
+
+      bumpBotQuestion();
+      bumpMetric('chatQuestions');
+
+      const wantLlm =
+        runtimeOwnerPolicy.enableChatLlm &&
+        isGrokLlmConfigured() &&
+        runtimeOwnerPolicy.chatMaxLlmPerVisitor > 0;
+      let provider: 'grok' | 'grounded' = 'grounded';
+      let answer = await answerPortfolioQuestionSmart(question);
+
+      if (wantLlm) {
+        const llmCheck = await checkChatLimitAsync(visitorKey, 'llm', limitPolicy);
+        if (llmCheck.allowed) {
+          const enriched = await enrichAnswerWithGrokLlm(question, {
+            apiKey: process.env.GROK_API_KEY || '',
+            modelId: runtimeOwnerPolicy.chatLlmModel,
+            grounded: answer,
+          });
+          answer = {
+            ...enriched.answer,
+            followUps: enriched.answer.followUps?.length
+              ? enriched.answer.followUps
+              : answer.followUps,
+            retrieval: answer.retrieval,
+            retrievalContext: answer.retrievalContext,
+          };
+          provider = enriched.provider;
+          // Only spend LLM quota when Grok actually returned an enriched answer.
+          if (enriched.provider === 'grok') {
+            await consumeChatLimitAsync(visitorKey, 'llm', limitPolicy);
+            bumpLlmCall(true);
+          } else {
+            bumpLlmCall(false);
+          }
+        }
+      }
+
+      if (!runtimeOwnerPolicy.chatOfferLiveAgent) {
+        answer = { ...answer, offerLiveAgent: false };
+      }
+
+      if (sessionId && sessionEmail) {
+        appendChatMessage(sessionId, 'visitor', question);
+        appendChatMessage(sessionId, 'bot', answer.answer);
+      }
+
+      const llmRemaining = (await checkChatLimitAsync(visitorKey, 'llm', limitPolicy)).remaining;
+      const session = sessionId ? await getChatSessionAsync(sessionId) : null;
+
+      res.status(200).json({
+        ok: true,
+        ...answer,
+        provider,
+        ownerOnline: isOwnerOnline(),
+        remaining: {
+          questions: questionLimit.remaining,
+          llm: llmRemaining,
+        },
+        limits: {
+          maxQuestionsPerVisitor: runtimeOwnerPolicy.chatMaxQuestionsPerVisitor,
+          maxLlmPerVisitor: runtimeOwnerPolicy.chatMaxLlmPerVisitor,
+          rateWindowHours: runtimeOwnerPolicy.chatRateWindowHours,
+        },
+        resetAtMs: questionLimit.resetAtMs,
+        session: session ? publicSessionView(session, { threadOnly: true }) : undefined,
+      });
+    } catch {
+      res.status(500).json({ error: 'Unable to answer right now. Please try again.' });
+    }
+  });
+
+  app.post('/api/chat/live/start', async (req: Request, res: Response) => {
+    try {
+      if (!req.is('application/json')) {
+        res.status(415).json({ error: 'Content-Type must be application/json.' });
+        return;
+      }
+      if (rejectDisallowedOrigin(req, res)) return;
+      if (
+        !runtimeOwnerPolicy.enablePortfolioChat ||
+        !runtimeOwnerPolicy.enableLiveChat ||
+        runtimeOwnerPolicy.incidentMode
+      ) {
+        res.status(503).json({ error: 'Live chat is temporarily unavailable.' });
+        return;
+      }
+      if (!isDirectEmailTransportConfigured()) {
+        res.status(503).json({
+          error: 'Live chat verification is temporarily unavailable. Please use the contact form instead.',
+        });
+        return;
+      }
+      const clientIp = extractClientIp(req);
+      if (
+        await enforceRateLimit(res, 'chat', `live:${clientIp}`, {
+          maxRequests: 12,
+          error: 'Too many live-chat requests. Please wait a few minutes.',
+        })
+      ) {
+        return;
+      }
+
+      const raw = (req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {}) as {
+        name?: unknown;
+        email?: unknown;
+        company?: unknown;
+        interest?: unknown;
+        openingMessage?: unknown;
+        website?: unknown;
+        turnstileToken?: unknown;
+        theme?: unknown;
+      };
+      if (isHoneypotTriggered(raw.website)) {
+        res.status(200).json({
+          ok: true,
+          status: 'otp_required',
+          challengeId: 'filtered',
+          challengeToken: 'filtered',
+          maskedEmail: 'hidden@example.com',
+        });
+        return;
+      }
+      if (await rejectFailedTurnstile(req, res, raw)) return;
+
+      const name = typeof raw.name === 'string' ? sanitizeHeaderValue(raw.name).slice(0, 120) : '';
+      const email = typeof raw.email === 'string' ? sanitizeHeaderValue(raw.email).slice(0, 254) : '';
+      const company =
+        typeof raw.company === 'string' ? sanitizeHeaderValue(raw.company).slice(0, 120) : '';
+      const interest =
+        typeof raw.interest === 'string' ? sanitizeHeaderValue(raw.interest).slice(0, 160) : '';
+      const openingMessage =
+        typeof raw.openingMessage === 'string' ? raw.openingMessage.trim().slice(0, 2000) : '';
+      const theme = parseEmailTheme(raw.theme);
+
+      if (!name || name.length < 2) {
+        res.status(400).json({ error: 'Please enter your name.' });
+        return;
+      }
+      if (!isValidEmailAddress(email)) {
+        res.status(400).json({ error: 'Please provide a valid email address for OTP verification.' });
+        return;
+      }
+      const mxCheck = await verifyEmailMxRecord(email);
+      if (!mxCheck.ok) {
+        res.status(400).json({ error: mxCheck.reason || 'Please provide a valid, active email domain.' });
+        return;
+      }
+
+      const accessCheck = evaluateAccessRules(runtimeOwnerPolicy.rules, {
+        email,
+        ipAddress: clientIp,
+      });
+      if (accessCheck.blocked) {
+        res.status(403).json({ error: 'This email or network address is restricted from live chat.' });
+        return;
+      }
+
+      const liveVisitorKey = buildVisitorKey({ ipAddress: clientIp, email });
+      const liveLimit = await checkChatLimitAsync(
+        liveVisitorKey,
+        'live',
+        chatLimitPolicyFromRuntime(runtimeOwnerPolicy)
+      );
+      if (!liveLimit.allowed) {
+        res.status(429).json({
+          error: liveLimit.reason,
+          remaining: liveLimit.remaining,
+          resetAtMs: liveLimit.resetAtMs,
+        });
+        return;
+      }
+
+      const otpKey = `chat:${email.toLowerCase()}`;
+      if (
+        await enforceRateLimit(res, 'otp-email', otpKey, {
+          maxRequests: 5,
+          error: 'Too many verification codes sent to this email. Please wait a few minutes.',
+        })
+      ) {
+        return;
+      }
+
+      bumpLiveRequest();
+      const userAgent =
+        typeof req.headers['user-agent'] === 'string'
+          ? sanitizeHeaderValue(req.headers['user-agent']).slice(0, 220)
+          : 'Unknown';
+      const challenge = await createOtpChallengeAsync(
+        chatLiveOtpStore,
+        {
+          name,
+          email: email.toLowerCase(),
+          company,
+          interest,
+          openingMessage,
+          theme,
+          userAgent,
+          ipAddress: clientIp,
+        },
+        OTP_SECRET
+      );
+      bumpMetric('otpIssued');
+      await sendVisitorOtpEmail({
+        email,
+        name,
+        code: challenge.code,
+        theme,
+        purpose: 'chat',
+      });
+      res.status(200).json({
+        ok: true,
+        status: 'otp_required',
+        challengeId: challenge.challengeId,
+        challengeToken: challenge.challengeToken,
+        maskedEmail: maskEmailAddress(email),
+        expiresInMinutes: 10,
+        ownerOnline: isOwnerOnline(),
+        message: `Verification code sent to ${maskEmailAddress(email)}.`,
+      });
+    } catch (error) {
+      void captureException(error, { route: '/api/chat/live/start' });
+      console.error('Chat live start error:', error instanceof Error ? error.message : error);
+      res.status(500).json({ error: 'Unable to start live chat verification right now.' });
+    }
+  });
+
+  app.post('/api/chat/live/verify', async (req: Request, res: Response) => {
+    try {
+      if (!req.is('application/json')) {
+        res.status(415).json({ error: 'Content-Type must be application/json.' });
+        return;
+      }
+      if (rejectDisallowedOrigin(req, res)) return;
+      const clientIp = extractClientIp(req);
+      if (
+        await enforceRateLimit(res, 'chat', `verify:${clientIp}`, {
+          maxRequests: 20,
+          error: 'Too many verification attempts. Please wait a few minutes.',
+        })
+      ) {
+        return;
+      }
+
+      const body = (req.body && typeof req.body === 'object' && !Array.isArray(req.body)
+        ? req.body
+        : {}) as { challengeId?: unknown; challengeToken?: unknown; code?: unknown };
+      const challengeId = typeof body.challengeId === 'string' ? body.challengeId.trim() : '';
+      const challengeToken = typeof body.challengeToken === 'string' ? body.challengeToken.trim() : '';
+      const code = typeof body.code === 'string' ? body.code.trim() : '';
+      if (!challengeId || !challengeToken || !/^\d{6}$/.test(code.replace(/\s+/g, ''))) {
+        res.status(400).json({ error: 'Please enter the valid 6-digit verification code.' });
+        return;
+      }
+
+      const verified = await verifyOtpChallengeAsync(
+        chatLiveOtpStore,
+        { challengeId, challengeToken, code },
+        OTP_SECRET
+      );
+      if (!verified.ok) {
+        res.status(400).json({ error: verified.error });
+        return;
+      }
+
+      const p = verified.payload;
+      const liveVisitorKey = buildVisitorKey({
+        ipAddress: p.ipAddress || clientIp,
+        email: p.email,
+      });
+      const liveLimit = await consumeChatLimitAsync(
+        liveVisitorKey,
+        'live',
+        chatLimitPolicyFromRuntime(runtimeOwnerPolicy)
+      );
+      if (!liveLimit.allowed) {
+        res.status(429).json({
+          error: liveLimit.reason,
+          remaining: liveLimit.remaining,
+          resetAtMs: liveLimit.resetAtMs,
+        });
+        return;
+      }
+
+      bumpMetric('otpVerified');
+      bumpMetric('chatLiveStarts');
+      const session = createChatSession({
+        visitorName: p.name,
+        visitorEmail: p.email,
+        ipAddress: p.ipAddress || clientIp,
+        userAgent: p.userAgent,
+        openingMessage: p.openingMessage,
+        company: p.company,
+        interest: p.interest,
+      });
+      const sessionReceipt = signChatSessionReceipt(session.sessionId, p.email);
+
+      void emitOwnerAlert({
+        eventType: 'live_chat',
+        title: `New verified chat from ${p.name}`,
+        detail: `${p.email}${p.company ? ` · ${p.company}` : ''}${
+          p.interest ? ` · ${p.interest}` : ''
+        } · session ${session.sessionId} · owner ${isOwnerOnline() ? 'online' : 'offline/queued'}`,
+        dedupeKey: `live:${session.sessionId}`,
+        theme: p.theme,
+      });
+
+      res.status(200).json({
+        ok: true,
+        status: 'live',
+        sessionReceipt,
+        session: publicSessionView(session, { threadOnly: true }),
+        ownerOnline: isOwnerOnline(),
+        suggestions: runtimeOwnerPolicy.chatShowSuggestions ? listChatSuggestions() : [],
+        remaining: { live: liveLimit.remaining },
+        resetAtMs: liveLimit.resetAtMs,
+      });
+    } catch (error) {
+      console.error('Chat live verify error:', error instanceof Error ? error.message : error);
+      res.status(500).json({ error: 'Unable to complete live chat verification.' });
+    }
+  });
+
+  function extractChatReceipt(req: Request, bodyReceipt?: unknown): string | undefined {
+    return extractChatReceiptToken({
+      headers: req.headers as Record<string, string | string[] | undefined>,
+      bodyReceipt,
+      // Never accept query receipts — they leak via access logs and Referer.
+      allowQuery: false,
+    });
+  }
+
+  app.get('/api/chat/live/:sessionId', async (req: Request, res: Response) => {
+    const sessionId = typeof req.params.sessionId === 'string' ? req.params.sessionId : '';
+    const receipt = extractChatReceipt(req);
+    const auth = verifyChatSessionReceipt(receipt, sessionId);
+    if (!auth.ok) {
+      res.status(401).json(chatSessionAuthError(auth));
+      return;
+    }
+    const session = await getChatSessionAsync(sessionId);
+    if (!session || session.visitorEmail !== auth.email) {
+      res.status(404).json({ error: 'Chat session not found.' });
+      return;
+    }
+    res.status(200).json({
+      ok: true,
+      session: publicSessionView(session, { threadOnly: true }),
+      ownerOnline: isOwnerOnline(),
+    });
+  });
+
+  app.post('/api/chat/live/:sessionId/message', async (req: Request, res: Response) => {
+    try {
+      if (!req.is('application/json')) {
+        res.status(415).json({ error: 'Content-Type must be application/json.' });
+        return;
+      }
+      if (rejectDisallowedOrigin(req, res)) return;
+      const sessionId = typeof req.params.sessionId === 'string' ? req.params.sessionId : '';
+      const body = (req.body && typeof req.body === 'object' && !Array.isArray(req.body)
+        ? req.body
+        : {}) as { receipt?: unknown; text?: unknown };
+      const receipt = extractChatReceipt(req, body.receipt);
+      const auth = verifyChatSessionReceipt(receipt, sessionId);
+      if (!auth.ok) {
+        res.status(401).json(chatSessionAuthError(auth));
+        return;
+      }
+      const clientIp = extractClientIp(req);
+      if (
+        await enforceRateLimit(res, 'chat', `msg:${clientIp}`, {
+          maxRequests: 60,
+          error: 'Too many chat messages. Please slow down.',
+        })
+      ) {
+        return;
+      }
+      const text = typeof body.text === 'string' ? body.text : '';
+      const session = await getChatSessionAsync(sessionId);
+      if (!session || session.visitorEmail !== auth.email) {
+        res.status(404).json({ error: 'Chat session not found.' });
+        return;
+      }
+      const updated = appendChatMessage(sessionId, 'visitor', text);
+      if (!updated) {
+        res.status(400).json({ error: 'Unable to send message (session may be closed).' });
+        return;
+      }
+      res.status(200).json({
+        ok: true,
+        session: publicSessionView(updated, { threadOnly: true }),
+        ownerOnline: isOwnerOnline(),
+      });
+    } catch {
+      res.status(500).json({ error: 'Unable to send chat message.' });
+    }
+  });
+
+  app.post('/api/chat/live/:sessionId/new', async (req: Request, res: Response) => {
+    try {
+      if (rejectDisallowedOrigin(req, res)) return;
+      const sessionId = typeof req.params.sessionId === 'string' ? req.params.sessionId : '';
+      const body = (req.body && typeof req.body === 'object' && !Array.isArray(req.body)
+        ? req.body
+        : {}) as { receipt?: unknown };
+      const receipt = extractChatReceipt(req, body.receipt);
+      const auth = verifyChatSessionReceipt(receipt, sessionId);
+      if (!auth.ok) {
+        res.status(401).json(chatSessionAuthError(auth));
+        return;
+      }
+      const clientIp = extractClientIp(req);
+      if (
+        await enforceRateLimit(res, 'chat', `new:${clientIp}`, {
+          maxRequests: 20,
+          error: 'Too many new-chat requests. Please wait a moment.',
+        })
+      ) {
+        return;
+      }
+      const session = await getChatSessionAsync(sessionId);
+      if (!session || session.visitorEmail !== auth.email) {
+        res.status(404).json({ error: 'Chat session not found.' });
+        return;
+      }
+      const updated = startNewChatThread(sessionId);
+      if (!updated) {
+        res.status(400).json({ error: 'Unable to start a new chat (session may be closed).' });
+        return;
+      }
+      res.status(200).json({
+        ok: true,
+        session: publicSessionView(updated, { threadOnly: true }),
+        ownerOnline: isOwnerOnline(),
+        suggestions: runtimeOwnerPolicy.chatShowSuggestions ? listChatSuggestions() : [],
+      });
+    } catch {
+      res.status(500).json({ error: 'Unable to start a new chat right now.' });
+    }
+  });
+
+  app.post('/api/owner/presence', async (req: Request, res: Response) => {
+    const authCheck = await verifyConsoleActorToken(req.headers.authorization);
+    if (!authCheck.ok) {
+      res.status(401).json({ error: authCheck.error });
+      return;
+    }
+    if (
+      await enforceRateLimit(res, 'chat', `owner-presence:${authCheck.uid}`, {
+        maxRequests: 120,
+        error: 'Owner presence rate limit exceeded.',
+      })
+    ) {
+      return;
+    }
+    const raw =
+      req.body && typeof req.body === 'object' && !Array.isArray(req.body)
+        ? (req.body as { online?: unknown })
+        : {};
+    // Default keeps heartbeat behavior; explicit online:false clears on logout.
+    if (raw.online === false) {
+      clearOwnerPresence();
+    } else {
+      touchOwnerPresence();
+    }
+    res.status(200).json({ ok: true, ...getChatStats() });
+  });
+
+  app.get('/api/owner/chat/sessions', async (req: Request, res: Response) => {
+    const authCheck = await verifyConsoleActorToken(req.headers.authorization);
+    if (!authCheck.ok) {
+      res.status(401).json({ error: authCheck.error });
+      return;
+    }
+    if (
+      await enforceRateLimit(res, 'chat', `owner-sessions:${authCheck.uid}`, {
+        maxRequests: 120,
+        error: 'Owner chat sessions rate limit exceeded.',
+      })
+    ) {
+      return;
+    }
+    touchOwnerPresence();
+    res.status(200).json({
+      ok: true,
+      stats: {
+        ...getChatStats(),
+        usage: getChatUsageTotals(),
+        policy: {
+          enablePortfolioChat: runtimeOwnerPolicy.enablePortfolioChat,
+          enableLiveChat: runtimeOwnerPolicy.enableLiveChat,
+          enableChatLlm: runtimeOwnerPolicy.enableChatLlm,
+          chatMaxQuestionsPerVisitor: runtimeOwnerPolicy.chatMaxQuestionsPerVisitor,
+          chatMaxLlmPerVisitor: runtimeOwnerPolicy.chatMaxLlmPerVisitor,
+          chatMaxLiveSessionsPerVisitor: runtimeOwnerPolicy.chatMaxLiveSessionsPerVisitor,
+          chatRateWindowHours: runtimeOwnerPolicy.chatRateWindowHours,
+          chatLlmModel: runtimeOwnerPolicy.chatLlmModel,
+          chatShowSuggestions: runtimeOwnerPolicy.chatShowSuggestions,
+          chatOfferLiveAgent: runtimeOwnerPolicy.chatOfferLiveAgent,
+          llmConfigured: isGrokLlmConfigured(),
+        },
+      },
+      sessions: listChatSessions().map((s) => publicSessionView(s)),
+    });
+  });
+
+  app.post('/api/owner/chat/reply', async (req: Request, res: Response) => {
+    try {
+      if (!req.is('application/json')) {
+        res.status(415).json({ error: 'Content-Type must be application/json.' });
+        return;
+      }
+      if (rejectDisallowedOrigin(req, res)) return;
+      const authCheck = await verifyConsoleActorToken(req.headers.authorization);
+      if (!authCheck.ok) {
+        res.status(401).json({ error: authCheck.error });
+        return;
+      }
+      if (
+        await enforceRateLimit(res, 'chat', `owner-reply:${authCheck.uid}`, {
+          maxRequests: 60,
+          error: 'Owner chat reply rate limit exceeded.',
+        })
+      ) {
+        return;
+      }
+      touchOwnerPresence();
+      const raw = (req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {}) as {
+        sessionId?: unknown;
+        text?: unknown;
+      };
+      const sessionId = typeof raw.sessionId === 'string' ? raw.sessionId.trim() : '';
+      const text = typeof raw.text === 'string' ? raw.text : '';
+      const updated = appendChatMessage(sessionId, 'owner', text);
+      if (!updated) {
+        res.status(400).json({ error: 'Unable to reply (invalid or closed session).' });
+        return;
+      }
+      res.status(200).json({ ok: true, session: publicSessionView(updated) });
+    } catch {
+      res.status(500).json({ error: 'Unable to send owner chat reply.' });
+    }
+  });
+
+  app.post('/api/owner/chat/close', async (req: Request, res: Response) => {
+    const authCheck = await verifyConsoleActorToken(req.headers.authorization);
+    if (!authCheck.ok) {
+      res.status(401).json({ error: authCheck.error });
+      return;
+    }
+    if (
+      await enforceRateLimit(res, 'chat', `owner-close:${authCheck.uid}`, {
+        maxRequests: 60,
+        error: 'Owner chat close rate limit exceeded.',
+      })
+    ) {
+      return;
+    }
+    const raw = (req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {}) as {
+      sessionId?: unknown;
+    };
+    const sessionId = typeof raw.sessionId === 'string' ? raw.sessionId.trim() : '';
+    const closed = closeChatSession(sessionId);
+    if (!closed) {
+      res.status(404).json({ error: 'Chat session not found.' });
+      return;
+    }
+    res.status(200).json({ ok: true, session: publicSessionView(closed) });
   });
 
   // Express 5 / path-to-regexp require named wildcards (bare `/api/*` crashes startup).

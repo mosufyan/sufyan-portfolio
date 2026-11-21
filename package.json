@@ -1,7 +1,7 @@
 {
   "name": "sufyan-portfolio",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
@@ -10,14 +10,23 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
+    "lint:rules": "eslint --no-error-on-unmatched-pattern \"**/*.rules\"",
     "test": "vitest run",
     "test:watch": "vitest",
-    "security:audit": "npm audit --omit=dev --audit-level=high"
+    "security:audit": "npm audit --omit=dev --audit-level=high",
+    "precommit": "bash ./scripts/pre-commit.sh",
+    "release": "bash ./scripts/release.sh",
+    "firebase:login": "firebase login",
+    "firebase:deploy-rules": "GOOGLE_CLOUD_QUOTA_PROJECT=mohammed-sufyan-portfolio firebase deploy --only firestore:rules --project mohammed-sufyan-portfolio",
+    "prepare": "husky || true"
   },
   "dependencies": {
+    "@upstash/redis": "^1.41.0",
+    "@upstash/vector": "^1.2.4",
     "dotenv": "^18.0.10",
     "express": "^5.3.0",
     "firebase": "^13.4.0",
+    "firebase-admin": "^14.5.1",
     "libphonenumber-js": "^1.13.17",
     "nodemailer": "^10.6.0",
     "tsx": "^4.21.0"
@@ -36,6 +45,7 @@
     "esbuild": "^0.28.0",
     "eslint": "^10.15.0",
     "html2canvas-pro": "^2.6.4",
+    "husky": "^9.1.7",
     "jspdf": "^4.2.1",
     "lucide-react": "^1.74.0",
     "motion": "^14.14.0",

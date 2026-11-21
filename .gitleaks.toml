@@ -1,0 +1,21 @@
+# Gitleaks config — scan the working tree for accidental secrets.
+title = "sufyan-portfolio"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Docs, examples, and intentional non-secret placeholders"
+paths = [
+  '''(?i)\.env\.example$''',
+  '''(?i)^docs/''',
+  '''(?i)^README\.md$''',
+  '''(?i)\.gitleaks\.toml$''',
+]
+regexTarget = "match"
+regexes = [
+  '''replace-with-long-random-secret''',
+  '''re_xxx''',
+  '''0x\.\.\.''',
+  '''AIza[0-9A-Za-z\-_]{0,10}\.\.\.''',
+]
