@@ -30,6 +30,7 @@ import {
   type ChatWindowSize,
 } from '../utils/chatWindowLayout';
 import ChatMessageComposer from './ChatMessageComposer';
+import { viteTurnstileSiteKey } from '../vitePublicEnv.ts';
 
 const OWNER_AVATAR_SRC = '/assets/aistudio/Sufyan_hero_portrait.png';
 
@@ -173,7 +174,7 @@ export default function ChatWidget() {
   const [liveSession, setLiveSession] = useState<LiveSession | null>(null);
   const [customerName, setCustomerName] = useState('');
   const [turnstileSiteKey, setTurnstileSiteKey] = useState(
-    () => (import.meta.env.VITE_TURNSTILE_SITE_KEY as string | undefined) || ''
+    () => viteTurnstileSiteKey()
   );
   const [turnstileToken, setTurnstileToken] = useState('');
   const turnstileContainerRef = useRef<HTMLDivElement | null>(null);

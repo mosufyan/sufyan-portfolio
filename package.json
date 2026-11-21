@@ -1,12 +1,13 @@
 {
   "name": "sufyan-portfolio",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
     "start": "NODE_ENV=production node --import tsx server.ts",
-    "build": "vite build",
+    "build": "node scripts/write-vite-public-env.mjs && vite build",
+    "predev": "node scripts/write-vite-public-env.mjs",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",

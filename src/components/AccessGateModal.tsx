@@ -33,6 +33,7 @@ import {
 } from '../utils/phoneValidation';
 import ModalHeaderScan from './ModalHeaderScan';
 import { EASE_OUT_EXPO } from './MotionPrimitives';
+import { viteTurnstileSiteKey } from '../vitePublicEnv.ts';
 import ShineSurface from './ShineSurface';
 import { toUserFacingError } from '../utils/userFacingError';
 
@@ -284,7 +285,7 @@ export default function AccessGateModal({
   const [otpStep, setOtpStep] = useState<OtpStepState | null>(null);
   const [otpCode, setOtpCode] = useState('');
   const [turnstileSiteKey, setTurnstileSiteKey] = useState<string>(
-    () => (import.meta.env.VITE_TURNSTILE_SITE_KEY as string | undefined) || ''
+    () => viteTurnstileSiteKey()
   );
   const [turnstileToken, setTurnstileToken] = useState<string>('');
   const turnstileContainerRef = useRef<HTMLDivElement | null>(null);

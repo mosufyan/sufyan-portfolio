@@ -213,7 +213,10 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Deploy source to Cloud Run
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build, push, and deploy image to Cloud Run
         env:
           PROJECT: ${{ vars.GCP_PROJECT || 'mohammed-sufyan-portfolio' }}
           REGION: ${{ vars.GCP_REGION || 'us-central1' }}
@@ -223,12 +226,20 @@ jobs:
           VITE_RECAPTCHA_SITE_KEY: ${{ secrets.VITE_RECAPTCHA_SITE_KEY }}
         run: |
           set -euo pipefail
-          BUILD_ENV="VITE_FIREBASE_API_KEY=${VITE_FIREBASE_API_KEY},VITE_TURNSTILE_SITE_KEY=${VITE_TURNSTILE_SITE_KEY},VITE_RECAPTCHA_SITE_KEY=${VITE_RECAPTCHA_SITE_KEY}"
+          : "${VITE_FIREBASE_API_KEY:?VITE_FIREBASE_API_KEY secret is required for production builds}"
+          IMAGE="${REGION}-docker.pkg.dev/${PROJECT}/cloud-run-source-deploy/${SERVICE}:${GITHUB_SHA}"
+          gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+          docker build \
+            --platform=linux/amd64 \
+            --build-arg "VITE_FIREBASE_API_KEY=${VITE_FIREBASE_API_KEY}" \
+            --build-arg "VITE_TURNSTILE_SITE_KEY=${VITE_TURNSTILE_SITE_KEY}" \
+            --build-arg "VITE_RECAPTCHA_SITE_KEY=${VITE_RECAPTCHA_SITE_KEY}" \
+            -t "$IMAGE" .
+          docker push "$IMAGE"
           gcloud run deploy "$SERVICE" \
             --project="$PROJECT" \
             --region="$REGION" \
-            --source=. \
-            --set-build-env-vars="$BUILD_ENV" \
+            --image="$IMAGE" \
             --quiet
 
       - name: Post-deploy smoke
@@ -241,6 +252,21 @@ jobs:
           curl -sS --fail "$BASE_URL/api/health" | tee /tmp/health.json
           curl -sS --fail "$BASE_URL/api/status" | tee /tmp/status.json
           curl -sS --fail "$BASE_URL/api/chat/status" | tee /tmp/chat-status.json
+
+          # Catch the blank-page failure mode: SPA built without VITE_FIREBASE_API_KEY.
+          # Note: the raw firebase JSON stub may still contain apiKey:`` — require a real inlined key.
+          HTML="$(curl -sS --fail "$BASE_URL/")"
+          printf '%s' "$HTML" > /tmp/index.html
+          python3 - <<'PY'
+          import pathlib, re, urllib.request
+          html = pathlib.Path("/tmp/index.html").read_text()
+          m = re.search(r'src="(/assets/[^"]+\.js)"', html)
+          assert m, "main JS asset missing from index HTML"
+          js = urllib.request.urlopen("https://www.mohammedsufyan.com" + m.group(1), timeout=60).read().decode()
+          if not re.search(r'apiKey:(?:`AIza|"AIza)', js):
+              raise SystemExit("Production bundle is missing an inlined Firebase apiKey (AIza…)")
+          print("OK: Firebase apiKey present in SPA bundle")
+          PY
 
           python3 - <<'PY'
           import json, sys

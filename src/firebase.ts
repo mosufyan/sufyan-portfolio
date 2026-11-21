@@ -4,23 +4,28 @@ import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import { doc, getDocFromServer, getFirestore } from 'firebase/firestore';
 import firebaseConfigFile from '../firebase-applet-config.json';
 import { toUserFacingError } from './utils/userFacingError.ts';
+import {
+  GENERATED_VITE_FIREBASE_API_KEY,
+  GENERATED_VITE_RECAPTCHA_SITE_KEY,
+} from './vitePublicEnv.generated.ts';
 
 /**
  * Firebase web config: non-secret project identifiers may live in
  * firebase-applet-config.json. apiKey / recaptchaSiteKey come from env so they
  * are not committed (restrict the browser key in Google Cloud Console).
  */
+// Do not object-spread the JSON then override apiKey — Vite/Rolldown has been
+// keeping the empty JSON apiKey and dropping the generated override.
 const firebaseConfig = {
-  ...firebaseConfigFile,
-  // Never fall back to committed JSON for secrets/public keys — env only.
-  apiKey:
-    typeof import.meta.env.VITE_FIREBASE_API_KEY === 'string'
-      ? import.meta.env.VITE_FIREBASE_API_KEY.trim()
-      : '',
-  recaptchaSiteKey:
-    typeof import.meta.env.VITE_RECAPTCHA_SITE_KEY === 'string'
-      ? import.meta.env.VITE_RECAPTCHA_SITE_KEY.trim()
-      : '',
+  projectId: firebaseConfigFile.projectId,
+  appId: firebaseConfigFile.appId,
+  apiKey: GENERATED_VITE_FIREBASE_API_KEY,
+  authDomain: firebaseConfigFile.authDomain,
+  firestoreDatabaseId: firebaseConfigFile.firestoreDatabaseId,
+  storageBucket: firebaseConfigFile.storageBucket,
+  messagingSenderId: firebaseConfigFile.messagingSenderId,
+  measurementId: firebaseConfigFile.measurementId,
+  recaptchaSiteKey: GENERATED_VITE_RECAPTCHA_SITE_KEY,
 };
 
 const app = initializeApp(firebaseConfig);
