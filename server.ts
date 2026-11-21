@@ -241,6 +241,22 @@ interface SiteTelemetryState {
   updatedAtIso: string;
 }
 
+const SHARE_TRACK_IDS = new Set<ShareTrackId>(['executive', 'security', 'platform', 'ai']);
+
+function normalizeShareTrack(track?: string): ShareTrackId {
+  return track && SHARE_TRACK_IDS.has(track as ShareTrackId) ? (track as ShareTrackId) : 'executive';
+}
+
+function sanitizeOgByTrack(raw: unknown): Record<ShareTrackId, number> {
+  const out: Record<string, number> = {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out as Record<ShareTrackId, number>;
+  for (const id of SHARE_TRACK_IDS) {
+    const n = Number((raw as Record<string, unknown>)[id]);
+    if (Number.isFinite(n) && n > 0) out[id] = Math.floor(n);
+  }
+  return out as Record<ShareTrackId, number>;
+}
+
 function loadSiteTelemetry(): SiteTelemetryState {
   const defaults: SiteTelemetryState = {
     pageviews: 0,
@@ -254,8 +270,7 @@ function loadSiteTelemetry(): SiteTelemetryState {
     return {
       pageviews: Number(parsed.pageviews) || 0,
       ogShares: Number(parsed.ogShares) || 0,
-      ogByTrack:
-        parsed.ogByTrack && typeof parsed.ogByTrack === 'object' ? { ...parsed.ogByTrack } : {},
+      ogByTrack: sanitizeOgByTrack(parsed.ogByTrack),
       updatedAtIso: typeof parsed.updatedAtIso === 'string' ? parsed.updatedAtIso : defaults.updatedAtIso,
     };
   } catch {
@@ -290,7 +305,7 @@ function bumpSiteTelemetry(kind: 'pageview' | 'og_share', track?: string): void 
     updatedAtIso: new Date().toISOString(),
   };
   if (kind === 'og_share') {
-    const key = track || 'executive';
+    const key = normalizeShareTrack(track);
     next.ogByTrack[key] = (next.ogByTrack[key] || 0) + 1;
   }
   siteTelemetry = next;
@@ -2116,6 +2131,14 @@ async function startServer() {
       res.status(401).json({ error: authCheck.error });
       return;
     }
+    if (
+      await enforceRateLimit(res, 'telemetry', `owner-obs:${authCheck.uid}`, {
+        maxRequests: 60,
+        error: 'Owner observability rate limit exceeded.',
+      })
+    ) {
+      return;
+    }
     res.status(200).json({
       ok: true,
       metrics: getObservabilitySnapshot(),
@@ -2128,6 +2151,14 @@ async function startServer() {
     const authCheck = await verifyConsoleActorToken(req.headers.authorization);
     if (!authCheck.ok) {
       res.status(401).json({ error: authCheck.error });
+      return;
+    }
+    if (
+      await enforceRateLimit(res, 'telemetry', `owner-tel:${authCheck.uid}`, {
+        maxRequests: 60,
+        error: 'Owner telemetry rate limit exceeded.',
+      })
+    ) {
       return;
     }
     res.status(200).json(siteTelemetry);
@@ -2162,7 +2193,8 @@ async function startServer() {
         res.status(400).json({ error: 'type must be pageview or og_share.' });
         return;
       }
-      const track = typeof raw.track === 'string' ? raw.track.slice(0, 32) : undefined;
+      const track =
+        typeof raw.track === 'string' ? normalizeShareTrack(raw.track.slice(0, 32)) : undefined;
       bumpSiteTelemetry(type, track);
       res.status(204).end();
     } catch {
@@ -2227,6 +2259,14 @@ async function startServer() {
         res.status(401).json({ error: authCheck.error });
         return;
       }
+      if (
+        await enforceRateLimit(res, 'contact', `owner-digest:${authCheck.uid}`, {
+          maxRequests: 10,
+          error: 'Owner digest rate limit exceeded.',
+        })
+      ) {
+        return;
+      }
       const raw = (req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {}) as {
         subject?: unknown;
         body?: unknown;
@@ -2277,6 +2317,14 @@ async function startServer() {
       const authCheck = await verifyOwnerFirebaseIdToken(req.headers.authorization);
       if (!authCheck.ok) {
         res.status(401).json({ error: authCheck.error });
+        return;
+      }
+      if (
+        await enforceRateLimit(res, 'contact', `owner-policy:${authCheck.uid}`, {
+          maxRequests: 30,
+          error: 'Owner policy sync rate limit exceeded.',
+        })
+      ) {
         return;
       }
 
@@ -2564,10 +2612,7 @@ async function startServer() {
       return;
     }
     const rawTrack = typeof req.query.track === 'string' ? req.query.track : undefined;
-    const track: ShareTrackId =
-      rawTrack === 'security' || rawTrack === 'platform' || rawTrack === 'ai'
-        ? rawTrack
-        : 'executive';
+    const track = normalizeShareTrack(rawTrack);
     const theme = req.query.theme === 'light' ? 'light' : 'dark';
     const skillLabel =
       typeof req.query.skill === 'string' ? req.query.skill.slice(0, 60) : undefined;
@@ -4015,6 +4060,14 @@ async function startServer() {
       res.status(401).json({ error: authCheck.error });
       return;
     }
+    if (
+      await enforceRateLimit(res, 'chat', `owner-presence:${authCheck.uid}`, {
+        maxRequests: 120,
+        error: 'Owner presence rate limit exceeded.',
+      })
+    ) {
+      return;
+    }
     const raw =
       req.body && typeof req.body === 'object' && !Array.isArray(req.body)
         ? (req.body as { online?: unknown })
@@ -4032,6 +4085,14 @@ async function startServer() {
     const authCheck = await verifyConsoleActorToken(req.headers.authorization);
     if (!authCheck.ok) {
       res.status(401).json({ error: authCheck.error });
+      return;
+    }
+    if (
+      await enforceRateLimit(res, 'chat', `owner-sessions:${authCheck.uid}`, {
+        maxRequests: 120,
+        error: 'Owner chat sessions rate limit exceeded.',
+      })
+    ) {
       return;
     }
     touchOwnerPresence();
@@ -4070,6 +4131,14 @@ async function startServer() {
         res.status(401).json({ error: authCheck.error });
         return;
       }
+      if (
+        await enforceRateLimit(res, 'chat', `owner-reply:${authCheck.uid}`, {
+          maxRequests: 60,
+          error: 'Owner chat reply rate limit exceeded.',
+        })
+      ) {
+        return;
+      }
       touchOwnerPresence();
       const raw = (req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {}) as {
         sessionId?: unknown;
@@ -4092,6 +4161,14 @@ async function startServer() {
     const authCheck = await verifyConsoleActorToken(req.headers.authorization);
     if (!authCheck.ok) {
       res.status(401).json({ error: authCheck.error });
+      return;
+    }
+    if (
+      await enforceRateLimit(res, 'chat', `owner-close:${authCheck.uid}`, {
+        maxRequests: 60,
+        error: 'Owner chat close rate limit exceeded.',
+      })
+    ) {
       return;
     }
     const raw = (req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {}) as {

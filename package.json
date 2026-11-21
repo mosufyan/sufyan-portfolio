@@ -18,7 +18,7 @@
     "release": "bash ./scripts/release.sh",
     "firebase:login": "firebase login",
     "firebase:deploy-rules": "GOOGLE_CLOUD_QUOTA_PROJECT=mohammed-sufyan-portfolio firebase deploy --only firestore:rules --project mohammed-sufyan-portfolio",
-    "prepare": "husky"
+    "prepare": "husky || true"
   },
   "dependencies": {
     "@upstash/redis": "^1.41.0",

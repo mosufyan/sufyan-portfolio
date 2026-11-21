@@ -23,6 +23,8 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 ENV PORT=8080
+# husky is a devDependency; skip prepare so production npm ci does not fail
+ENV HUSKY=0
 
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
