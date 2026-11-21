@@ -29,8 +29,8 @@ flowchart TB
 
   subgraph Data["Persistence"]
     FS[(Firestore)]
-    Redis[(Upstash Redis)]
-    Disk[(.owner-chat-cache.json)]
+    Redis[(Upstash Redis<br/>limits · policy · OTP · chat)]
+    Disk[(.owner-chat-cache.json<br/>local fallback)]
   end
 
   subgraph External["External services"]
@@ -51,9 +51,11 @@ flowchart TB
   ChatAPI --> OTP
   ChatAPI --> Cursor
   ChatAPI --> Disk
+  ChatAPI --> Redis
   Contact --> OTP
   Contact --> Mail
   Contact --> FS
+  OTP --> Redis
   CV --> OTP
   CV --> FS
   OwnerAPI --> Mail
@@ -141,19 +143,24 @@ Composite index: `announcements` — `status` ASC + `createdAt` DESC (`firestore
 
 | Path | Responsibility |
 |------|----------------|
-| `server.ts` | HTTP routes, OTP, chat, owner reply binding |
-| `server/security.ts` | Headers, Turnstile, honeypot, origin checks |
-| `server/distributedStore.ts` | Upstash rate limits (fail-closed) + policy |
-| `server/chatLimits.ts` | Per-visitor question / LLM / live caps |
+| `server.ts` | HTTP routes, OTP, chat, owner reply binding, health/status/uptime |
+| `server/security.ts` | Headers, CSP reports, Turnstile, honeypot, origin checks |
+| `server/distributedStore.ts` | Upstash rate limits (fail-closed), policy, OTP/session KV helpers |
+| `server/telemetry.ts` | IP/ASN risk, MX/phone checks, Redis-backed OTP bridge |
+| `server/observability.ts` | Request IDs, structured logs, metrics, Sentry/Slack hooks |
+| `server/chatLimits.ts` | Per-visitor question / LLM / live caps (Redis-shared) |
 | `server/chatKnowledge.ts` | Grounded Q&A + concise answers |
 | `server/cursorLlm.ts` | Optional Cursor Cloud Agents enrichment |
-| `server/chatSessions.ts` | Live session store + disk cache |
+| `server/chatSessions.ts` | Live session store + disk cache + Redis write-through |
 | `server/chatReceipt.ts` | Header-based session receipt extraction |
 | `server/ownerNotify.ts` | Urgent / warning / digest router |
-| `server/firebaseAdmin.ts` | Admin SDK writes + inquiry reply binding |
+| `server/firebaseAdmin.ts` | Admin SDK PII writes + inquiry reply binding |
 | `src/components/ChatWidget.tsx` | Visitor chat UI + Turnstile |
-| `src/utils/ownerGovernance.ts` | Settings sanitize + access rules |
-| `firestore.rules` | Deny-by-default collection rules |
+| `src/components/OwnerConsolePage.tsx` | Full-page owner console shell |
+| `src/utils/ownerGovernance.ts` | Settings sanitize + access rules + feature toggles |
+| `firestore.rules` | Deny-by-default collection rules (Admin-only PII creates) |
+| `firestore.indexes.json` | Composite indexes (announcements, analytics queries) |
+| `docs/` | Architecture, security config, costs, assessment |
 
 ---
 

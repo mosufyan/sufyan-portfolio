@@ -259,7 +259,7 @@ flowchart TD
 | Eviction | Not critical for short TTL rate-limit keys |
 | App behavior | Fail-**closed** on Redis errors (already implemented) |
 
-Without Redis: rate limits are **per Cloud Run instance** — attackers can spread across instances.
+Without Redis: rate limits, OTP challenges, and live-chat sessions are **per Cloud Run instance** — attackers can spread across instances and OTP verify may miss challenges created on another replica.
 
 ---
 

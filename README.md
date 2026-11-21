@@ -33,9 +33,9 @@ Docs: **[Architecture](./docs/ARCHITECTURE.md)** · **[Security configuration](.
 | **Themes** | Site Dark / Light Paper mode + independent CV & Analytics PDF Light/Dark export |
 | **Contact (`Transmit Message`)** | Quick-intent presets, mandatory 6-digit email OTP verification, Cloudflare Turnstile, honeypot, inquiry triage |
 | **CV / PWA studio** | Live preview, custom presets, A4 print layout, ATS plain-text export, OTP-gated lead telemetry |
-| **Owner Console (Full-Page)** | Navbar Google Sign-In, CV & Message analytics charts, Light/Dark exact-layout PDF export, triage pipeline, announcements CRUD, allow/block rules, site/maintenance toggles, admin audit log |
-| **Portfolio chat** | OTP-gated welcome, Turnstile on live start, grounded Q&A + follow-ups, optional Cursor LLM with per-visitor caps, header-bound session receipts |
-| **Ops** | Vitest unit tests, CI (`tsc --noEmit` / tests / `npm audit` / build), architecture docs |
+| **Owner Console (Full-Page)** | Navbar Google Sign-In, `#owner/<tab>` deep links, CV & Message analytics, funnel/CRM/alerts, Light/Dark PDF export, triage + inbox replies, announcements (draft/schedule/publish), delegates, feature switches, incident mode, audit log |
+| **Portfolio chat** | OTP-gated welcome, Turnstile on live start, grounded Q&A + follow-ups, optional Cursor LLM with per-visitor caps, header-bound session receipts, owner live-agent console |
+| **Ops** | Vitest unit tests, CI (`tsc --noEmit` / tests / `npm audit` / build), `/api/health` · `/api/status` · `/api/uptime`, architecture + security docs |
 
 ## Tech stack
 
@@ -157,12 +157,13 @@ npm start
 ## Project layout
 
 ```text
-src/                 React UI, Owner Console, Resume Studio, Contexts & Utilities
-server.ts            Express server (APIs, OTP, RS256 owner policy sync, OG tags, SPA serving)
-server/security.ts   Validation, CSP, headers, IP/email rate limits, bot/origin guards, Turnstile
-server/telemetry.ts  IP/ASN intelligence, risk scoring, HMAC OTP/session tokens, MX & phone checks
-firestore.rules      Strict schema-validated Firebase Security Rules
-public/              Static assets (icons, robots.txt, manifest, OG cards)
+src/                 React UI, Owner Console, ChatWidget, Resume Studio, contexts & utilities
+server.ts            Express APIs (OTP, chat, owner, telemetry, OG, SPA serving)
+server/              security, telemetry, distributedStore, chat*, observability, firebaseAdmin
+docs/                Architecture, security config, costs, portfolio assessment
+firestore.rules      Strict schema-validated Firebase Security Rules (Admin-only PII creates)
+firestore.indexes.json  Composite indexes for announcements / analytics queries
+public/              Static assets, robots.txt, .well-known/security.txt, OG cards
 .github/workflows/   CI (lint / test / audit / build)
 ```
 

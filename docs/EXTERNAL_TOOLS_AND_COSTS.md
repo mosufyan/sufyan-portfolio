@@ -69,7 +69,7 @@ flowchart TB
 | 4 | **Cloud Firestore** | Announcements, portfolio settings, contact/CV logs, access rules, audit | Yes | Yes (Spark/Blaze free quotas) |
 | 5 | **Resend** *(or Gmail SMTP)* | OTP emails, inquiry mail, owner alerts/replies | Yes (one mail path) | Yes (Resend Free / Gmail personal) |
 | 6 | **Cloudflare Turnstile** | Bot challenge on Contact, CV gate, live-chat start | Recommended | Yes (unlimited challenges on Free) |
-| 7 | **Upstash Redis** | Shared rate limits + owner policy across Cloud Run replicas | Recommended if >1 replica | Yes (1 DB, 500K cmds/mo) |
+| 7 | **Upstash Redis** | Shared rate limits, owner policy, OTP challenges, chat quotas/sessions across replicas | Recommended if >1 replica | Yes (1 DB, 500K cmds/mo) |
 | 8 | **Firebase Admin SDK** | Server-side PII writes after OTP; reply binding | Recommended | Included with Firebase/GCP |
 | 9 | **Firebase App Check** | Attest browser before Firestore creates | Recommended | Free quotas (provider-dependent) |
 | 10 | **Cursor Cloud Agents API** | Optional chat answer enrichment | Optional | Paid Cursor plan + usage |
@@ -116,7 +116,7 @@ flowchart LR
 | OTP / sessions | HMAC via `SESSION_SECRET` (falls back to Turnstile secret if unset — set an explicit secret in prod) |
 | Owner auth | Firebase project id from applet config; RS256 ID token verify |
 | Firestore rules | Deny-by-default; owner/admin gates; announcements list = published |
-| Rate limits | In-memory default; Upstash when REST URL+token set (**fail-closed** on Redis errors) |
+| Rate limits / OTP / chat | In-memory (+ disk chat cache) by default; Upstash when REST URL+token set (**fail-closed** on Redis errors) |
 | Chat LLM | `CURSOR_API_KEY` + owner toggle `enableChatLlm` |
 | CI | Typecheck, Vitest, `npm audit --omit=dev`, production build |
 
@@ -205,7 +205,7 @@ flowchart LR
 | **Pay as you go** | **$0.20 / 100k cmds** | Soft scale | first 1 GB storage free, then $0.25/GB |
 | **Fixed 250MB** | **$10/mo** | Unlimited cmds (plan cap) | 250 MB |
 
-**Portfolio impact:** Each rate-limit check ≈ 1–2 Redis commands. Free tier covers a busy personal site. Multi-replica Cloud Run without Redis falls back to **per-instance memory** (weaker).
+**Portfolio impact:** Each rate-limit / chat-quota check ≈ 1–2 Redis commands; OTP verify and live-chat session lookups add a few more when Redis is enabled. Free tier covers a busy personal site. Multi-replica Cloud Run without Redis falls back to **per-instance memory** (weaker OTP/session affinity).
 
 **If Free commands exhaust:** Commands error → our code **fail-closes** (denies request). Upgrade to PAYG or Fixed $10.
 

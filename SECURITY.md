@@ -7,7 +7,7 @@ This portfolio combines a public showcase with hardened lead-capture APIs (`/api
 - **Security headers**: Strict CSP, HSTS (HTTPS), `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy`, COOP (`same-origin-allow-popups`), `X-Frame-Options` / `frame-ancestors`, and `X-Robots-Tag: noindex, nofollow, noarchive` on API routes.
 - **Validation & sanitization**: Field length caps, strict email syntax + DNS MX check, E.164 phone validation, CR/LF/control header stripping, `escapeHtml()` across HTML emails and dynamic OG tags, and validated `Host` allowlisting in `resolveSafeBaseUrl`.
 - **Mandatory Contact OTP & Adaptive CV OTP**: 6-digit single-use HMAC-signed challenges verified before dispatch or export (`10m` TTL, capped attempts).
-- **Dual Rate Limiting**: Shared Upstash Redis counters when `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` are set; otherwise in-memory per-IP buckets (`15 / 15 min` on contact & CV access; `40 / 15 min` on repeat events) plus per-email OTP buckets (`5 / 15 min`) with `Retry-After` headers.
+- **Dual Rate Limiting + shared OTP/sessions**: Shared Upstash Redis counters when `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` are set (rate limits, owner policy, OTP challenges, chat quotas/sessions); otherwise in-memory per-IP buckets (`15 / 15 min` on contact & CV access; `40 / 15 min` on repeat events) plus per-email OTP buckets (`5 / 15 min`) with `Retry-After` headers.
 - **Anti-Bot & Anti-Crawler Layers**: Honeypot fields, Cloudflare Turnstile on both Contact and CV gate forms, `Sec-Fetch-Site: cross-site` rejection, `Origin`/`Referer` allowlisting, `robots.txt` + `<meta name="robots" content="noai, noimageai, noarchive" />`, and User-Agent filtering blocking AI dataset scrapers and vulnerability scanners (`GPTBot`, `ClaudeBot`, `CCBot`, `Bytespider`, `PerplexityBot`, `Scrapy`, `sqlmap`, `nikto`, etc.).
 - **Production builds**: Vite `build.sourcemap` is disabled so public JS bundles do not ship original TypeScript sources.
 - **Firebase Auth & Firestore Security Rules**: Default-deny catch-all, PII collection isolation (`cv_downloads`, `contact_messages`, `admin_audit_logs`, `access_rules`, `admins`), strict field/type/length/timestamp validation, and zero-read owner list rules.
@@ -82,14 +82,14 @@ Full Cloudflare / Cloud Run / Firebase / Resend checklists, upgrade paths, and *
 1. Create an Upstash Redis database and copy the REST URL + token.
 2. Set `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` on every Cloud Run / container replica.
 3. Redeploy. `/api/health` reports `distributedStore: "redis"`.
-4. Owner policy sync (`/api/owner/policy-sync`) now mirrors to Redis so all replicas share pause/allow/block flags.
-5. OTP challenge maps remain in-process; keep sticky sessions or migrate OTP stores to Redis before scaling OTP heavily across many replicas.
+4. Owner policy sync (`/api/owner/policy-sync`) mirrors to Redis so all replicas share pause/allow/block flags.
+5. OTP challenges and live-chat sessions also write-through to Redis when configured (memory/disk remain the local cache / single-replica fallback). Set an explicit `SESSION_SECRET` so HMAC OTP / chat receipts stay stable across restarts.
 
 ### Portfolio chatbot & live agent
 
 - **Bot answers** are grounded retrieval over `portfolioData` by default. Optional **Cursor Cloud Agents API** enrichment when `CURSOR_API_KEY` is set and Owner Profile / Site Controls enable `enableChatLlm` (no-repo agent + grounded context; times out to retrieval).
-- **Per-visitor caps** (default 10 questions / window, plus LLM + live-session caps) are owner-configurable and enforced server-side; tracking KPIs appear on the Owner Profile.
-- **Live agent** requires email OTP (same mail transport as contact/CV). Sessions live in Express memory + `.owner-chat-cache.json`; owner console `#owner/chat` replies in near-real-time while presence heartbeats mark you online.
+- **Per-visitor caps** (default 10 questions / window, plus LLM + live-session caps) are owner-configurable and enforced server-side (Redis-shared when Upstash is set; fail-closed on Redis errors); tracking KPIs appear on the Owner Profile.
+- **Live agent** requires email OTP (same mail transport as contact/CV). Sessions use in-process memory + `.owner-chat-cache.json` with optional Redis write-through for multi-replica; owner console `#owner/chat` replies in near-real-time while presence heartbeats mark you online.
 - Rate-limited under the `chat` bucket; allow/block rules still apply to live-chat emails.
 - **Owner alert router** — classify events (live chat, risk CV, inquiry, chat limits, etc.) as `urgent` / `warning` / `digest` / `off` in Owner Profile; urgent/warning email immediately when enabled; digest-class items flush with “Email digest now”.
 
