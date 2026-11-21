@@ -81,7 +81,11 @@ jobs:
       - name: Bandit (Python SAST)
         run: |
           set -euo pipefail
-          mapfile -t py_files < <(git ls-files '*.py')
+          # Portable (no mapfile): collect tracked Python sources.
+          py_files=()
+          while IFS= read -r f; do
+            py_files+=("$f")
+          done < <(git ls-files '*.py')
           if [ "${#py_files[@]}" -eq 0 ]; then
             echo "No tracked Python sources; Bandit Python scan skipped."
             exit 0
@@ -91,16 +95,18 @@ jobs:
       - name: Bandit-equivalent (Semgrep JS/TS SAST)
         run: |
           set -euo pipefail
+          # Semgrep ≥1.x uses --exclude (glob), not --exclude-dir.
           semgrep scan \
             --config p/javascript \
             --config p/typescript \
             --config p/security-audit \
             --error \
-            --exclude-dir=node_modules \
-            --exclude-dir=dist \
-            --exclude-dir=dev-dist \
-            --exclude-dir=coverage \
-            --exclude-dir=build \
+            --exclude=node_modules \
+            --exclude=dist \
+            --exclude=dev-dist \
+            --exclude=coverage \
+            --exclude=build \
+            --exclude=.tools \
             .
 
   code-guard:
