@@ -66,6 +66,7 @@ describe('ownerGovernance utilities', () => {
     expect(effective.enablePortfolioChat).toBe(false);
     expect(effective.enableLiveChat).toBe(false);
     expect(effective.enableChatLlm).toBe(false);
+    expect(effective.enableVoiceAgent).toBe(false);
     expect(effective.enableAnnouncements).toBe(false);
     expect(effective.enableResumeStudio).toBe(false);
     expect(effective.enableDigitalCard).toBe(false);
@@ -113,9 +114,11 @@ describe('ownerGovernance utilities', () => {
   it('defaults chat caps to ten questions per visitor', () => {
     const sanitized = sanitizePortfolioSettings({});
     expect(sanitized.chatMaxQuestionsPerVisitor).toBe(10);
+    expect(sanitized.chatMaxVoiceTurnsPerVisitor).toBe(8);
     expect(sanitized.enablePortfolioChat).toBe(true);
     expect(sanitized.enableLiveChat).toBe(true);
     expect(sanitized.enableChatLlm).toBe(false);
+    expect(sanitized.enableVoiceAgent).toBe(false);
   });
 
   it('defaults alert routing with urgent live chat and digest inquiries', () => {

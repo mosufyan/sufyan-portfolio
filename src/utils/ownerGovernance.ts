@@ -92,6 +92,8 @@ export const PORTFOLIO_SETTINGS_CONSTRAINTS = {
   chatMaxLlmPerVisitorMax: 100,
   chatMaxLiveSessionsPerVisitorMin: 0,
   chatMaxLiveSessionsPerVisitorMax: 50,
+  chatMaxVoiceTurnsPerVisitorMin: 0,
+  chatMaxVoiceTurnsPerVisitorMax: 50,
   chatRateWindowHoursMin: 1,
   chatRateWindowHoursMax: 168,
   chatLlmTimeoutMsMin: 3000,
@@ -138,12 +140,16 @@ export interface PortfolioSettings {
   enableLiveChat: boolean;
   /** Optional Grok (xAI) enrichment on top of grounded retrieval. */
   enableChatLlm: boolean;
+  /** Push-to-talk voice agent (Groq STT + optional ElevenLabs TTS). */
+  enableVoiceAgent: boolean;
   /** Max bot questions per visitor within the rate window (default 10). */
   chatMaxQuestionsPerVisitor: number;
   /** Max Grok LLM-enriched answers per visitor within the rate window. */
   chatMaxLlmPerVisitor: number;
   /** Max OTP live sessions per visitor email within the rate window. */
   chatMaxLiveSessionsPerVisitor: number;
+  /** Max voice agent turns per visitor within the rate window. */
+  chatMaxVoiceTurnsPerVisitor: number;
   /** Sliding window length for per-visitor chat caps (hours). */
   chatRateWindowHours: number;
   /** Optional Cursor model id (empty = account default). */
@@ -196,9 +202,11 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
   enablePortfolioChat: true,
   enableLiveChat: true,
   enableChatLlm: false,
+  enableVoiceAgent: false,
   chatMaxQuestionsPerVisitor: 10,
   chatMaxLlmPerVisitor: 5,
   chatMaxLiveSessionsPerVisitor: 3,
+  chatMaxVoiceTurnsPerVisitor: 8,
   chatRateWindowHours: 24,
   chatLlmModel: '',
   chatShowSuggestions: true,
@@ -443,6 +451,10 @@ export function sanitizePortfolioSettings(input: Partial<PortfolioSettings> | nu
       typeof input.enableChatLlm === 'boolean'
         ? input.enableChatLlm
         : DEFAULT_PORTFOLIO_SETTINGS.enableChatLlm,
+    enableVoiceAgent:
+      typeof input.enableVoiceAgent === 'boolean'
+        ? input.enableVoiceAgent
+        : DEFAULT_PORTFOLIO_SETTINGS.enableVoiceAgent,
     chatMaxQuestionsPerVisitor: clampInt(
       input.chatMaxQuestionsPerVisitor,
       DEFAULT_PORTFOLIO_SETTINGS.chatMaxQuestionsPerVisitor,
@@ -460,6 +472,12 @@ export function sanitizePortfolioSettings(input: Partial<PortfolioSettings> | nu
       DEFAULT_PORTFOLIO_SETTINGS.chatMaxLiveSessionsPerVisitor,
       PORTFOLIO_SETTINGS_CONSTRAINTS.chatMaxLiveSessionsPerVisitorMin,
       PORTFOLIO_SETTINGS_CONSTRAINTS.chatMaxLiveSessionsPerVisitorMax
+    ),
+    chatMaxVoiceTurnsPerVisitor: clampInt(
+      input.chatMaxVoiceTurnsPerVisitor,
+      DEFAULT_PORTFOLIO_SETTINGS.chatMaxVoiceTurnsPerVisitor,
+      PORTFOLIO_SETTINGS_CONSTRAINTS.chatMaxVoiceTurnsPerVisitorMin,
+      PORTFOLIO_SETTINGS_CONSTRAINTS.chatMaxVoiceTurnsPerVisitorMax
     ),
     chatRateWindowHours: clampInt(
       input.chatRateWindowHours,
@@ -600,6 +618,7 @@ export function getEffectivePortfolioSettings(settings: PortfolioSettings): Port
     enablePortfolioChat: false,
     enableLiveChat: false,
     enableChatLlm: false,
+    enableVoiceAgent: false,
     enableAnnouncements: false,
     enableResumeStudio: false,
     enableDigitalCard: false,

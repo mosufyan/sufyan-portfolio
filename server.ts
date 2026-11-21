@@ -109,6 +109,10 @@ import {
   type ChatLimitPolicy,
 } from './server/chatLimits.ts';
 import { enrichAnswerWithGrokLlm, isGrokLlmConfigured } from './server/grokLlm.ts';
+import { parseMultipartAudio, VOICE_AUDIO_MAX_BYTES } from './server/multipartAudio.ts';
+import { isVoiceSttConfigured } from './server/voiceStt.ts';
+import { isVoiceTtsConfigured } from './server/voiceTts.ts';
+import { runVoiceTurn } from './server/voiceTurn.ts';
 import { buildDynamicSocialSvg, SHARE_CARD_TRACKS, type ShareTrackId } from './src/utils/ogShare.ts';
 import {
   DEFAULT_PORTFOLIO_SETTINGS,
@@ -197,9 +201,11 @@ interface RuntimeOwnerPolicy {
   enablePortfolioChat: boolean;
   enableLiveChat: boolean;
   enableChatLlm: boolean;
+  enableVoiceAgent: boolean;
   chatMaxQuestionsPerVisitor: number;
   chatMaxLlmPerVisitor: number;
   chatMaxLiveSessionsPerVisitor: number;
+  chatMaxVoiceTurnsPerVisitor: number;
   chatRateWindowHours: number;
   chatLlmModel: string;
   chatShowSuggestions: boolean;
@@ -221,6 +227,7 @@ function chatLimitPolicyFromRuntime(policy: RuntimeOwnerPolicy): ChatLimitPolicy
     maxQuestionsPerVisitor: policy.chatMaxQuestionsPerVisitor,
     maxLlmPerVisitor: policy.chatMaxLlmPerVisitor,
     maxLiveSessionsPerVisitor: policy.chatMaxLiveSessionsPerVisitor,
+    maxVoiceTurnsPerVisitor: policy.chatMaxVoiceTurnsPerVisitor,
     rateWindowHours: policy.chatRateWindowHours,
   };
 }
@@ -341,9 +348,11 @@ function loadInitialOwnerPolicy(): RuntimeOwnerPolicy {
     enablePortfolioChat: DEFAULT_PORTFOLIO_SETTINGS.enablePortfolioChat,
     enableLiveChat: DEFAULT_PORTFOLIO_SETTINGS.enableLiveChat,
     enableChatLlm: DEFAULT_PORTFOLIO_SETTINGS.enableChatLlm,
+    enableVoiceAgent: DEFAULT_PORTFOLIO_SETTINGS.enableVoiceAgent,
     chatMaxQuestionsPerVisitor: DEFAULT_PORTFOLIO_SETTINGS.chatMaxQuestionsPerVisitor,
     chatMaxLlmPerVisitor: DEFAULT_PORTFOLIO_SETTINGS.chatMaxLlmPerVisitor,
     chatMaxLiveSessionsPerVisitor: DEFAULT_PORTFOLIO_SETTINGS.chatMaxLiveSessionsPerVisitor,
+    chatMaxVoiceTurnsPerVisitor: DEFAULT_PORTFOLIO_SETTINGS.chatMaxVoiceTurnsPerVisitor,
     chatRateWindowHours: DEFAULT_PORTFOLIO_SETTINGS.chatRateWindowHours,
     chatLlmModel: DEFAULT_PORTFOLIO_SETTINGS.chatLlmModel,
     chatShowSuggestions: DEFAULT_PORTFOLIO_SETTINGS.chatShowSuggestions,
@@ -386,6 +395,10 @@ function loadInitialOwnerPolicy(): RuntimeOwnerPolicy {
         typeof parsed.enableLiveChat === 'boolean' ? parsed.enableLiveChat : defaults.enableLiveChat,
       enableChatLlm:
         typeof parsed.enableChatLlm === 'boolean' ? parsed.enableChatLlm : defaults.enableChatLlm,
+      enableVoiceAgent:
+        typeof parsed.enableVoiceAgent === 'boolean'
+          ? parsed.enableVoiceAgent
+          : defaults.enableVoiceAgent,
       chatMaxQuestionsPerVisitor: clampPolicyInt(
         parsed.chatMaxQuestionsPerVisitor,
         defaults.chatMaxQuestionsPerVisitor,
@@ -401,6 +414,12 @@ function loadInitialOwnerPolicy(): RuntimeOwnerPolicy {
       chatMaxLiveSessionsPerVisitor: clampPolicyInt(
         parsed.chatMaxLiveSessionsPerVisitor,
         defaults.chatMaxLiveSessionsPerVisitor,
+        0,
+        50
+      ),
+      chatMaxVoiceTurnsPerVisitor: clampPolicyInt(
+        parsed.chatMaxVoiceTurnsPerVisitor,
+        defaults.chatMaxVoiceTurnsPerVisitor,
         0,
         50
       ),
@@ -2356,9 +2375,11 @@ async function startServer() {
         enablePortfolioChat?: unknown;
         enableLiveChat?: unknown;
         enableChatLlm?: unknown;
+        enableVoiceAgent?: unknown;
         chatMaxQuestionsPerVisitor?: unknown;
         chatMaxLlmPerVisitor?: unknown;
         chatMaxLiveSessionsPerVisitor?: unknown;
+        chatMaxVoiceTurnsPerVisitor?: unknown;
         chatRateWindowHours?: unknown;
         chatLlmModel?: unknown;
         chatShowSuggestions?: unknown;
@@ -2440,6 +2461,11 @@ async function startServer() {
           : typeof raw.enableChatLlm === 'boolean'
             ? raw.enableChatLlm
             : runtimeOwnerPolicy.enableChatLlm,
+        enableVoiceAgent: incidentMode
+          ? false
+          : typeof raw.enableVoiceAgent === 'boolean'
+            ? raw.enableVoiceAgent
+            : runtimeOwnerPolicy.enableVoiceAgent,
         chatMaxQuestionsPerVisitor: clampPolicyInt(
           raw.chatMaxQuestionsPerVisitor,
           runtimeOwnerPolicy.chatMaxQuestionsPerVisitor,
@@ -2455,6 +2481,12 @@ async function startServer() {
         chatMaxLiveSessionsPerVisitor: clampPolicyInt(
           raw.chatMaxLiveSessionsPerVisitor,
           runtimeOwnerPolicy.chatMaxLiveSessionsPerVisitor,
+          0,
+          50
+        ),
+        chatMaxVoiceTurnsPerVisitor: clampPolicyInt(
+          raw.chatMaxVoiceTurnsPerVisitor,
+          runtimeOwnerPolicy.chatMaxVoiceTurnsPerVisitor,
           0,
           50
         ),
@@ -3538,6 +3570,10 @@ async function startServer() {
     const chatEnabled = runtimeOwnerPolicy.enablePortfolioChat && !runtimeOwnerPolicy.incidentMode;
     const liveEnabled =
       chatEnabled && runtimeOwnerPolicy.enableLiveChat && isDirectEmailTransportConfigured();
+    const voiceSttConfigured = isVoiceSttConfigured();
+    const voiceTtsConfigured = isVoiceTtsConfigured();
+    const voiceEnabled =
+      chatEnabled && runtimeOwnerPolicy.enableVoiceAgent && voiceSttConfigured;
     res.status(200).json({
       ok: true,
       enabled: chatEnabled,
@@ -3545,10 +3581,14 @@ async function startServer() {
       liveChatAvailable: liveEnabled,
       llmConfigured: isGrokLlmConfigured() && runtimeOwnerPolicy.enableChatLlm,
       vectorConfigured: isPortfolioVectorConfigured(),
+      voiceAgentAvailable: voiceEnabled,
+      voiceSttConfigured,
+      voiceTtsConfigured,
       limits: {
         maxQuestionsPerVisitor: runtimeOwnerPolicy.chatMaxQuestionsPerVisitor,
         maxLlmPerVisitor: runtimeOwnerPolicy.chatMaxLlmPerVisitor,
         maxLiveSessionsPerVisitor: runtimeOwnerPolicy.chatMaxLiveSessionsPerVisitor,
+        maxVoiceTurnsPerVisitor: runtimeOwnerPolicy.chatMaxVoiceTurnsPerVisitor,
         rateWindowHours: runtimeOwnerPolicy.chatRateWindowHours,
       },
       suggestions: runtimeOwnerPolicy.chatShowSuggestions ? listChatSuggestions() : [],
@@ -3697,6 +3737,173 @@ async function startServer() {
       });
     } catch {
       res.status(500).json({ error: 'Unable to answer right now. Please try again.' });
+    }
+  });
+
+
+  app.post('/api/chat/voice/turn', async (req: Request, res: Response) => {
+    try {
+      if (rejectDisallowedOrigin(req, res)) return;
+      if (!runtimeOwnerPolicy.enablePortfolioChat || runtimeOwnerPolicy.incidentMode) {
+        res.status(503).json({ error: 'Portfolio chat is temporarily unavailable.' });
+        return;
+      }
+      if (!runtimeOwnerPolicy.enableVoiceAgent || !isVoiceSttConfigured()) {
+        res.status(503).json({ error: 'Voice agent is temporarily unavailable.' });
+        return;
+      }
+
+      const clientIp = extractClientIp(req);
+      if (
+        await enforceRateLimit(res, 'chat', `voice:${clientIp}`, {
+          maxRequests: 20,
+          error: 'Too many voice turns from this connection. Please wait a few minutes.',
+        })
+      ) {
+        return;
+      }
+
+      let parsed;
+      try {
+        parsed = await parseMultipartAudio(req, { maxBytes: VOICE_AUDIO_MAX_BYTES });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Invalid audio upload.';
+        res.status(400).json({ error: message });
+        return;
+      }
+
+      const sessionId =
+        typeof parsed.fields.sessionId === 'string' ? parsed.fields.sessionId.trim() : '';
+      const receipt = extractChatReceipt(req, parsed.fields.receipt);
+      void parsed.fields.visitorId;
+
+      let sessionEmail = '';
+      if (sessionId && receipt) {
+        const auth = verifyChatSessionReceipt(receipt, sessionId);
+        if (!auth.ok) {
+          res.status(401).json(chatSessionAuthError(auth));
+          return;
+        }
+        const session = await getChatSessionAsync(sessionId);
+        if (!session || session.visitorEmail !== auth.email || session.status === 'closed') {
+          res.status(404).json({ error: 'Chat session not found or closed.' });
+          return;
+        }
+        sessionEmail = auth.email;
+      }
+
+      const visitorKey = buildVisitorKey({
+        ipAddress: clientIp,
+        email: sessionEmail || undefined,
+      });
+      const limitPolicy = chatLimitPolicyFromRuntime(runtimeOwnerPolicy);
+
+      const voiceLimit = await consumeChatLimitAsync(visitorKey, 'voice', limitPolicy);
+      if (!voiceLimit.allowed) {
+        void emitOwnerAlert({
+          eventType: 'chat_limit',
+          title: 'Visitor voice turn limit reached',
+          detail: `A visitor hit the per-window voice turn cap (${runtimeOwnerPolicy.chatMaxVoiceTurnsPerVisitor}).`,
+          dedupeKey: `voiceLimit:${visitorKey}:${Math.floor(Date.now() / 3_600_000)}`,
+        });
+        res.status(429).json({
+          error: voiceLimit.reason,
+          remaining: voiceLimit.remaining,
+          resetAtMs: voiceLimit.resetAtMs,
+        });
+        return;
+      }
+
+      const questionLimit = await consumeChatLimitAsync(visitorKey, 'question', limitPolicy);
+      if (!questionLimit.allowed) {
+        void emitOwnerAlert({
+          eventType: 'chat_limit',
+          title: 'Visitor chat question limit reached',
+          detail: `A visitor hit the per-window chat question cap (${runtimeOwnerPolicy.chatMaxQuestionsPerVisitor}).`,
+          dedupeKey: `chatlimit:${visitorKey}:${Math.floor(Date.now() / 3_600_000)}`,
+        });
+        res.status(429).json({
+          error: questionLimit.reason,
+          remaining: questionLimit.remaining,
+          resetAtMs: questionLimit.resetAtMs,
+        });
+        return;
+      }
+
+      bumpBotQuestion();
+      bumpMetric('chatQuestions');
+
+      const wantLlm =
+        runtimeOwnerPolicy.enableChatLlm &&
+        isGrokLlmConfigured() &&
+        runtimeOwnerPolicy.chatMaxLlmPerVisitor > 0;
+
+      let llmAllowed = false;
+      if (wantLlm) {
+        const llmCheck = await checkChatLimitAsync(visitorKey, 'llm', limitPolicy);
+        llmAllowed = llmCheck.allowed;
+      }
+
+      const turn = await runVoiceTurn({
+        audio: parsed.buffer,
+        mimeType: parsed.mimeType,
+        filename: parsed.filename,
+        enableLlm: llmAllowed,
+        grokApiKey: process.env.GROK_API_KEY || '',
+        chatLlmModel: runtimeOwnerPolicy.chatLlmModel,
+        offerLiveAgent: runtimeOwnerPolicy.chatOfferLiveAgent,
+        enableCloudTts: isVoiceTtsConfigured(),
+      });
+
+      if (!turn.ok || !turn.answer || !turn.transcript) {
+        res.status(400).json({
+          error: turn.error || 'Unable to process voice turn.',
+          transcript: turn.transcript,
+        });
+        return;
+      }
+
+      if (turn.llmUsed) {
+        await consumeChatLimitAsync(visitorKey, 'llm', limitPolicy);
+        bumpLlmCall(true);
+      } else if (llmAllowed) {
+        bumpLlmCall(false);
+      }
+
+      if (sessionId && sessionEmail) {
+        appendChatMessage(sessionId, 'visitor', turn.transcript);
+        appendChatMessage(sessionId, 'bot', turn.answer.answer);
+      }
+
+      const llmRemaining = (await checkChatLimitAsync(visitorKey, 'llm', limitPolicy)).remaining;
+      const voiceRemaining = (await checkChatLimitAsync(visitorKey, 'voice', limitPolicy)).remaining;
+      const session = sessionId ? await getChatSessionAsync(sessionId) : null;
+
+      res.status(200).json({
+        ok: true,
+        transcript: turn.transcript,
+        ...turn.answer,
+        provider: turn.provider || 'grounded',
+        ttsProvider: turn.ttsProvider || 'none',
+        audioBase64: turn.audioBase64,
+        audioMimeType: turn.audioMimeType,
+        ownerOnline: isOwnerOnline(),
+        remaining: {
+          questions: questionLimit.remaining,
+          llm: llmRemaining,
+          voice: voiceRemaining,
+        },
+        limits: {
+          maxQuestionsPerVisitor: runtimeOwnerPolicy.chatMaxQuestionsPerVisitor,
+          maxLlmPerVisitor: runtimeOwnerPolicy.chatMaxLlmPerVisitor,
+          maxVoiceTurnsPerVisitor: runtimeOwnerPolicy.chatMaxVoiceTurnsPerVisitor,
+          rateWindowHours: runtimeOwnerPolicy.chatRateWindowHours,
+        },
+        resetAtMs: questionLimit.resetAtMs,
+        session: session ? publicSessionView(session, { threadOnly: true }) : undefined,
+      });
+    } catch {
+      res.status(500).json({ error: 'Unable to process voice turn right now. Please try again.' });
     }
   });
 

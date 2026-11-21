@@ -44,9 +44,11 @@ export interface RuntimeOwnerPolicyPayload {
   enablePortfolioChat: boolean;
   enableLiveChat: boolean;
   enableChatLlm: boolean;
+  enableVoiceAgent: boolean;
   chatMaxQuestionsPerVisitor: number;
   chatMaxLlmPerVisitor: number;
   chatMaxLiveSessionsPerVisitor: number;
+  chatMaxVoiceTurnsPerVisitor: number;
   chatRateWindowHours: number;
   chatLlmModel: string;
   chatShowSuggestions: boolean;
@@ -200,6 +202,10 @@ export async function loadDistributedOwnerPolicy(
         typeof raw.enableLiveChat === 'boolean' ? raw.enableLiveChat : fallback.enableLiveChat,
       enableChatLlm:
         typeof raw.enableChatLlm === 'boolean' ? raw.enableChatLlm : fallback.enableChatLlm,
+      enableVoiceAgent:
+        typeof raw.enableVoiceAgent === 'boolean'
+          ? raw.enableVoiceAgent
+          : fallback.enableVoiceAgent,
       chatMaxQuestionsPerVisitor: clamp(
         raw.chatMaxQuestionsPerVisitor,
         fallback.chatMaxQuestionsPerVisitor,
@@ -210,6 +216,12 @@ export async function loadDistributedOwnerPolicy(
       chatMaxLiveSessionsPerVisitor: clamp(
         raw.chatMaxLiveSessionsPerVisitor,
         fallback.chatMaxLiveSessionsPerVisitor,
+        0,
+        50
+      ),
+      chatMaxVoiceTurnsPerVisitor: clamp(
+        raw.chatMaxVoiceTurnsPerVisitor,
+        fallback.chatMaxVoiceTurnsPerVisitor,
         0,
         50
       ),
@@ -263,6 +275,7 @@ export async function loadDistributedOwnerPolicy(
       enablePortfolioChat: false,
       enableLiveChat: false,
       enableChatLlm: false,
+      enableVoiceAgent: false,
       strictOtpForAll: true,
       notifyOnNewInquiry: fallback.notifyOnNewInquiry,
     };

@@ -38,6 +38,8 @@ flowchart TB
     Mail[Resend / SMTP]
     Vector[(Upstash Vector<br/>chat RAG)]
     Grok[Grok xAI API]
+    Groq[Groq Whisper STT]
+    Eleven[ElevenLabs TTS]
     CF[Cloudflare Turnstile]
   end
 
@@ -56,6 +58,8 @@ flowchart TB
   ChatAPI --> OTP
   ChatAPI --> Vector
   ChatAPI --> Grok
+  ChatAPI --> Groq
+  ChatAPI --> Eleven
   ChatAPI --> Disk
   ChatAPI --> Redis
   Contact --> OTP
@@ -115,6 +119,46 @@ sequenceDiagram
 | Vector | `UPSTASH_VECTOR_*` set | Upstash Vector + BGE embeddings; hybrid merge with keyword |
 | Grok enrich | Owner `enableChatLlm` + `GROK_API_KEY` | Rewrite from retrieved context; else show grounded text |
 | LLM off | Toggle off | Vector/keyword answer only — no `api.x.ai` calls |
+
+### Voice agent (push-to-talk v1)
+
+```mermaid
+sequenceDiagram
+  actor V as Visitor
+  participant W as ChatWidget
+  participant T as VoiceTransport
+  participant API as Express voice turn
+  participant Groq as GroqWhisper
+  participant Vec as UpstashVector
+  participant LLM as Grok
+  participant EL as ElevenLabs
+
+  V->>W: Hold mic / release
+  W->>T: submitUtterance blob
+  Note over T: HttpTurnTransport v1
+  T->>API: POST /api/chat/voice/turn multipart
+  API->>Groq: Transcribe
+  API->>Vec: RAG retrieve
+  opt enableChatLlm
+    API->>LLM: Enrich
+  end
+  opt ELEVENLABS_API_KEY
+    API->>EL: TTS Flash
+  end
+  API-->>W: transcript + answer + optional audio
+  alt cloud audio present
+    W->>W: Play MPEG
+  else fallback
+    W->>W: speechSynthesis
+  end
+```
+
+| Piece | Detail |
+|-------|--------|
+| Gate | Owner `enableVoiceAgent` + `GROQ_API_KEY` → `voiceAgentAvailable` on `/api/chat/status` |
+| Quotas | Consumes **voice** + **question** counters (`chatMaxVoiceTurnsPerVisitor`, default 8) |
+| Client abstraction | `VoiceTransport` in `src/utils/voiceTransport.ts` — v1 `HttpTurnTransport`; v2 can add streaming without rewriting ChatWidget |
+| Continuous mode | **Not in v1** — leave as a future `StreamingTransport` (WebSocket/WebRTC) |
 
 ### Quota keys (anti-spoof)
 

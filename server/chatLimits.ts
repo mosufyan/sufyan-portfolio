@@ -15,16 +15,18 @@ export interface VisitorChatUsage {
   questions: number;
   llmCalls: number;
   liveSessions: number;
+  voiceTurns: number;
 }
 
 export interface ChatLimitPolicy {
   maxQuestionsPerVisitor: number;
   maxLlmPerVisitor: number;
   maxLiveSessionsPerVisitor: number;
+  maxVoiceTurnsPerVisitor: number;
   rateWindowHours: number;
 }
 
-export type ChatLimitKind = 'question' | 'llm' | 'live';
+export type ChatLimitKind = 'question' | 'llm' | 'live' | 'voice';
 
 export interface ChatLimitDecision {
   allowed: boolean;
@@ -55,6 +57,7 @@ export function importChatUsageSnapshot(rows: VisitorChatUsage[]): void {
       questions: Number(row.questions) || 0,
       llmCalls: Number(row.llmCalls) || 0,
       liveSessions: Number(row.liveSessions) || 0,
+      voiceTurns: Number(row.voiceTurns) || 0,
     });
   }
 }
@@ -87,6 +90,7 @@ function ensureUsage(visitorKey: string, policy: ChatLimitPolicy, now: number): 
       questions: 0,
       llmCalls: 0,
       liveSessions: 0,
+      voiceTurns: 0,
     };
     usages.set(visitorKey, fresh);
     if (usages.size > MAX_USAGE_ENTRIES) {
@@ -103,7 +107,17 @@ function ensureUsage(visitorKey: string, policy: ChatLimitPolicy, now: number): 
 function remainingFor(kind: ChatLimitKind, usage: VisitorChatUsage, policy: ChatLimitPolicy): number {
   if (kind === 'question') return Math.max(0, policy.maxQuestionsPerVisitor - usage.questions);
   if (kind === 'llm') return Math.max(0, policy.maxLlmPerVisitor - usage.llmCalls);
+  if (kind === 'voice') {
+    return Math.max(0, policy.maxVoiceTurnsPerVisitor - (usage.voiceTurns || 0));
+  }
   return Math.max(0, policy.maxLiveSessionsPerVisitor - usage.liveSessions);
+}
+
+function limitLabel(kind: ChatLimitKind): string {
+  if (kind === 'question') return 'questions';
+  if (kind === 'llm') return 'LLM answers';
+  if (kind === 'voice') return 'voice turns';
+  return 'live chat sessions';
 }
 
 export function checkChatLimit(
@@ -116,8 +130,7 @@ export function checkChatLimit(
   const remaining = remainingFor(kind, usage, policy);
   const resetAtMs = usage.windowStartedAtMs + windowMs(policy);
   if (remaining <= 0) {
-    const label =
-      kind === 'question' ? 'questions' : kind === 'llm' ? 'LLM answers' : 'live chat sessions';
+    const label = limitLabel(kind);
     return {
       allowed: false,
       reason: `Per-visitor ${label} limit reached for this window. Try again later or contact Mohammed directly.`,
@@ -141,6 +154,7 @@ export function consumeChatLimit(
   if (kind === 'question') usage.questions += 1;
   if (kind === 'llm') usage.llmCalls += 1;
   if (kind === 'live') usage.liveSessions += 1;
+  if (kind === 'voice') usage.voiceTurns = (usage.voiceTurns || 0) + 1;
   usages.set(visitorKey, usage);
   return {
     allowed: true,
@@ -153,12 +167,13 @@ export function consumeChatLimit(
 function maxFor(kind: ChatLimitKind, policy: ChatLimitPolicy): number {
   if (kind === 'question') return policy.maxQuestionsPerVisitor;
   if (kind === 'llm') return policy.maxLlmPerVisitor;
+  if (kind === 'voice') return policy.maxVoiceTurnsPerVisitor;
   return policy.maxLiveSessionsPerVisitor;
 }
 
 function usageFromCounts(
   visitorKey: string,
-  counts: { questions: number; llmCalls: number; liveSessions: number },
+  counts: { questions: number; llmCalls: number; liveSessions: number; voiceTurns: number },
   windowStartedAtMs: number
 ): VisitorChatUsage {
   return {
@@ -167,6 +182,7 @@ function usageFromCounts(
     questions: counts.questions,
     llmCalls: counts.llmCalls,
     liveSessions: counts.liveSessions,
+    voiceTurns: counts.voiceTurns,
   };
 }
 
@@ -194,14 +210,14 @@ export async function checkChatLimitAsync(
       questions: kind === 'question' ? peek.count : 0,
       llmCalls: kind === 'llm' ? peek.count : 0,
       liveSessions: kind === 'live' ? peek.count : 0,
+      voiceTurns: kind === 'voice' ? peek.count : 0,
     },
     windowStartedAtMs
   );
   const resetAtMs = now + Math.max(0, peek.ttlMs);
 
   if (peek.error || peek.count >= max) {
-    const label =
-      kind === 'question' ? 'questions' : kind === 'llm' ? 'LLM answers' : 'live chat sessions';
+    const label = limitLabel(kind);
     return {
       allowed: false,
       reason: peek.error
@@ -245,6 +261,7 @@ export async function consumeChatLimitAsync(
       questions: kind === 'question' ? incr.count : 0,
       llmCalls: kind === 'llm' ? incr.count : 0,
       liveSessions: kind === 'live' ? incr.count : 0,
+      voiceTurns: kind === 'voice' ? incr.count : 0,
     },
     windowStartedAtMs
   );
@@ -256,12 +273,12 @@ export async function consumeChatLimitAsync(
     if (kind === 'question') local.questions = Math.max(local.questions, incr.count);
     if (kind === 'llm') local.llmCalls = Math.max(local.llmCalls, incr.count);
     if (kind === 'live') local.liveSessions = Math.max(local.liveSessions, incr.count);
+    if (kind === 'voice') local.voiceTurns = Math.max(local.voiceTurns || 0, incr.count);
     usages.set(visitorKey, local);
   }
 
   if (incr.error || incr.count > max) {
-    const label =
-      kind === 'question' ? 'questions' : kind === 'llm' ? 'LLM answers' : 'live chat sessions';
+    const label = limitLabel(kind);
     return {
       allowed: false,
       reason: incr.error
@@ -286,14 +303,17 @@ export function getChatUsageTotals(): {
   questions: number;
   llmCalls: number;
   liveSessions: number;
+  voiceTurns: number;
 } {
   let questions = 0;
   let llmCalls = 0;
   let liveSessions = 0;
+  let voiceTurns = 0;
   for (const row of usages.values()) {
     questions += row.questions;
     llmCalls += row.llmCalls;
     liveSessions += row.liveSessions;
+    voiceTurns += row.voiceTurns || 0;
   }
-  return { trackedVisitors: usages.size, questions, llmCalls, liveSessions };
+  return { trackedVisitors: usages.size, questions, llmCalls, liveSessions, voiceTurns };
 }

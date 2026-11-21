@@ -60,6 +60,7 @@ interface ChatCacheFile {
     questions: number;
     llmCalls: number;
     liveSessions: number;
+    voiceTurns: number;
   }>;
 }
 
@@ -100,7 +101,12 @@ function loadCache(): void {
       }
     }
     if (Array.isArray(parsed.usages)) {
-      importChatUsageSnapshot(parsed.usages);
+      importChatUsageSnapshot(
+        parsed.usages.map((row) => ({
+          ...row,
+          voiceTurns: Number(row.voiceTurns) || 0,
+        }))
+      );
     }
   } catch {
     /* ignore */

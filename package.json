@@ -25,6 +25,7 @@
     "prepare": "husky || true"
   },
   "dependencies": {
+    "@fastify/busboy": "^3.2.6",
     "@upstash/redis": "^1.41.0",
     "@upstash/vector": "^1.2.4",
     "dotenv": "^18.0.10",

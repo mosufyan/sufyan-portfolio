@@ -14,6 +14,7 @@ const policy: ChatLimitPolicy = {
   maxQuestionsPerVisitor: 10,
   maxLlmPerVisitor: 5,
   maxLiveSessionsPerVisitor: 3,
+  maxVoiceTurnsPerVisitor: 8,
   rateWindowHours: 24,
 };
 
@@ -44,15 +45,26 @@ describe('chatLimits', () => {
     expect(blocked.reason).toMatch(/limit reached/i);
   });
 
-  it('tracks llm and live counters independently', () => {
+  it('tracks llm, live, and voice counters independently', () => {
     const key = buildVisitorKey({ ipAddress: '198.51.100.1', email: 'recruiter@cisco.com' });
     expect(consumeChatLimit(key, 'llm', policy).remaining).toBe(4);
     expect(consumeChatLimit(key, 'live', policy).remaining).toBe(2);
+    expect(consumeChatLimit(key, 'voice', policy).remaining).toBe(7);
     expect(checkChatLimit(key, 'question', policy).remaining).toBe(10);
     const totals = getChatUsageTotals();
     expect(totals.llmCalls).toBe(1);
     expect(totals.liveSessions).toBe(1);
+    expect(totals.voiceTurns).toBe(1);
     expect(totals.trackedVisitors).toBe(1);
+  });
+
+  it('enforces per-visitor voice turn caps', () => {
+    const key = buildVisitorKey({ ipAddress: '203.0.113.88' });
+    const tight = { ...policy, maxVoiceTurnsPerVisitor: 2 };
+    expect(consumeChatLimit(key, 'voice', tight).allowed).toBe(true);
+    expect(consumeChatLimit(key, 'voice', tight).allowed).toBe(true);
+    expect(consumeChatLimit(key, 'voice', tight).allowed).toBe(false);
+    expect(consumeChatLimit(key, 'voice', tight).reason).toMatch(/voice turns/i);
   });
 
   it('resets after the rate window elapses', () => {
