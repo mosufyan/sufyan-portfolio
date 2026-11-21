@@ -33,11 +33,24 @@ function loadDotEnvFile(filePath) {
 
 loadDotEnvFile(envPath);
 
-const key = (process.env.VITE_FIREBASE_API_KEY || '').trim();
-const turnstile = (process.env.VITE_TURNSTILE_SITE_KEY || '').trim();
-const recaptcha = (process.env.VITE_RECAPTCHA_SITE_KEY || '').trim();
+function envValue(name) {
+  let value = String(process.env[name] || '').trim();
+  // Strip accidental surrounding quotes from shell `export KEY="…"` / Secret Manager paste.
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    value = value.slice(1, -1).trim();
+  }
+  return value;
+}
 
-if (!key) {
+const stubOnly = process.argv.includes('--stub');
+const key = stubOnly ? '' : envValue('VITE_FIREBASE_API_KEY');
+const turnstile = stubOnly ? '' : envValue('VITE_TURNSTILE_SITE_KEY');
+const recaptcha = stubOnly ? '' : envValue('VITE_RECAPTCHA_SITE_KEY');
+
+if (!stubOnly && !key) {
   console.error('ERROR: VITE_FIREBASE_API_KEY is required to generate vitePublicEnv.generated.ts');
   process.exit(1);
 }
@@ -49,4 +62,8 @@ export const GENERATED_VITE_RECAPTCHA_SITE_KEY = ${JSON.stringify(recaptcha)};
 `;
 
 fs.writeFileSync(outPath, body, 'utf8');
-console.log('Wrote', path.relative(root, outPath), '(firebase key length =', key.length + ')');
+console.log(
+  'Wrote',
+  path.relative(root, outPath),
+  stubOnly ? '(empty stub for typecheck/tests)' : `(firebase key length = ${key.length})`
+);

@@ -1,6 +1,6 @@
 /**
  * Public Vite client keys. Values come from `vitePublicEnv.generated.ts`,
- * which vite.config.ts rewrites from process.env / .env on every Vite run.
+ * written by `scripts/write-vite-public-env.mjs` (build/Docker, or `--stub` for lint/test).
  */
 import {
   GENERATED_VITE_FIREBASE_API_KEY,
