@@ -23,6 +23,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { PERSONAL_INFO } from '../data/portfolioData';
 import { useFirebase } from '../contexts/FirebaseContext';
 import { useTheme } from '../theme/ThemeProvider';
+import { viteTurnstileSiteKey } from '../vitePublicEnv.ts';
 import type { ContactMessageSummary } from '../utils/contactMessageLogValidation';
 import { collectClientTelemetryContext } from '../utils/cvDownloadLogValidation';
 import {
@@ -115,7 +116,7 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
   const [vcfSaved, setVcfSaved] = useState(false);
   const [localTime, setLocalTime] = useState<string>(() => formatSanJoseTime());
   const [turnstileSiteKey, setTurnstileSiteKey] = useState<string>(
-    () => (import.meta.env.VITE_TURNSTILE_SITE_KEY as string | undefined) || ''
+    () => viteTurnstileSiteKey()
   );
   const [turnstileToken, setTurnstileToken] = useState<string>('');
   const turnstileContainerRef = useRef<HTMLDivElement | null>(null);

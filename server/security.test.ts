@@ -108,7 +108,7 @@ describe('CSP / headers', () => {
     expect(csp).not.toContain('unsafe-eval');
     expect(csp).toMatch(/script-src 'self' 'sha256-[^']+'/);
     expect(csp).not.toMatch(/script-src[^;]*'unsafe-inline'/);
-    expect(csp).toContain("'sha256-KPGRZh0iZGUQvbOmIn+AyQYlSk1cQH0oPPOFJbrwICg='");
+    expect(csp).toContain("'sha256-CgJhvzskzf709G6UFOCppYV+yn4GzdLGTM7wjEj6gdU='");
   });
 
   it('applies core security headers', () => {
@@ -125,6 +125,13 @@ describe('CSP / headers', () => {
     expect(headers['Content-Security-Policy']).not.toMatch(/script-src[^;]*'unsafe-inline'/);
     expect(headers['Content-Security-Policy-Report-Only']).toContain("script-src 'self'");
     expect(headers['Content-Security-Policy-Report-Only']).not.toMatch(/script-src[^;]*'unsafe-inline'/);
+  });
+
+  it('keeps Vite-friendly CSP in development (no script hash so unsafe-inline works)', () => {
+    const csp = buildContentSecurityPolicy(true);
+    expect(csp).toMatch(/script-src[^;]*'unsafe-inline'/);
+    expect(csp).toMatch(/script-src[^;]*'unsafe-eval'/);
+    expect(csp).not.toMatch(/script-src[^;]*'sha256-/);
   });
 
   it('allows AI Studio preview iframe in dev or on *.run.app while staying strict for custom domain prod', () => {

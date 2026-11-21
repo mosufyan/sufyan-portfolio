@@ -143,12 +143,15 @@ export function buildContentSecurityPolicy(
     : "frame-ancestors 'none'";
 
   // Theme boot script in index.html — keep hash in sync if that inline block changes.
-  const themeBootScriptHash = "'sha256-KPGRZh0iZGUQvbOmIn+AyQYlSk1cQH0oPPOFJbrwICg='";
+  // IMPORTANT: do NOT combine a script hash with 'unsafe-inline' in Chrome.
+  // When a hash/nonce is present, browsers ignore 'unsafe-inline', which blocks
+  // Vite's React Refresh / PWA inline scripts and leaves localhost blank.
+  const themeBootScriptHash = "'sha256-CgJhvzskzf709G6UFOCppYV+yn4GzdLGTM7wjEj6gdU='";
 
   return [
     "default-src 'self'",
     isDev
-      ? `script-src 'self' 'unsafe-inline' 'unsafe-eval' ${themeBootScriptHash} https://apis.google.com https://www.gstatic.com https://www.google.com https://www.gstatic.com/recaptcha/ https://www.recaptcha.net https://challenges.cloudflare.com`
+      ? `script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com https://www.gstatic.com https://www.google.com https://www.gstatic.com/recaptcha/ https://www.recaptcha.net https://challenges.cloudflare.com`
       : `script-src 'self' ${themeBootScriptHash} https://apis.google.com https://www.gstatic.com https://www.google.com https://www.gstatic.com/recaptcha/ https://www.recaptcha.net https://challenges.cloudflare.com`,
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "img-src 'self' data: blob: https://*.googleusercontent.com https://www.gstatic.com https://www.recaptcha.net",

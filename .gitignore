@@ -7,6 +7,8 @@ coverage/
 *.log
 .env*
 !.env.example
+# Written by scripts/write-vite-public-env.mjs — never commit real client keys.
+src/vitePublicEnv.generated.ts
 .owner-policy-cache.json
 .owner-telemetry-cache.json
 .owner-chat-cache.json

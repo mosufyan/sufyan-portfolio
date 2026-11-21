@@ -9,6 +9,7 @@ RUN npm ci
 COPY . .
 
 # Public Vite client keys (not server secrets) — required at build time for the SPA bundle.
+# Must be passed as --build-arg (Secret Manager runtime attach cannot reach the browser JS).
 ARG VITE_FIREBASE_API_KEY=""
 ARG VITE_TURNSTILE_SITE_KEY=""
 ARG VITE_RECAPTCHA_SITE_KEY=""
@@ -16,7 +17,8 @@ ENV VITE_FIREBASE_API_KEY=$VITE_FIREBASE_API_KEY \
     VITE_TURNSTILE_SITE_KEY=$VITE_TURNSTILE_SITE_KEY \
     VITE_RECAPTCHA_SITE_KEY=$VITE_RECAPTCHA_SITE_KEY
 
-RUN npm run build
+# Generate src/vitePublicEnv.generated.ts then build the SPA.
+RUN node scripts/write-vite-public-env.mjs && npm run build
 
 FROM node:22-bookworm-slim@sha256:e9f565d32859f0cbfb52125eafe8be39390f24dac302dc3cdf566e8ba3ab21ee AS runtime
 WORKDIR /app
