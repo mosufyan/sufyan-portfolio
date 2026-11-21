@@ -108,7 +108,15 @@ import {
   getChatUsageTotals,
   type ChatLimitPolicy,
 } from './server/chatLimits.ts';
-import { enrichAnswerWithGrokLlm, isGrokLlmConfigured } from './server/grokLlm.ts';
+import {
+  enrichAnswerWithGrokLlm,
+  isGrokLlmConfigured,
+  shouldSkipGrokEnrichment,
+} from './server/grokLlm.ts';
+import { parseMultipartAudio, VOICE_AUDIO_MAX_BYTES } from './server/multipartAudio.ts';
+import { isVoiceSttConfigured } from './server/voiceStt.ts';
+import { isVoiceTtsConfigured } from './server/voiceTts.ts';
+import { runVoiceTurn } from './server/voiceTurn.ts';
 import { buildDynamicSocialSvg, SHARE_CARD_TRACKS, type ShareTrackId } from './src/utils/ogShare.ts';
 import {
   DEFAULT_PORTFOLIO_SETTINGS,
@@ -188,6 +196,9 @@ function verifyChatSessionReceipt(
 interface RuntimeOwnerPolicy {
   rules: CompactAccessRule[];
   strictOtpForAll: boolean;
+  requireOtpForChat: boolean;
+  requireOtpForContact: boolean;
+  requireOtpForCv: boolean;
   enableContactForm: boolean;
   enableCvDownloads: boolean;
   enablePwaInstall: boolean;
@@ -197,9 +208,11 @@ interface RuntimeOwnerPolicy {
   enablePortfolioChat: boolean;
   enableLiveChat: boolean;
   enableChatLlm: boolean;
+  enableVoiceAgent: boolean;
   chatMaxQuestionsPerVisitor: number;
   chatMaxLlmPerVisitor: number;
   chatMaxLiveSessionsPerVisitor: number;
+  chatMaxVoiceTurnsPerVisitor: number;
   chatRateWindowHours: number;
   chatLlmModel: string;
   chatShowSuggestions: boolean;
@@ -221,6 +234,7 @@ function chatLimitPolicyFromRuntime(policy: RuntimeOwnerPolicy): ChatLimitPolicy
     maxQuestionsPerVisitor: policy.chatMaxQuestionsPerVisitor,
     maxLlmPerVisitor: policy.chatMaxLlmPerVisitor,
     maxLiveSessionsPerVisitor: policy.chatMaxLiveSessionsPerVisitor,
+    maxVoiceTurnsPerVisitor: policy.chatMaxVoiceTurnsPerVisitor,
     rateWindowHours: policy.chatRateWindowHours,
   };
 }
@@ -328,10 +342,20 @@ function bumpSiteTelemetry(kind: 'pageview' | 'og_share', track?: string): void 
   scheduleSiteTelemetryFlush();
 }
 
+function otpRequiredFor(surface: 'chat' | 'contact' | 'cv'): boolean {
+  if (runtimeOwnerPolicy.incidentMode) return true;
+  if (surface === 'chat') return runtimeOwnerPolicy.requireOtpForChat;
+  if (surface === 'contact') return runtimeOwnerPolicy.requireOtpForContact;
+  return runtimeOwnerPolicy.requireOtpForCv || runtimeOwnerPolicy.strictOtpForAll;
+}
+
 function loadInitialOwnerPolicy(): RuntimeOwnerPolicy {
   const defaults: RuntimeOwnerPolicy = {
     rules: [],
-    strictOtpForAll: false,
+    strictOtpForAll: DEFAULT_PORTFOLIO_SETTINGS.strictOtpForAll,
+    requireOtpForChat: DEFAULT_PORTFOLIO_SETTINGS.requireOtpForChat,
+    requireOtpForContact: DEFAULT_PORTFOLIO_SETTINGS.requireOtpForContact,
+    requireOtpForCv: DEFAULT_PORTFOLIO_SETTINGS.requireOtpForCv,
     enableContactForm: true,
     enableCvDownloads: true,
     enablePwaInstall: DEFAULT_PORTFOLIO_SETTINGS.enablePwaInstall,
@@ -341,9 +365,11 @@ function loadInitialOwnerPolicy(): RuntimeOwnerPolicy {
     enablePortfolioChat: DEFAULT_PORTFOLIO_SETTINGS.enablePortfolioChat,
     enableLiveChat: DEFAULT_PORTFOLIO_SETTINGS.enableLiveChat,
     enableChatLlm: DEFAULT_PORTFOLIO_SETTINGS.enableChatLlm,
+    enableVoiceAgent: DEFAULT_PORTFOLIO_SETTINGS.enableVoiceAgent,
     chatMaxQuestionsPerVisitor: DEFAULT_PORTFOLIO_SETTINGS.chatMaxQuestionsPerVisitor,
     chatMaxLlmPerVisitor: DEFAULT_PORTFOLIO_SETTINGS.chatMaxLlmPerVisitor,
     chatMaxLiveSessionsPerVisitor: DEFAULT_PORTFOLIO_SETTINGS.chatMaxLiveSessionsPerVisitor,
+    chatMaxVoiceTurnsPerVisitor: DEFAULT_PORTFOLIO_SETTINGS.chatMaxVoiceTurnsPerVisitor,
     chatRateWindowHours: DEFAULT_PORTFOLIO_SETTINGS.chatRateWindowHours,
     chatLlmModel: DEFAULT_PORTFOLIO_SETTINGS.chatLlmModel,
     chatShowSuggestions: DEFAULT_PORTFOLIO_SETTINGS.chatShowSuggestions,
@@ -362,9 +388,24 @@ function loadInitialOwnerPolicy(): RuntimeOwnerPolicy {
   try {
     if (!fs.existsSync(POLICY_CACHE_PATH)) return defaults;
     const parsed = JSON.parse(fs.readFileSync(POLICY_CACHE_PATH, 'utf8')) as Partial<RuntimeOwnerPolicy>;
+    const requireOtpForCv =
+      typeof parsed.requireOtpForCv === 'boolean'
+        ? parsed.requireOtpForCv
+        : typeof parsed.strictOtpForAll === 'boolean'
+          ? Boolean(parsed.strictOtpForAll)
+          : defaults.requireOtpForCv;
     return {
       rules: Array.isArray(parsed.rules) ? parsed.rules.slice(0, 200) : [],
-      strictOtpForAll: Boolean(parsed.strictOtpForAll),
+      requireOtpForChat:
+        typeof parsed.requireOtpForChat === 'boolean'
+          ? parsed.requireOtpForChat
+          : defaults.requireOtpForChat,
+      requireOtpForContact:
+        typeof parsed.requireOtpForContact === 'boolean'
+          ? parsed.requireOtpForContact
+          : defaults.requireOtpForContact,
+      requireOtpForCv,
+      strictOtpForAll: requireOtpForCv,
       enableContactForm: typeof parsed.enableContactForm === 'boolean' ? parsed.enableContactForm : true,
       enableCvDownloads: typeof parsed.enableCvDownloads === 'boolean' ? parsed.enableCvDownloads : true,
       enablePwaInstall:
@@ -386,6 +427,10 @@ function loadInitialOwnerPolicy(): RuntimeOwnerPolicy {
         typeof parsed.enableLiveChat === 'boolean' ? parsed.enableLiveChat : defaults.enableLiveChat,
       enableChatLlm:
         typeof parsed.enableChatLlm === 'boolean' ? parsed.enableChatLlm : defaults.enableChatLlm,
+      enableVoiceAgent:
+        typeof parsed.enableVoiceAgent === 'boolean'
+          ? parsed.enableVoiceAgent
+          : defaults.enableVoiceAgent,
       chatMaxQuestionsPerVisitor: clampPolicyInt(
         parsed.chatMaxQuestionsPerVisitor,
         defaults.chatMaxQuestionsPerVisitor,
@@ -401,6 +446,12 @@ function loadInitialOwnerPolicy(): RuntimeOwnerPolicy {
       chatMaxLiveSessionsPerVisitor: clampPolicyInt(
         parsed.chatMaxLiveSessionsPerVisitor,
         defaults.chatMaxLiveSessionsPerVisitor,
+        0,
+        50
+      ),
+      chatMaxVoiceTurnsPerVisitor: clampPolicyInt(
+        parsed.chatMaxVoiceTurnsPerVisitor,
+        defaults.chatMaxVoiceTurnsPerVisitor,
         0,
         50
       ),
@@ -2133,10 +2184,14 @@ async function startServer() {
   });
 
   app.get('/api/access-config', (_req: Request, res: Response) => {
+    const requireOtpForCv = otpRequiredFor('cv');
     res.status(200).json({
       turnstileSiteKey: TURNSTILE_SITE_KEY,
       otpSupported: isDirectEmailTransportConfigured(),
-      forceOtp: FORCE_CV_OTP || runtimeOwnerPolicy.strictOtpForAll,
+      forceOtp: FORCE_CV_OTP || requireOtpForCv,
+      requireOtpForChat: otpRequiredFor('chat'),
+      requireOtpForContact: otpRequiredFor('contact'),
+      requireOtpForCv,
       serverTelemetryPreferred: isFirebaseAdminConfigured(),
     });
   });
@@ -2347,6 +2402,9 @@ async function startServer() {
       const raw = (req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {}) as {
         rules?: unknown;
         strictOtpForAll?: unknown;
+        requireOtpForChat?: unknown;
+        requireOtpForContact?: unknown;
+        requireOtpForCv?: unknown;
         enableContactForm?: unknown;
         enableCvDownloads?: unknown;
         enablePwaInstall?: unknown;
@@ -2356,9 +2414,11 @@ async function startServer() {
         enablePortfolioChat?: unknown;
         enableLiveChat?: unknown;
         enableChatLlm?: unknown;
+        enableVoiceAgent?: unknown;
         chatMaxQuestionsPerVisitor?: unknown;
         chatMaxLlmPerVisitor?: unknown;
         chatMaxLiveSessionsPerVisitor?: unknown;
+        chatMaxVoiceTurnsPerVisitor?: unknown;
         chatRateWindowHours?: unknown;
         chatLlmModel?: unknown;
         chatShowSuggestions?: unknown;
@@ -2394,12 +2454,27 @@ async function startServer() {
       const incidentMode =
         typeof raw.incidentMode === 'boolean' ? raw.incidentMode : runtimeOwnerPolicy.incidentMode;
 
+      const requireOtpForCv = incidentMode
+        ? true
+        : typeof raw.requireOtpForCv === 'boolean'
+          ? raw.requireOtpForCv
+          : typeof raw.strictOtpForAll === 'boolean'
+            ? raw.strictOtpForAll
+            : runtimeOwnerPolicy.requireOtpForCv;
       saveRuntimeOwnerPolicy({
         rules: normalizedRules,
-        strictOtpForAll:
-          typeof raw.strictOtpForAll === 'boolean'
-            ? raw.strictOtpForAll
-            : runtimeOwnerPolicy.strictOtpForAll || incidentMode,
+        requireOtpForChat: incidentMode
+          ? true
+          : typeof raw.requireOtpForChat === 'boolean'
+            ? raw.requireOtpForChat
+            : runtimeOwnerPolicy.requireOtpForChat,
+        requireOtpForContact: incidentMode
+          ? true
+          : typeof raw.requireOtpForContact === 'boolean'
+            ? raw.requireOtpForContact
+            : runtimeOwnerPolicy.requireOtpForContact,
+        requireOtpForCv,
+        strictOtpForAll: requireOtpForCv,
         enableContactForm: incidentMode
           ? false
           : typeof raw.enableContactForm === 'boolean'
@@ -2440,6 +2515,11 @@ async function startServer() {
           : typeof raw.enableChatLlm === 'boolean'
             ? raw.enableChatLlm
             : runtimeOwnerPolicy.enableChatLlm,
+        enableVoiceAgent: incidentMode
+          ? false
+          : typeof raw.enableVoiceAgent === 'boolean'
+            ? raw.enableVoiceAgent
+            : runtimeOwnerPolicy.enableVoiceAgent,
         chatMaxQuestionsPerVisitor: clampPolicyInt(
           raw.chatMaxQuestionsPerVisitor,
           runtimeOwnerPolicy.chatMaxQuestionsPerVisitor,
@@ -2455,6 +2535,12 @@ async function startServer() {
         chatMaxLiveSessionsPerVisitor: clampPolicyInt(
           raw.chatMaxLiveSessionsPerVisitor,
           runtimeOwnerPolicy.chatMaxLiveSessionsPerVisitor,
+          0,
+          50
+        ),
+        chatMaxVoiceTurnsPerVisitor: clampPolicyInt(
+          raw.chatMaxVoiceTurnsPerVisitor,
+          runtimeOwnerPolicy.chatMaxVoiceTurnsPerVisitor,
           0,
           50
         ),
@@ -2743,19 +2829,10 @@ async function startServer() {
 
       if (!isDirectEmailTransportConfigured()) {
         res.status(503).json({
-          error: 'Email OTP verification service is currently unavailable. Please email directly.',
+          error: otpRequiredFor('contact')
+            ? 'Email OTP verification service is currently unavailable. Please email directly.'
+            : 'Email delivery is currently unavailable. Please email directly.',
         });
-        return;
-      }
-
-      const normalizedOtpEmail = `contact:${cleanEmail.toLowerCase()}`;
-      if (
-        await enforceRateLimit(res, 'otp-email', normalizedOtpEmail, {
-          maxRequests: 5,
-          error:
-            'Too many verification codes sent to this email. Please check your inbox or wait a few minutes.',
-        })
-      ) {
         return;
       }
 
@@ -2782,6 +2859,77 @@ async function startServer() {
         phoneCountry: contactPhoneCheck.countryCode || undefined,
       });
       const cleanTheme = parseEmailTheme(body.theme);
+
+      if (!otpRequiredFor('contact')) {
+        const messageId = `MSG-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+        const geoSummary =
+          [ipIntel.city, ipIntel.region, ipIntel.country].filter(Boolean).join(', ') || 'Unknown';
+        const telemetryNote = `Ref: ${messageId} · OTP bypassed by owner · IP: ${ipIntel.ipAddress} · Geo: ${geoSummary} · ${
+          risk.isVpnSuspected ? `VPN/Proxy Flagged (${risk.riskLevel})` : 'Clean Network'
+        }`;
+        const result = await sendContactEmail({
+          name: cleanName,
+          email: cleanEmail,
+          phone: normalizedContactPhone,
+          subject: cleanSubject,
+          message: cleanMessage,
+          theme: cleanTheme,
+          messageId,
+          telemetryNote,
+        });
+        const contactSummary = {
+          messageId,
+          senderName: cleanName.slice(0, 120),
+          senderEmail: cleanEmail.slice(0, 254),
+          senderPhone: normalizedContactPhone.slice(0, 40),
+          subject: cleanSubject.slice(0, 200),
+          message: cleanMessage.slice(0, 5000),
+          theme: cleanTheme,
+          ipAddress: ipIntel.ipAddress.slice(0, 64),
+          country: ipIntel.country.slice(0, 80),
+          region: ipIntel.region.slice(0, 80),
+          city: ipIntel.city.slice(0, 80),
+          isp: ipIntel.isp.slice(0, 120),
+          asn: ipIntel.asn.slice(0, 64),
+          timezone: ipIntel.timezone.slice(0, 64),
+          clientTimezone: clientTimezone.slice(0, 64),
+          isVpnSuspected: risk.isVpnSuspected,
+          riskLevel: risk.riskLevel,
+          riskReasons: risk.riskReasons.join(', ').slice(0, 240),
+          referrer: referrer.slice(0, 200),
+          userAgent: userAgent.slice(0, 220),
+        };
+        const telemetryPersistedByServer = await tryPersistContactSummary(contactSummary);
+        void emitOwnerAlert({
+          eventType: 'new_inquiry',
+          title: `New inquiry from ${cleanName}`,
+          detail: `${cleanEmail}${cleanSubject ? ` · ${cleanSubject}` : ''} · risk ${risk.riskLevel}${
+            risk.isVpnSuspected ? ' · VPN/proxy suspected' : ''
+          }`,
+          dedupeKey: `inquiry:${messageId}`,
+          theme: cleanTheme,
+        });
+        res.status(200).json({
+          ok: true,
+          status: 'sent',
+          provider: result.provider,
+          message: `Email transmitted directly to ${DESTINATION_EMAIL}.`,
+          contactSummary,
+          telemetryPersistedByServer,
+        });
+        return;
+      }
+
+      const normalizedOtpEmail = `contact:${cleanEmail.toLowerCase()}`;
+      if (
+        await enforceRateLimit(res, 'otp-email', normalizedOtpEmail, {
+          maxRequests: 5,
+          error:
+            'Too many verification codes sent to this email. Please check your inbox or wait a few minutes.',
+        })
+      ) {
+        return;
+      }
 
       const challenge = await createOtpChallengeAsync(
         contactOtpChallengeStore,
@@ -3114,13 +3262,11 @@ async function startServer() {
       });
 
       const directTransportReady = isDirectEmailTransportConfigured();
+      // requireOtpForCv (or FORCE_CV_OTP) forces OTP; when off, skip adaptive step-up too.
       const shouldStepUpOtp =
         directTransportReady &&
         !accessEval.allowlisted &&
-        (FORCE_CV_OTP ||
-          runtimeOwnerPolicy.strictOtpForAll ||
-          risk.isVpnSuspected ||
-          risk.riskLevel !== 'low');
+        (FORCE_CV_OTP || otpRequiredFor('cv'));
 
       if (shouldStepUpOtp) {
         if (!cleanEmail) {
@@ -3537,18 +3683,29 @@ async function startServer() {
     const stats = getChatStats();
     const chatEnabled = runtimeOwnerPolicy.enablePortfolioChat && !runtimeOwnerPolicy.incidentMode;
     const liveEnabled =
-      chatEnabled && runtimeOwnerPolicy.enableLiveChat && isDirectEmailTransportConfigured();
+      chatEnabled &&
+      runtimeOwnerPolicy.enableLiveChat &&
+      (!otpRequiredFor('chat') || isDirectEmailTransportConfigured());
+    const voiceSttConfigured = isVoiceSttConfigured();
+    const voiceTtsConfigured = isVoiceTtsConfigured();
+    const voiceEnabled =
+      chatEnabled && runtimeOwnerPolicy.enableVoiceAgent && voiceSttConfigured;
     res.status(200).json({
       ok: true,
       enabled: chatEnabled,
       ownerOnline: stats.ownerOnline,
       liveChatAvailable: liveEnabled,
+      requireOtpForChat: otpRequiredFor('chat'),
       llmConfigured: isGrokLlmConfigured() && runtimeOwnerPolicy.enableChatLlm,
       vectorConfigured: isPortfolioVectorConfigured(),
+      voiceAgentAvailable: voiceEnabled,
+      voiceSttConfigured,
+      voiceTtsConfigured,
       limits: {
         maxQuestionsPerVisitor: runtimeOwnerPolicy.chatMaxQuestionsPerVisitor,
         maxLlmPerVisitor: runtimeOwnerPolicy.chatMaxLlmPerVisitor,
         maxLiveSessionsPerVisitor: runtimeOwnerPolicy.chatMaxLiveSessionsPerVisitor,
+        maxVoiceTurnsPerVisitor: runtimeOwnerPolicy.chatMaxVoiceTurnsPerVisitor,
         rateWindowHours: runtimeOwnerPolicy.chatRateWindowHours,
       },
       suggestions: runtimeOwnerPolicy.chatShowSuggestions ? listChatSuggestions() : [],
@@ -3639,7 +3796,7 @@ async function startServer() {
       let provider: 'grok' | 'grounded' = 'grounded';
       let answer = await answerPortfolioQuestionSmart(question);
 
-      if (wantLlm) {
+      if (wantLlm && !shouldSkipGrokEnrichment(question, answer)) {
         const llmCheck = await checkChatLimitAsync(visitorKey, 'llm', limitPolicy);
         if (llmCheck.allowed) {
           const enriched = await enrichAnswerWithGrokLlm(question, {
@@ -3700,6 +3857,173 @@ async function startServer() {
     }
   });
 
+
+  app.post('/api/chat/voice/turn', async (req: Request, res: Response) => {
+    try {
+      if (rejectDisallowedOrigin(req, res)) return;
+      if (!runtimeOwnerPolicy.enablePortfolioChat || runtimeOwnerPolicy.incidentMode) {
+        res.status(503).json({ error: 'Portfolio chat is temporarily unavailable.' });
+        return;
+      }
+      if (!runtimeOwnerPolicy.enableVoiceAgent || !isVoiceSttConfigured()) {
+        res.status(503).json({ error: 'Voice agent is temporarily unavailable.' });
+        return;
+      }
+
+      const clientIp = extractClientIp(req);
+      if (
+        await enforceRateLimit(res, 'chat', `voice:${clientIp}`, {
+          maxRequests: 20,
+          error: 'Too many voice turns from this connection. Please wait a few minutes.',
+        })
+      ) {
+        return;
+      }
+
+      let parsed;
+      try {
+        parsed = await parseMultipartAudio(req, { maxBytes: VOICE_AUDIO_MAX_BYTES });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Invalid audio upload.';
+        res.status(400).json({ error: message });
+        return;
+      }
+
+      const sessionId =
+        typeof parsed.fields.sessionId === 'string' ? parsed.fields.sessionId.trim() : '';
+      const receipt = extractChatReceipt(req, parsed.fields.receipt);
+      void parsed.fields.visitorId;
+
+      let sessionEmail = '';
+      if (sessionId && receipt) {
+        const auth = verifyChatSessionReceipt(receipt, sessionId);
+        if (!auth.ok) {
+          res.status(401).json(chatSessionAuthError(auth));
+          return;
+        }
+        const session = await getChatSessionAsync(sessionId);
+        if (!session || session.visitorEmail !== auth.email || session.status === 'closed') {
+          res.status(404).json({ error: 'Chat session not found or closed.' });
+          return;
+        }
+        sessionEmail = auth.email;
+      }
+
+      const visitorKey = buildVisitorKey({
+        ipAddress: clientIp,
+        email: sessionEmail || undefined,
+      });
+      const limitPolicy = chatLimitPolicyFromRuntime(runtimeOwnerPolicy);
+
+      const voiceLimit = await consumeChatLimitAsync(visitorKey, 'voice', limitPolicy);
+      if (!voiceLimit.allowed) {
+        void emitOwnerAlert({
+          eventType: 'chat_limit',
+          title: 'Visitor voice turn limit reached',
+          detail: `A visitor hit the per-window voice turn cap (${runtimeOwnerPolicy.chatMaxVoiceTurnsPerVisitor}).`,
+          dedupeKey: `voiceLimit:${visitorKey}:${Math.floor(Date.now() / 3_600_000)}`,
+        });
+        res.status(429).json({
+          error: voiceLimit.reason,
+          remaining: voiceLimit.remaining,
+          resetAtMs: voiceLimit.resetAtMs,
+        });
+        return;
+      }
+
+      const questionLimit = await consumeChatLimitAsync(visitorKey, 'question', limitPolicy);
+      if (!questionLimit.allowed) {
+        void emitOwnerAlert({
+          eventType: 'chat_limit',
+          title: 'Visitor chat question limit reached',
+          detail: `A visitor hit the per-window chat question cap (${runtimeOwnerPolicy.chatMaxQuestionsPerVisitor}).`,
+          dedupeKey: `chatlimit:${visitorKey}:${Math.floor(Date.now() / 3_600_000)}`,
+        });
+        res.status(429).json({
+          error: questionLimit.reason,
+          remaining: questionLimit.remaining,
+          resetAtMs: questionLimit.resetAtMs,
+        });
+        return;
+      }
+
+      bumpBotQuestion();
+      bumpMetric('chatQuestions');
+
+      const wantLlm =
+        runtimeOwnerPolicy.enableChatLlm &&
+        isGrokLlmConfigured() &&
+        runtimeOwnerPolicy.chatMaxLlmPerVisitor > 0;
+
+      let llmAllowed = false;
+      if (wantLlm) {
+        const llmCheck = await checkChatLimitAsync(visitorKey, 'llm', limitPolicy);
+        llmAllowed = llmCheck.allowed;
+      }
+
+      const turn = await runVoiceTurn({
+        audio: parsed.buffer,
+        mimeType: parsed.mimeType,
+        filename: parsed.filename,
+        enableLlm: llmAllowed,
+        grokApiKey: process.env.GROK_API_KEY || '',
+        chatLlmModel: runtimeOwnerPolicy.chatLlmModel,
+        offerLiveAgent: runtimeOwnerPolicy.chatOfferLiveAgent,
+        enableCloudTts: isVoiceTtsConfigured(),
+      });
+
+      if (!turn.ok || !turn.answer || !turn.transcript) {
+        res.status(400).json({
+          error: turn.error || 'Unable to process voice turn.',
+          transcript: turn.transcript,
+        });
+        return;
+      }
+
+      if (turn.llmUsed) {
+        await consumeChatLimitAsync(visitorKey, 'llm', limitPolicy);
+        bumpLlmCall(true);
+      } else if (llmAllowed) {
+        bumpLlmCall(false);
+      }
+
+      if (sessionId && sessionEmail) {
+        appendChatMessage(sessionId, 'visitor', turn.transcript);
+        appendChatMessage(sessionId, 'bot', turn.answer.answer);
+      }
+
+      const llmRemaining = (await checkChatLimitAsync(visitorKey, 'llm', limitPolicy)).remaining;
+      const voiceRemaining = (await checkChatLimitAsync(visitorKey, 'voice', limitPolicy)).remaining;
+      const session = sessionId ? await getChatSessionAsync(sessionId) : null;
+
+      res.status(200).json({
+        ok: true,
+        transcript: turn.transcript,
+        ...turn.answer,
+        provider: turn.provider || 'grounded',
+        ttsProvider: turn.ttsProvider || 'none',
+        audioBase64: turn.audioBase64,
+        audioMimeType: turn.audioMimeType,
+        ownerOnline: isOwnerOnline(),
+        remaining: {
+          questions: questionLimit.remaining,
+          llm: llmRemaining,
+          voice: voiceRemaining,
+        },
+        limits: {
+          maxQuestionsPerVisitor: runtimeOwnerPolicy.chatMaxQuestionsPerVisitor,
+          maxLlmPerVisitor: runtimeOwnerPolicy.chatMaxLlmPerVisitor,
+          maxVoiceTurnsPerVisitor: runtimeOwnerPolicy.chatMaxVoiceTurnsPerVisitor,
+          rateWindowHours: runtimeOwnerPolicy.chatRateWindowHours,
+        },
+        resetAtMs: questionLimit.resetAtMs,
+        session: session ? publicSessionView(session, { threadOnly: true }) : undefined,
+      });
+    } catch {
+      res.status(500).json({ error: 'Unable to process voice turn right now. Please try again.' });
+    }
+  });
+
   app.post('/api/chat/live/start', async (req: Request, res: Response) => {
     try {
       if (!req.is('application/json')) {
@@ -3715,7 +4039,8 @@ async function startServer() {
         res.status(503).json({ error: 'Live chat is temporarily unavailable.' });
         return;
       }
-      if (!isDirectEmailTransportConfigured()) {
+      const requireChatOtp = otpRequiredFor('chat');
+      if (requireChatOtp && !isDirectEmailTransportConfigured()) {
         res.status(503).json({
           error: 'Live chat verification is temporarily unavailable. Please use the contact form instead.',
         });
@@ -3768,7 +4093,11 @@ async function startServer() {
         return;
       }
       if (!isValidEmailAddress(email)) {
-        res.status(400).json({ error: 'Please provide a valid email address for OTP verification.' });
+        res.status(400).json({
+          error: requireChatOtp
+            ? 'Please provide a valid email address for OTP verification.'
+            : 'Please provide a valid email address.',
+        });
         return;
       }
       const mxCheck = await verifyEmailMxRecord(email);
@@ -3801,6 +4130,59 @@ async function startServer() {
         return;
       }
 
+      bumpLiveRequest();
+      const userAgent =
+        typeof req.headers['user-agent'] === 'string'
+          ? sanitizeHeaderValue(req.headers['user-agent']).slice(0, 220)
+          : 'Unknown';
+
+      if (!requireChatOtp) {
+        const consumed = await consumeChatLimitAsync(
+          liveVisitorKey,
+          'live',
+          chatLimitPolicyFromRuntime(runtimeOwnerPolicy)
+        );
+        if (!consumed.allowed) {
+          res.status(429).json({
+            error: consumed.reason,
+            remaining: consumed.remaining,
+            resetAtMs: consumed.resetAtMs,
+          });
+          return;
+        }
+        bumpMetric('chatLiveStarts');
+        const session = createChatSession({
+          visitorName: name,
+          visitorEmail: email.toLowerCase(),
+          ipAddress: clientIp,
+          userAgent,
+          openingMessage,
+          company,
+          interest,
+        });
+        const sessionReceipt = signChatSessionReceipt(session.sessionId, email.toLowerCase());
+        void emitOwnerAlert({
+          eventType: 'live_chat',
+          title: `New chat from ${name} (OTP bypassed)`,
+          detail: `${email}${company ? ` · ${company}` : ''}${
+            interest ? ` · ${interest}` : ''
+          } · session ${session.sessionId} · owner ${isOwnerOnline() ? 'online' : 'offline/queued'}`,
+          dedupeKey: `live:${session.sessionId}`,
+          theme,
+        });
+        res.status(200).json({
+          ok: true,
+          status: 'live',
+          sessionReceipt,
+          session: publicSessionView(session, { threadOnly: true }),
+          ownerOnline: isOwnerOnline(),
+          suggestions: runtimeOwnerPolicy.chatShowSuggestions ? listChatSuggestions() : [],
+          remaining: { live: consumed.remaining },
+          resetAtMs: consumed.resetAtMs,
+        });
+        return;
+      }
+
       const otpKey = `chat:${email.toLowerCase()}`;
       if (
         await enforceRateLimit(res, 'otp-email', otpKey, {
@@ -3811,11 +4193,6 @@ async function startServer() {
         return;
       }
 
-      bumpLiveRequest();
-      const userAgent =
-        typeof req.headers['user-agent'] === 'string'
-          ? sanitizeHeaderValue(req.headers['user-agent']).slice(0, 220)
-          : 'Unknown';
       const challenge = await createOtpChallengeAsync(
         chatLiveOtpStore,
         {

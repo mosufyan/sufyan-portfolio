@@ -89,7 +89,8 @@ Full Cloudflare / Cloud Run / Firebase / Resend checklists, upgrade paths, and *
 ### Portfolio chatbot & live agent
 
 - **Retrieval:** Curated chunks from `portfolioData`. With `UPSTASH_VECTOR_REST_URL` + `UPSTASH_VECTOR_REST_TOKEN`, semantic search via **Upstash Vector** (BGE embeddings) + keyword hybrid; otherwise keyword ranking only.
-- **LLM (optional):** **Grok (xAI)** enrichment when `GROK_API_KEY` is set and Owner Profile / Site Controls enable `enableChatLlm`. Grok sees retrieved context only; on timeout/error the grounded answer is returned. With LLM off, visitors still get Vector/keyword answers (no `api.x.ai` calls).
+- **LLM (optional):** **Grok (xAI)** enrichment when `GROK_API_KEY` is set and Owner Profile / Site Controls enable `enableChatLlm`.
+- **Voice agent (optional):** Push-to-talk via **Groq Whisper** (`GROQ_API_KEY`) + optional **ElevenLabs** TTS (`ELEVENLABS_API_KEY`); browser `speechSynthesis` fallback. Owner toggle `enableVoiceAgent`. Keys stay server-side; audio is not stored. Grok sees retrieved context only; on timeout/error the grounded answer is returned. With LLM off, visitors still get Vector/keyword answers (no `api.x.ai` calls).
 - **Per-visitor caps** (default 10 questions / window, plus LLM + live-session caps) are owner-configurable and enforced server-side (Redis-shared when Upstash Redis is set; fail-closed on Redis errors); tracking KPIs appear on the Owner Profile.
 - **Live agent** requires email OTP (same mail transport as contact/CV). Sessions use in-process memory + `.owner-chat-cache.json` with optional Redis write-through for multi-replica; owner console `#owner/chat` replies in near-real-time while presence heartbeats mark you online.
 - Rate-limited under the `chat` bucket; allow/block rules still apply to live-chat emails.

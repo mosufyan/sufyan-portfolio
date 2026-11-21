@@ -1,4 +1,4 @@
-import { Bot, Headphones, MessageSquare, Sparkles } from 'lucide-react';
+import { Bot, Headphones, MessageSquare, Mic, Sparkles } from 'lucide-react';
 import {
   DEFAULT_PORTFOLIO_SETTINGS,
   PORTFOLIO_SETTINGS_CONSTRAINTS,
@@ -18,7 +18,7 @@ export default function ChatConfigFields({
   setDraft,
   isLight,
   title = 'Chatbot & LLM limits',
-  description = 'Ten owner-controlled chat settings: feature toggles, per-visitor caps (default 10 questions), Grok LLM enrichment, and live-agent handoff.',
+  description = 'Owner-controlled chat settings: feature toggles, per-visitor caps (default 10 questions), Grok LLM, voice agent, and live-agent handoff.',
 }: Props) {
   const rowCard = isLight
     ? 'border-slate-200 bg-slate-50/70'
@@ -34,6 +34,7 @@ export default function ChatConfigFields({
       | 'enablePortfolioChat'
       | 'enableLiveChat'
       | 'enableChatLlm'
+      | 'enableVoiceAgent'
       | 'chatShowSuggestions'
       | 'chatOfferLiveAgent';
     icon: typeof Bot;
@@ -57,6 +58,12 @@ export default function ChatConfigFields({
       icon: Sparkles,
       title: 'Enable Grok LLM enrichment',
       desc: 'Uses Grok (xAI) when GROK_API_KEY is set; otherwise grounded answers.',
+    },
+    {
+      key: 'enableVoiceAgent',
+      icon: Mic,
+      title: 'Enable voice agent',
+      desc: 'Push-to-talk via Groq Whisper STT + optional ElevenLabs TTS (browser TTS fallback).',
     },
     {
       key: 'chatShowSuggestions',
@@ -160,6 +167,25 @@ export default function ChatConfigFields({
               setDraft((prev) => ({
                 ...prev,
                 chatMaxLiveSessionsPerVisitor: Number(e.target.value),
+              }))
+            }
+            className={`w-full rounded-lg border px-3 py-2 text-xs focus:outline-none ${inputCls}`}
+          />
+        </div>
+        <div>
+          <label className={`block text-[10px] font-mono uppercase mb-1 ${mutedCls}`}>
+            Max voice turns / visitor (default{' '}
+            {DEFAULT_PORTFOLIO_SETTINGS.chatMaxVoiceTurnsPerVisitor})
+          </label>
+          <input
+            type="number"
+            min={PORTFOLIO_SETTINGS_CONSTRAINTS.chatMaxVoiceTurnsPerVisitorMin}
+            max={PORTFOLIO_SETTINGS_CONSTRAINTS.chatMaxVoiceTurnsPerVisitorMax}
+            value={draft.chatMaxVoiceTurnsPerVisitor}
+            onChange={(e) =>
+              setDraft((prev) => ({
+                ...prev,
+                chatMaxVoiceTurnsPerVisitor: Number(e.target.value),
               }))
             }
             className={`w-full rounded-lg border px-3 py-2 text-xs focus:outline-none ${inputCls}`}

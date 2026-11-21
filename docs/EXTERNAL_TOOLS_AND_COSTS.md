@@ -41,6 +41,8 @@ flowchart TB
     Vector[(Upstash Vector<br/>chat RAG)]
     AppCheck[App Check<br/>reCAPTCHA Enterprise]
     Grok[Grok xAI API]
+    Groq[Groq Whisper STT]
+    Eleven[ElevenLabs TTS]
   end
 
   Visitor --> CF --> CR
@@ -54,6 +56,8 @@ flowchart TB
   CR --> Redis
   CR --> Vector
   CR --> Grok
+  CR --> Groq
+  CR --> Eleven
   Admin --> FS
   AppCheck --> FS
   GH --> CR
@@ -76,10 +80,12 @@ flowchart TB
 | 9 | **Firebase Admin SDK** | Server-side PII writes after OTP; reply binding | Recommended | Included with Firebase/GCP |
 | 10 | **Firebase App Check** | Attest browser before Firestore creates | Recommended | Free quotas (provider-dependent) |
 | 11 | **Grok (xAI) API** | Optional chat answer enrichment over retrieved context | Optional | Pay-as-you-go / prepaid credits |
-| 12 | **GitHub Actions** | PR CI (lint/test/audit/build/Docker) + deploy to Cloud Run on `main` | Yes | Yes (public repos generous) |
-| 13 | **Artifact Registry / Cloud Build** | Used by `gcloud run deploy --source .` from Actions | Yes (with CD) | Small free/low cost |
-| 14 | **Google Domains / Registrar** | Domain registration (DNS may point at Cloudflare) | Domain ownership | At-cost renewal (not “free”) |
-| 15 | **FormSubmit** | Legacy fallback only — **disabled by default** | No (`ALLOW_FORMSUBMIT_FALLBACK=false`) | N/A — keep off |
+| 12 | **Groq Whisper** | Optional voice-agent speech-to-text (`GROQ_API_KEY`) | Optional (voice) | Yes (Free plan rate limits) |
+| 13 | **ElevenLabs TTS** | Optional cloud voice replies (`ELEVENLABS_API_KEY`); browser TTS fallback | Optional (voice) | Yes (Free ~10k credits/mo) |
+| 14 | **GitHub Actions** | PR CI (lint/test/audit/build/Docker) + deploy to Cloud Run on `main` | Yes | Yes (public repos generous) |
+| 15 | **Artifact Registry / Cloud Build** | Used by `gcloud run deploy --source .` from Actions | Yes (with CD) | Small free/low cost |
+| 16 | **Google Domains / Registrar** | Domain registration (DNS may point at Cloudflare) | Domain ownership | At-cost renewal (not “free”) |
+| 17 | **FormSubmit** | Legacy fallback only — **disabled by default** | No (`ALLOW_FORMSUBMIT_FALLBACK=false`) | N/A — keep off |
 
 ---
 
@@ -105,6 +111,8 @@ flowchart LR
     VectorKeys[UPSTASH_VECTOR_REST_*]
     GrokKey[GROK_API_KEY / GROK_API_BASE_URL]
     ChatTimeout[CHAT_LLM_TIMEOUT_MS]
+    GroqKey[GROQ_API_KEY / GROQ_STT_MODEL]
+    ElevenKey[ELEVENLABS_API_KEY / VOICE_ID / MODEL]
     Sess[SESSION_SECRET]
   end
 
@@ -124,6 +132,7 @@ flowchart LR
 | Rate limits / OTP / chat | In-memory (+ disk chat cache) by default; Upstash Redis when REST URL+token set (**fail-closed** on Redis errors) |
 | Chat RAG | `UPSTASH_VECTOR_REST_*` → Vector retrieve; keyword fallback |
 | Chat LLM | `GROK_API_KEY` + owner toggle `enableChatLlm` (default model `grok-4.3`) |
+| Voice agent | `GROQ_API_KEY` (STT) + optional `ELEVENLABS_*` (TTS) + owner `enableVoiceAgent` |
 | CI/CD | PR: typecheck, Vitest, audit, Vite build, Docker build; `main`: Cloud Run deploy (WIF) |
 
 ---
@@ -244,7 +253,40 @@ flowchart LR
 
 ---
 
-### 9. GitHub Actions (CI/CD)
+### 9. Groq Whisper (optional voice STT)
+
+| Item | Free plan (typical) |
+|------|---------------------|
+| Models | `whisper-large-v3-turbo` (default), `whisper-large-v3` |
+| Requests | ~20 RPM, ~2,000 RPD |
+| Audio | ~7,200 s/hour, ~28,800 s/day |
+| File size | 25 MB free tier |
+
+**Portfolio impact:** One STT call per push-to-talk turn. Owner `chatMaxVoiceTurnsPerVisitor` (default 8) keeps a public site inside free limits.
+
+**If unset / fails:** Voice agent stays unavailable (`voiceAgentAvailable: false`). Text chat continues.
+
+**Upgrade trigger:** Hit daily RPD during a recruiting surge → upgrade Groq Developer (pay-as-you-go) or lower the voice-turn cap.
+
+---
+
+### 10. ElevenLabs TTS (optional voice replies)
+
+| Item | Free plan (typical) |
+|------|---------------------|
+| Credits | ~10,000 / month (~minutes of speech) |
+| Recommended model | `eleven_flash_v2_5` (stretches credits) |
+| Fallback | Browser `speechSynthesis` when key unset, 429, or error |
+
+**Portfolio impact:** Short grounded answers (1–3 sentences) keep free credits viable. Attribution / personal-use terms apply on Free; Starter (~$6/mo) if you need clear commercial rights.
+
+**If unset / fails:** Voice turns still work; client speaks the answer with browser TTS.
+
+**Upgrade trigger:** Monthly credit exhaustion → Starter plan or rely on browser TTS only.
+
+---
+
+### 11. GitHub Actions (CI/CD)
 
 | Repo visibility | Typical cost |
 |-----------------|--------------|

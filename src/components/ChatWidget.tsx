@@ -13,8 +13,11 @@ import {
   Maximize2,
   MessageCircle,
   MessageSquarePlus,
+  Mic,
   Minimize2,
   Sparkles,
+  Volume2,
+  VolumeX,
   X,
 } from 'lucide-react';
 import { EASE_OUT_EXPO } from './MotionPrimitives';
@@ -31,6 +34,13 @@ import {
 } from '../utils/chatWindowLayout';
 import ChatMessageComposer from './ChatMessageComposer';
 import { viteTurnstileSiteKey } from '../vitePublicEnv.ts';
+import { ensureMicrophoneAccess, getMicrophoneEnableHelp } from '../utils/chatComposer';
+import {
+  playAudioBase64,
+  speakWithBrowserTts,
+  stopBrowserTts,
+} from '../utils/browserTts';
+import { createVoiceTransport } from '../utils/voiceTransport';
 
 const OWNER_AVATAR_SRC = '/assets/aistudio/Sufyan_hero_portrait.png';
 
@@ -149,6 +159,11 @@ export default function ChatWidget() {
   const [open, setOpen] = useState(false);
   const [enabled, setEnabled] = useState(true);
   const [otpAvailable, setOtpAvailable] = useState(true);
+  const [requireOtpForChat, setRequireOtpForChat] = useState(true);
+  const [voiceAgentAvailable, setVoiceAgentAvailable] = useState(false);
+  const [voiceMode, setVoiceMode] = useState(false);
+  const [voiceMuted, setVoiceMuted] = useState(false);
+  const [recording, setRecording] = useState(false);
   const [mode, setMode] = useState<Mode>('welcome');
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
@@ -156,6 +171,11 @@ export default function ChatWidget() {
   const [ownerOnline, setOwnerOnline] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [bubbles, setBubbles] = useState<ChatBubble[]>([]);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaChunksRef = useRef<Blob[]>([]);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const playbackAudioRef = useRef<HTMLAudioElement | null>(null);
+  const voiceTransportRef = useRef(createVoiceTransport('http-turn'));
   const [form, setForm] = useState({
     name: '',
     email: '',
@@ -285,6 +305,8 @@ export default function ChatWidget() {
                 ownerOnline?: boolean;
                 suggestions?: string[];
                 liveChatAvailable?: boolean;
+                requireOtpForChat?: boolean;
+                voiceAgentAvailable?: boolean;
               })
             : null
         )
@@ -292,6 +314,11 @@ export default function ChatWidget() {
           if (cancelled || !data) return;
           setEnabled(data.enabled !== false);
           setOtpAvailable(data.liveChatAvailable !== false);
+          if (typeof data.requireOtpForChat === 'boolean') {
+            setRequireOtpForChat(data.requireOtpForChat);
+          }
+          setVoiceAgentAvailable(Boolean(data.voiceAgentAvailable));
+          if (!data.voiceAgentAvailable) setVoiceMode(false);
           setOwnerOnline(Boolean(data.ownerOnline));
           if (Array.isArray(data.suggestions)) setSuggestions(data.suggestions.slice(0, 5));
         })
@@ -303,9 +330,17 @@ export default function ChatWidget() {
     const id = window.setInterval(refreshStatus, pollMs);
     if (!turnstileSiteKey) {
       void fetch('/api/access-config')
-        .then(async (r) => (r.ok ? ((await r.json()) as { turnstileSiteKey?: string }) : null))
+        .then(async (r) =>
+          r.ok
+            ? ((await r.json()) as { turnstileSiteKey?: string; requireOtpForChat?: boolean })
+            : null
+        )
         .then((cfg) => {
-          if (!cancelled && cfg?.turnstileSiteKey) setTurnstileSiteKey(cfg.turnstileSiteKey);
+          if (cancelled || !cfg) return;
+          if (cfg.turnstileSiteKey) setTurnstileSiteKey(cfg.turnstileSiteKey);
+          if (typeof cfg.requireOtpForChat === 'boolean') {
+            setRequireOtpForChat(cfg.requireOtpForChat);
+          }
         })
         .catch(() => {});
     }
@@ -565,11 +600,160 @@ export default function ChatWidget() {
     setMode('welcome');
   };
 
+  const stopVoicePlayback = () => {
+    stopBrowserTts();
+    if (playbackAudioRef.current) {
+      try {
+        playbackAudioRef.current.pause();
+        playbackAudioRef.current.src = '';
+      } catch {
+        /* ignore */
+      }
+      playbackAudioRef.current = null;
+    }
+  };
+
+  const releaseMediaStream = () => {
+    mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
+    mediaStreamRef.current = null;
+    mediaRecorderRef.current = null;
+    mediaChunksRef.current = [];
+  };
+
+  useEffect(() => {
+    return () => {
+      stopVoicePlayback();
+      releaseMediaStream();
+    };
+  }, []);
+
+  const playVoiceReply = async (answerText: string, audioBase64?: string, audioMimeType?: string) => {
+    if (voiceMuted || shouldReduceMotion) return;
+    stopVoicePlayback();
+    if (audioBase64) {
+      const { audio, done } = playAudioBase64(audioBase64, audioMimeType || 'audio/mpeg');
+      playbackAudioRef.current = audio;
+      await done;
+      return;
+    }
+    await speakWithBrowserTts(answerText);
+  };
+
+  const submitVoiceBlob = async (blob: Blob) => {
+    if (!liveSession || !liveReceipt || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await voiceTransportRef.current.submitUtterance({
+        audio: blob,
+        sessionId: liveSession.sessionId,
+        receipt: liveReceipt,
+        visitorId: getOrCreateVisitorId(),
+      });
+      if (isSessionExpiredResponse(result.status || 200, result)) {
+        forceReverify(result.error || SESSION_EXPIRED_MESSAGE);
+        return;
+      }
+      if (!result.ok) throw new Error(result.error || 'Unable to process voice turn.');
+      if (typeof result.ownerOnline === 'boolean') setOwnerOnline(result.ownerOnline);
+      if (result.transcript) {
+        setBubbles((prev) => [
+          ...prev,
+          { id: `v-${Date.now()}`, role: 'visitor', text: result.transcript || '' },
+        ]);
+      }
+      const answerText = result.answer || 'No answer returned.';
+      setBubbles((prev) => [
+        ...prev,
+        {
+          id: `b-${Date.now()}`,
+          role: 'bot',
+          text: answerText,
+          sources: result.sources,
+        },
+      ]);
+      const nextChips =
+        Array.isArray(result.followUps) && result.followUps.length
+          ? result.followUps
+          : Array.isArray(result.suggestions)
+            ? result.suggestions
+            : [];
+      if (nextChips.length) setSuggestions(nextChips.slice(0, 4));
+      await playVoiceReply(answerText, result.audioBase64, result.audioMimeType);
+    } catch (err) {
+      setError(toUserFacingError(err, 'Voice chat unavailable.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const startVoiceRecording = async () => {
+    if (!voiceMode || busy || recording || !liveSession || !liveReceipt) return;
+    setError(null);
+    stopVoicePlayback();
+    try {
+      const access = await ensureMicrophoneAccess();
+      if (!access.ok) {
+        const help = getMicrophoneEnableHelp();
+        setError(`${help.title}: ${help.steps[0]}`);
+        return;
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
+      mediaChunksRef.current = [];
+      const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : MediaRecorder.isTypeSupported('audio/webm')
+          ? 'audio/webm'
+          : '';
+      const recorder = mime
+        ? new MediaRecorder(stream, { mimeType: mime })
+        : new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) mediaChunksRef.current.push(event.data);
+      };
+      recorder.onstop = () => {
+        const chunks = mediaChunksRef.current.slice();
+        releaseMediaStream();
+        setRecording(false);
+        const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
+        if (blob.size < 256) {
+          setError('Recording was too short. Hold the mic and speak a question.');
+          return;
+        }
+        void submitVoiceBlob(blob);
+      };
+      recorder.start();
+      setRecording(true);
+    } catch (err) {
+      releaseMediaStream();
+      setRecording(false);
+      setError(toUserFacingError(err, 'Microphone unavailable.'));
+    }
+  };
+
+  const stopVoiceRecording = () => {
+    const recorder = mediaRecorderRef.current;
+    if (!recorder || recorder.state === 'inactive') {
+      releaseMediaStream();
+      setRecording(false);
+      return;
+    }
+    try {
+      recorder.stop();
+    } catch {
+      releaseMediaStream();
+      setRecording(false);
+    }
+  };
+
   const askBot = async (question: string) => {
     const clean = question.trim();
     if (!clean || busy || !liveSession || !liveReceipt) return;
     setBusy(true);
     setError(null);
+    stopVoicePlayback();
     setBubbles((prev) => [...prev, { id: `v-${Date.now()}`, role: 'visitor', text: clean }]);
     setInput('');
     try {
@@ -609,15 +793,17 @@ export default function ChatWidget() {
           : [];
       if (nextChips.length) setSuggestions(nextChips.slice(0, 4));
       if (data.session) setLiveSession(data.session);
+      const answerText = data.answer || 'No answer returned.';
       setBubbles((prev) => [
         ...prev,
         {
           id: `b-${Date.now()}`,
           role: 'bot',
-          text: data.answer || 'No answer returned.',
+          text: answerText,
           sources: data.sources,
         },
       ]);
+      if (voiceMode) await playVoiceReply(answerText);
     } catch (err) {
       setError(toUserFacingError(err, 'Chat unavailable.'));
     } finally {
@@ -628,7 +814,7 @@ export default function ChatWidget() {
   const startRegistration = async (e: FormEvent) => {
     e.preventDefault();
     if (busy) return;
-    if (!otpAvailable) {
+    if (requireOtpForChat && !otpAvailable) {
       setError('Email verification is temporarily unavailable. Please use the contact form instead.');
       return;
     }
@@ -654,13 +840,27 @@ export default function ChatWidget() {
       });
       const data = (await res.json().catch(() => ({}))) as {
         error?: string;
+        status?: string;
         challengeId?: string;
         challengeToken?: string;
         maskedEmail?: string;
         ownerOnline?: boolean;
+        sessionReceipt?: string;
+        session?: LiveSession;
+        suggestions?: string[];
       };
       if (!res.ok) throw new Error(data.error || 'Unable to start verification.');
       if (typeof data.ownerOnline === 'boolean') setOwnerOnline(data.ownerOnline);
+      if (data.status === 'live' && data.sessionReceipt && data.session) {
+        enterVerifiedChat({
+          session: data.session,
+          receipt: data.sessionReceipt,
+          name: form.name.trim() || data.session.visitorName || 'there',
+          email: form.email.trim() || data.session.visitorEmail || '',
+          starterSuggestions: data.suggestions,
+        });
+        return;
+      }
       if (!data.challengeId || !data.challengeToken) throw new Error('OTP challenge missing.');
       setOtpStep({
         challengeId: data.challengeId,
@@ -870,6 +1070,45 @@ export default function ChatWidget() {
                   </div>
                 </div>
                 <div className="relative flex items-center gap-1.5 shrink-0">
+                  {mode === 'chat' && voiceAgentAvailable && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        stopVoicePlayback();
+                        if (recording) stopVoiceRecording();
+                        setVoiceMode((prev) => !prev);
+                      }}
+                      disabled={busy}
+                      className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1.5 text-[11px] font-medium transition-colors disabled:opacity-50 cursor-pointer ${
+                        voiceMode
+                          ? 'border-cyan-500/50 bg-cyan-500/15 text-cyan-200'
+                          : 'border-slate-700 text-slate-300 hover:border-cyan-500/40 hover:text-cyan-300'
+                      }`}
+                      aria-pressed={voiceMode}
+                      aria-label={voiceMode ? 'Switch to text chat' : 'Switch to voice agent'}
+                      title={voiceMode ? 'Voice on — tap for text' : 'Voice agent'}
+                    >
+                      <Mic className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">{voiceMode ? 'Voice' : 'Talk'}</span>
+                    </button>
+                  )}
+                  {mode === 'chat' && voiceMode && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setVoiceMuted((prev) => {
+                          const next = !prev;
+                          if (next) stopVoicePlayback();
+                          return next;
+                        });
+                      }}
+                      className="p-1.5 rounded-lg border border-slate-700 text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer"
+                      aria-label={voiceMuted ? 'Unmute voice replies' : 'Mute voice replies'}
+                      title={voiceMuted ? 'Unmute replies' : 'Mute replies'}
+                    >
+                      {voiceMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+                    </button>
+                  )}
                   {mode === 'chat' && liveSession && liveReceipt && (
                     <button
                       type="button"
@@ -999,11 +1238,6 @@ export default function ChatWidget() {
                         }`}
                       >
                         {b.text}
-                        {b.sources && b.sources.length > 0 && (
-                          <div className={`mt-1.5 text-[10px] font-mono ${muted}`}>
-                            Sources: {b.sources.join(' · ')}
-                          </div>
-                        )}
                       </div>
                     </div>
                   </div>
@@ -1022,7 +1256,9 @@ export default function ChatWidget() {
                   className={`p-3 border-t space-y-2 shrink-0 ${isLight ? 'border-slate-200' : 'border-slate-800'}`}
                 >
                   <p className={`text-[11px] ${muted}`}>
-                    Tell us who you are. We’ll email a 6-digit code to create your chat profile.
+                    {requireOtpForChat
+                      ? 'Tell us who you are. We’ll email a 6-digit code to create your chat profile.'
+                      : 'Tell us who you are to start chatting (email verification is currently off).'}
                   </p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <input
@@ -1083,10 +1319,16 @@ export default function ChatWidget() {
                     </button>
                     <button
                       type="submit"
-                      disabled={busy || !otpAvailable}
+                      disabled={busy || (requireOtpForChat && !otpAvailable)}
                       className="flex-[1.4] rounded-xl bg-cyan-500 text-slate-950 font-semibold text-xs py-2 disabled:opacity-50 cursor-pointer"
                     >
-                      {busy ? 'Sending code…' : 'Send OTP'}
+                      {busy
+                        ? requireOtpForChat
+                          ? 'Sending code…'
+                          : 'Starting…'
+                        : requireOtpForChat
+                          ? 'Send OTP'
+                          : 'Start chat'}
                     </button>
                   </div>
                 </form>
@@ -1139,7 +1381,7 @@ export default function ChatWidget() {
                       <button
                         key={s}
                         type="button"
-                        disabled={busy}
+                        disabled={busy || recording}
                         onClick={() => void askBot(s)}
                         className={`text-[10px] font-mono px-2 py-1 rounded-lg border cursor-pointer disabled:opacity-50 ${chipCls}`}
                       >
@@ -1150,16 +1392,55 @@ export default function ChatWidget() {
                   <div
                     className={`p-3 border-t shrink-0 ${isLight ? 'border-slate-200' : 'border-slate-800'}`}
                   >
-                    <ChatMessageComposer
-                      value={input}
-                      onChange={setInput}
-                      onSubmit={sendOwnerMessage}
-                      busy={busy}
-                      isLight={isLight}
-                      placeholder="Ask a concise question… (@mohammed for live note)"
-                      submitAriaLabel="Send question"
-                      minSubmitLength={2}
-                    />
+                    {voiceMode ? (
+                      <div className="space-y-2">
+                        <p className={`text-[11px] text-center ${muted}`}>
+                          {recording
+                            ? 'Listening… release to send'
+                            : busy
+                              ? 'Thinking…'
+                              : 'Hold the mic, ask a question, then release'}
+                        </p>
+                        <button
+                          type="button"
+                          disabled={busy && !recording}
+                          onPointerDown={(e) => {
+                            e.preventDefault();
+                            void startVoiceRecording();
+                          }}
+                          onPointerUp={() => stopVoiceRecording()}
+                          onPointerLeave={() => {
+                            if (recording) stopVoiceRecording();
+                          }}
+                          onPointerCancel={() => stopVoiceRecording()}
+                          className={`mx-auto flex h-14 w-14 items-center justify-center rounded-full border transition-colors cursor-pointer disabled:opacity-50 touch-none ${
+                            recording
+                              ? 'border-rose-400 bg-rose-500 text-white shadow-lg shadow-rose-900/40'
+                              : isLight
+                                ? 'border-sky-300 bg-sky-500 text-white'
+                                : 'border-cyan-400/50 bg-cyan-500 text-slate-950'
+                          }`}
+                          aria-label={recording ? 'Release to send voice question' : 'Hold to talk'}
+                        >
+                          {busy && !recording ? (
+                            <Loader2 className="w-6 h-6 animate-spin" />
+                          ) : (
+                            <Mic className="w-6 h-6" />
+                          )}
+                        </button>
+                      </div>
+                    ) : (
+                      <ChatMessageComposer
+                        value={input}
+                        onChange={setInput}
+                        onSubmit={sendOwnerMessage}
+                        busy={busy}
+                        isLight={isLight}
+                        placeholder="Ask a concise question… (@mohammed for live note)"
+                        submitAriaLabel="Send question"
+                        minSubmitLength={2}
+                      />
+                    )}
                   </div>
                 </>
               )}

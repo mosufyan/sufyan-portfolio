@@ -660,7 +660,10 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
           value: r.value,
           note: r.note,
         })),
-        strictOtpForAll: effective.strictOtpForAll,
+        strictOtpForAll: effective.requireOtpForCv,
+        requireOtpForChat: effective.requireOtpForChat,
+        requireOtpForContact: effective.requireOtpForContact,
+        requireOtpForCv: effective.requireOtpForCv,
         enableContactForm: effective.enableContactForm,
         enableCvDownloads: effective.enableCvDownloads,
         enablePwaInstall: effective.enablePwaInstall,
@@ -670,9 +673,11 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
         enablePortfolioChat: effective.enablePortfolioChat,
         enableLiveChat: effective.enableLiveChat,
         enableChatLlm: effective.enableChatLlm,
+        enableVoiceAgent: effective.enableVoiceAgent,
         chatMaxQuestionsPerVisitor: settings.chatMaxQuestionsPerVisitor,
         chatMaxLlmPerVisitor: settings.chatMaxLlmPerVisitor,
         chatMaxLiveSessionsPerVisitor: settings.chatMaxLiveSessionsPerVisitor,
+        chatMaxVoiceTurnsPerVisitor: settings.chatMaxVoiceTurnsPerVisitor,
         chatRateWindowHours: settings.chatRateWindowHours,
         chatLlmModel: settings.chatLlmModel,
         chatShowSuggestions: settings.chatShowSuggestions,
@@ -1124,7 +1129,7 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
         await syncOwnerPolicyToServer(currentUser, accessRules, clean);
         void recordAdminAudit(
           'settings_updated',
-          `Site settings saved (incident=${clean.incidentMode}, maintenance=${clean.maintenanceMode}, contact=${clean.enableContactForm}, cv=${clean.enableCvDownloads}, strictOtp=${clean.strictOtpForAll}, alerts=${clean.notifyOnNewInquiry}, chat=${clean.enablePortfolioChat}, llm=${clean.enableChatLlm}, maxQ=${clean.chatMaxQuestionsPerVisitor})`
+          `Site settings saved (incident=${clean.incidentMode}, maintenance=${clean.maintenanceMode}, contact=${clean.enableContactForm}, cv=${clean.enableCvDownloads}, otpChat=${clean.requireOtpForChat}, otpContact=${clean.requireOtpForContact}, otpCv=${clean.requireOtpForCv}, alerts=${clean.notifyOnNewInquiry}, chat=${clean.enablePortfolioChat}, llm=${clean.enableChatLlm}, maxQ=${clean.chatMaxQuestionsPerVisitor})`
         ).catch(() => {});
         if (previousIncident !== clean.incidentMode) {
           void recordAdminAudit(

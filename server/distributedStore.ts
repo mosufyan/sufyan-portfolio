@@ -35,6 +35,9 @@ export interface RuntimeOwnerPolicyPayload {
     note?: string;
   }>;
   strictOtpForAll: boolean;
+  requireOtpForChat: boolean;
+  requireOtpForContact: boolean;
+  requireOtpForCv: boolean;
   enableContactForm: boolean;
   enableCvDownloads: boolean;
   enablePwaInstall: boolean;
@@ -44,9 +47,11 @@ export interface RuntimeOwnerPolicyPayload {
   enablePortfolioChat: boolean;
   enableLiveChat: boolean;
   enableChatLlm: boolean;
+  enableVoiceAgent: boolean;
   chatMaxQuestionsPerVisitor: number;
   chatMaxLlmPerVisitor: number;
   chatMaxLiveSessionsPerVisitor: number;
+  chatMaxVoiceTurnsPerVisitor: number;
   chatRateWindowHours: number;
   chatLlmModel: string;
   chatShowSuggestions: boolean;
@@ -176,7 +181,26 @@ export async function loadDistributedOwnerPolicy(
     };
     return {
       rules: Array.isArray(raw.rules) ? raw.rules.slice(0, 200) : fallback.rules,
-      strictOtpForAll: Boolean(raw.strictOtpForAll),
+      requireOtpForChat:
+        typeof raw.requireOtpForChat === 'boolean'
+          ? raw.requireOtpForChat
+          : fallback.requireOtpForChat,
+      requireOtpForContact:
+        typeof raw.requireOtpForContact === 'boolean'
+          ? raw.requireOtpForContact
+          : fallback.requireOtpForContact,
+      requireOtpForCv:
+        typeof raw.requireOtpForCv === 'boolean'
+          ? raw.requireOtpForCv
+          : typeof raw.strictOtpForAll === 'boolean'
+            ? Boolean(raw.strictOtpForAll)
+            : fallback.requireOtpForCv,
+      strictOtpForAll:
+        typeof raw.requireOtpForCv === 'boolean'
+          ? raw.requireOtpForCv
+          : typeof raw.strictOtpForAll === 'boolean'
+            ? Boolean(raw.strictOtpForAll)
+            : fallback.strictOtpForAll,
       enableContactForm:
         typeof raw.enableContactForm === 'boolean' ? raw.enableContactForm : fallback.enableContactForm,
       enableCvDownloads:
@@ -200,6 +224,10 @@ export async function loadDistributedOwnerPolicy(
         typeof raw.enableLiveChat === 'boolean' ? raw.enableLiveChat : fallback.enableLiveChat,
       enableChatLlm:
         typeof raw.enableChatLlm === 'boolean' ? raw.enableChatLlm : fallback.enableChatLlm,
+      enableVoiceAgent:
+        typeof raw.enableVoiceAgent === 'boolean'
+          ? raw.enableVoiceAgent
+          : fallback.enableVoiceAgent,
       chatMaxQuestionsPerVisitor: clamp(
         raw.chatMaxQuestionsPerVisitor,
         fallback.chatMaxQuestionsPerVisitor,
@@ -210,6 +238,12 @@ export async function loadDistributedOwnerPolicy(
       chatMaxLiveSessionsPerVisitor: clamp(
         raw.chatMaxLiveSessionsPerVisitor,
         fallback.chatMaxLiveSessionsPerVisitor,
+        0,
+        50
+      ),
+      chatMaxVoiceTurnsPerVisitor: clamp(
+        raw.chatMaxVoiceTurnsPerVisitor,
+        fallback.chatMaxVoiceTurnsPerVisitor,
         0,
         50
       ),
@@ -263,7 +297,11 @@ export async function loadDistributedOwnerPolicy(
       enablePortfolioChat: false,
       enableLiveChat: false,
       enableChatLlm: false,
+      enableVoiceAgent: false,
       strictOtpForAll: true,
+      requireOtpForChat: true,
+      requireOtpForContact: true,
+      requireOtpForCv: true,
       notifyOnNewInquiry: fallback.notifyOnNewInquiry,
     };
   }

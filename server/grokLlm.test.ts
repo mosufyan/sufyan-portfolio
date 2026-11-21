@@ -1,11 +1,52 @@
 import { describe, expect, it, vi } from 'vitest';
-import { enrichAnswerWithGrokLlm, isGrokLlmConfigured } from './grokLlm.ts';
+import {
+  enrichAnswerWithGrokLlm,
+  isGrokLlmConfigured,
+  shouldSkipGrokEnrichment,
+} from './grokLlm.ts';
+import type { ChatAnswer } from './chatKnowledge.ts';
+
+function grounded(partial: Partial<ChatAnswer>): ChatAnswer {
+  return {
+    answer: 'Mohammed is a Software Engineer at Cisco.',
+    sources: ['Experience — Cisco'],
+    confidence: 0.8,
+    suggestions: [],
+    followUps: [],
+    offerLiveAgent: false,
+    retrieval: 'vector',
+    retrievalContext: 'Experience — Cisco: Software Engineer building security platforms. '.repeat(4),
+    ...partial,
+  };
+}
 
 describe('grokLlm', () => {
   it('reports configuration from api key presence', () => {
     expect(isGrokLlmConfigured('')).toBe(false);
     expect(isGrokLlmConfigured('short')).toBe(false);
     expect(isGrokLlmConfigured('grok_api_key_value')).toBe(true);
+  });
+
+  it('skips Grok on high-confidence factual hits, but not synthesis / work-detail asks', () => {
+    expect(shouldSkipGrokEnrichment('How can I contact him?', grounded({}))).toBe(true);
+    expect(
+      shouldSkipGrokEnrichment(
+        'Summarize his security experience in detail',
+        grounded({})
+      )
+    ).toBe(false);
+    expect(shouldSkipGrokEnrichment('What did he focus on at TCS?', grounded({}))).toBe(false);
+    expect(
+      shouldSkipGrokEnrichment(
+        'Cisco role?',
+        grounded({
+          answer: 'Cisco Systems Inc. · CURRENT ROLE · FULL-TIME. Tenure Aug 2026 — Present.',
+        })
+      )
+    ).toBe(false);
+    expect(
+      shouldSkipGrokEnrichment('Cisco role?', grounded({ confidence: 0.4, sources: [] }))
+    ).toBe(false);
   });
 
   it('falls back to grounded answers when Grok API is unavailable', async () => {

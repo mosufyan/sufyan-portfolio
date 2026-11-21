@@ -20,6 +20,7 @@ type VectorMeta = {
 
 let cachedIndex: Index | null | undefined;
 let syncPromise: Promise<{ ok: boolean; count: number; error?: string }> | null = null;
+let lastSyncedChunkCount = -1;
 
 export function isPortfolioVectorConfigured(
   url = process.env.UPSTASH_VECTOR_REST_URL || '',
@@ -44,6 +45,7 @@ function getIndex(): Index | null {
 export function resetPortfolioVectorClient(): void {
   cachedIndex = undefined;
   syncPromise = null;
+  lastSyncedChunkCount = -1;
 }
 
 function chunkToUpsert(chunk: KnowledgeChunk) {
@@ -93,6 +95,12 @@ export async function syncPortfolioVectors(): Promise<{
   const index = getIndex();
   if (!index) return { ok: false, count: 0, error: 'Upstash Vector not configured' };
 
+  const chunkCount = listKnowledgeChunks().length;
+  // Re-upsert when the local corpus grows/shrinks (e.g. after RAG expansion).
+  if (syncPromise && lastSyncedChunkCount !== -1 && lastSyncedChunkCount !== chunkCount) {
+    syncPromise = null;
+  }
+
   if (!syncPromise) {
     syncPromise = (async () => {
       try {
@@ -102,6 +110,7 @@ export async function syncPortfolioVectors(): Promise<{
         for (let i = 0; i < payload.length; i += 50) {
           await index.upsert(payload.slice(i, i + 50));
         }
+        lastSyncedChunkCount = payload.length;
         return { ok: true, count: payload.length };
       } catch (err) {
         syncPromise = null;
@@ -150,7 +159,7 @@ export async function answerPortfolioQuestionSmart(questionRaw: string): Promise
 
     const results = await index.query({
       data: question,
-      topK: 4,
+      topK: 8,
       includeMetadata: true,
     });
 
@@ -174,29 +183,82 @@ export async function answerPortfolioQuestionSmart(questionRaw: string): Promise
     }
 
     // Hybrid: merge strong keyword hits that vector missed (e.g. exact skill discipline).
-    const hybridRanked = [...reranked];
+    const hybridRanked = [...reranked]
+      // Recommendations naming an employer in a quote must not outrank experience.
+      .map((row) =>
+        row.chunk.id.startsWith('rec-') &&
+        /cisco|hcl|tcs|tata|experience|role|focus|secur/i.test(question)
+          ? { ...row, score: row.score * 0.35 }
+          : row
+      );
     const qLower = question.toLowerCase();
-    if (/cisco/.test(qLower)) {
-      const cisco = listKnowledgeChunks().find((c) => /cisco/.test(c.id) && c.id.startsWith('exp-'));
+    if (/before cisco|prior to cisco|previous (to cisco|employer)/i.test(qLower)) {
+      for (const row of hybridRanked) {
+        if (/cisco/.test(row.chunk.id)) row.score *= 0.25;
+        if (/hcl|tata/.test(row.chunk.id) && row.chunk.id.startsWith('exp-')) {
+          row.score = Math.max(row.score, best) + 0.2;
+        }
+      }
+      const prior =
+        listKnowledgeChunks().find((c) => c.id.includes('hcl') && c.id.includes('-role-1')) ||
+        listKnowledgeChunks().find((c) => c.id.includes('hcl') && c.id.startsWith('exp-'));
+      if (prior && !hybridRanked.some((r) => r.chunk.id === prior.id)) {
+        hybridRanked.push({ chunk: prior, score: Math.max(best, 0.7) + 0.2 });
+      }
+    } else if (/cisco/.test(qLower)) {
+      const cisco = listKnowledgeChunks().find(
+        (c) => c.id === 'exp-cisco-systems-inc-role-1' || c.id === 'exp-cisco-systems-inc'
+      );
       if (cisco && !hybridRanked.some((r) => r.chunk.id === cisco.id)) {
         hybridRanked.push({ chunk: cisco, score: Math.max(best, 0.7) + 0.05 });
       }
     }
+    if (/tcs|tata/.test(qLower)) {
+      let sawTcs = false;
+      for (const row of hybridRanked) {
+        if (row.chunk.id.startsWith('exp-tata')) {
+          row.score = Math.max(row.score, best) + 0.15;
+          sawTcs = true;
+        }
+      }
+      if (!sawTcs) {
+        const tcs =
+          listKnowledgeChunks().find((c) => c.id.startsWith('exp-tata') && c.id.includes('-role-')) ||
+          listKnowledgeChunks().find((c) => c.id.startsWith('exp-tata'));
+        if (tcs) hybridRanked.push({ chunk: tcs, score: Math.max(best, 0.7) + 0.15 });
+      }
+    }
     if (keyword.sources.length > 0 && keyword.confidence >= 0.45) {
-      for (const source of keyword.sources.slice(0, 2)) {
+      for (const source of keyword.sources.slice(0, 3)) {
         const match = listKnowledgeChunks().find((c) => c.topic === source);
-        if (match && !hybridRanked.some((r) => r.chunk.id === match.id)) {
-          hybridRanked.push({ chunk: match, score: Math.max(0.42, best - 0.04) });
+        if (!match) continue;
+        const boost = match.id.startsWith('exp-') ? 0.18 : 0.05;
+        const existing = hybridRanked.find((r) => r.chunk.id === match.id);
+        if (existing) {
+          existing.score = Math.max(existing.score, best) + boost;
+        } else {
+          hybridRanked.push({ chunk: match, score: Math.max(0.55, best) + boost });
         }
       }
     }
     hybridRanked.sort((a, b) => b.score - a.score);
 
+    // If vector still tops with a recommendation/testimonial but keyword has a
+    // strong experience/skills hit, trust keyword (prevents TCS→LinkedIn rec misses).
+    const topId = hybridRanked[0]?.chunk.id || '';
+    if (
+      topId.startsWith('rec-') &&
+      keyword.confidence >= 0.45 &&
+      keyword.sources.some((s) => /experience|skills|certification|award/i.test(s))
+    ) {
+      return { ...keyword, retrieval: 'keyword' };
+    }
+
     const confidence = Math.max(0.2, Math.min(0.98, best));
     return buildChatAnswerFromChunks(question, hybridRanked, {
       retrieval: hybridRanked.length > reranked.length ? 'hybrid' : 'vector',
       confidence,
-      topN: 3,
+      topN: 5,
     });
   } catch {
     return keyword;

@@ -313,7 +313,7 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
       const data = (await response.json().catch(() => ({}))) as {
         error?: string;
         ok?: boolean;
-        status?: 'otp_required';
+        status?: 'otp_required' | 'sent';
         provider?: string;
         challengeId?: string;
         challengeToken?: string;

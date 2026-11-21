@@ -23,20 +23,38 @@ export interface GrokLlmResult {
 
 const DEFAULT_BASE = 'https://api.x.ai/v1';
 const DEFAULT_MODEL = 'grok-4.3';
-const DEFAULT_TIMEOUT_MS = 12_000;
+const DEFAULT_TIMEOUT_MS = 8_000;
+
+/** Skip Grok when retrieval already has a strong factual match (faster chat). */
+export function shouldSkipGrokEnrichment(question: string, grounded: ChatAnswer): boolean {
+  const q = question.toLowerCase();
+  const wantsSynthesis =
+    /summar|overview|compare|walk me through|tell me about|explain|deep dive|in detail|focus|secur|zero.?trust|before cisco|what did/i.test(
+      q
+    );
+  if (wantsSynthesis) return false;
+  // Thin company/tenure banners need LLM phrasing even when confidence is high.
+  if (/^.{0,40}\b(CURRENT ROLE|FULL-TIME|Tenure)\b/i.test(grounded.answer) && grounded.answer.length < 220) {
+    return false;
+  }
+  const ctxLen = grounded.retrievalContext?.length || 0;
+  return grounded.confidence >= 0.72 && ctxLen >= 180 && grounded.sources.length > 0;
+}
 
 function buildMessages(question: string, grounded: ChatAnswer): Array<{ role: string; content: string }> {
   const context =
     grounded.sources.length > 0
-      ? (grounded.retrievalContext || grounded.answer)
+      ? (grounded.retrievalContext || grounded.answer).slice(0, 7000)
       : 'No high-confidence portfolio facts matched. Say you are unsure and suggest live chat or the contact form.';
   return [
     {
       role: 'system',
       content: [
         'You are the portfolio assistant for Mohammed Sufyan (mohammedsufyan.com).',
-        'Reply with a concise answer only: 1–3 short sentences of plain text (max ~80 words).',
-        'Use ONLY the provided portfolio context. Do not invent employers, titles, dates, or certifications.',
+        'Answer in plain text: 2–5 sentences (or a short bullet list when listing roles/certs), max ~160 words.',
+        'Use ONLY the provided portfolio context. Prefer concrete employers, titles, dates, tech, and outcomes from the context.',
+        'Do not invent employers, titles, dates, or certifications.',
+        'Do not mention retrieval sources, chunk IDs, or “according to the context”.',
         'Do not list follow-up questions in the answer body — the UI adds those separately.',
         'If the context is insufficient, say so briefly and invite the visitor to ask Mohammed in chat.',
       ].join(' '),
@@ -93,7 +111,7 @@ export async function enrichAnswerWithGrokLlm(
         model: modelId,
         messages: buildMessages(question, grounded),
         temperature: 0.2,
-        max_tokens: 220,
+        max_tokens: 420,
         stream: false,
       }),
       signal: controller.signal,
@@ -125,7 +143,7 @@ export async function enrichAnswerWithGrokLlm(
     return {
       answer: {
         ...grounded,
-        answer: text.slice(0, 1800),
+        answer: text.slice(0, 2800),
         confidence: Math.max(grounded.confidence, 0.55),
       },
       provider: 'grok',

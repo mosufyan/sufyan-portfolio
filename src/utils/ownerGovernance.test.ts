@@ -63,9 +63,13 @@ describe('ownerGovernance utilities', () => {
     expect(effective.enableContactForm).toBe(false);
     expect(effective.enableCvDownloads).toBe(false);
     expect(effective.strictOtpForAll).toBe(true);
+    expect(effective.requireOtpForChat).toBe(true);
+    expect(effective.requireOtpForContact).toBe(true);
+    expect(effective.requireOtpForCv).toBe(true);
     expect(effective.enablePortfolioChat).toBe(false);
     expect(effective.enableLiveChat).toBe(false);
     expect(effective.enableChatLlm).toBe(false);
+    expect(effective.enableVoiceAgent).toBe(false);
     expect(effective.enableAnnouncements).toBe(false);
     expect(effective.enableResumeStudio).toBe(false);
     expect(effective.enableDigitalCard).toBe(false);
@@ -113,9 +117,34 @@ describe('ownerGovernance utilities', () => {
   it('defaults chat caps to ten questions per visitor', () => {
     const sanitized = sanitizePortfolioSettings({});
     expect(sanitized.chatMaxQuestionsPerVisitor).toBe(10);
+    expect(sanitized.chatMaxVoiceTurnsPerVisitor).toBe(8);
     expect(sanitized.enablePortfolioChat).toBe(true);
     expect(sanitized.enableLiveChat).toBe(true);
     expect(sanitized.enableChatLlm).toBe(false);
+    expect(sanitized.enableVoiceAgent).toBe(false);
+  });
+
+  it('defaults OTP require toggles on and migrates strictOtpForAll into requireOtpForCv', () => {
+    const defaults = sanitizePortfolioSettings({});
+    expect(defaults.requireOtpForChat).toBe(true);
+    expect(defaults.requireOtpForContact).toBe(true);
+    expect(defaults.requireOtpForCv).toBe(true);
+    expect(defaults.strictOtpForAll).toBe(true);
+
+    const fromLegacy = sanitizePortfolioSettings({ strictOtpForAll: false });
+    expect(fromLegacy.requireOtpForCv).toBe(false);
+    expect(fromLegacy.strictOtpForAll).toBe(false);
+
+    const explicit = sanitizePortfolioSettings({
+      requireOtpForChat: false,
+      requireOtpForContact: false,
+      requireOtpForCv: true,
+      strictOtpForAll: false,
+    });
+    expect(explicit.requireOtpForChat).toBe(false);
+    expect(explicit.requireOtpForContact).toBe(false);
+    expect(explicit.requireOtpForCv).toBe(true);
+    expect(explicit.strictOtpForAll).toBe(true);
   });
 
   it('defaults alert routing with urgent live chat and digest inquiries', () => {

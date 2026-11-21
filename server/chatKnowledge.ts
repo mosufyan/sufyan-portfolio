@@ -3,10 +3,13 @@
  * No external LLM required; optional later via CHAT_LLM_URL.
  */
 import {
+  ANNOUNCEMENTS,
   AWARDS_BY_ORGANIZATION,
   CERTIFICATION_CATEGORIES,
   EDUCATION,
+  LINKEDIN_RECOMMENDATIONS,
   PERSONAL_INFO,
+  STATS,
   TECHNICAL_DISCIPLINES,
   WORK_EXPERIENCE,
 } from '../src/data/portfolioData.ts';
@@ -135,52 +138,176 @@ function slug(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 48);
 }
 
+/** Common employer abbreviations visitors use in chat. */
+function employerAliasKeywords(company: string): string[] {
+  const c = company.toLowerCase();
+  if (/tata|consultancy/.test(c)) return ['tcs', 'tata'];
+  if (/hcl/.test(c)) return ['hcl', 'hcltech'];
+  if (/cisco/.test(c)) return ['cisco'];
+  return [];
+}
+
+function expandQueryAliases(tokens: string[]): string[] {
+  const out = new Set(tokens);
+  for (const t of tokens) {
+    if (t === 'tcs') {
+      out.add('tata');
+      out.add('consultancy');
+    }
+    if (t === 'hcltech') out.add('hcl');
+  }
+  return [...out];
+}
+
 function buildKnowledgeBase(): KnowledgeChunk[] {
   const chunks: KnowledgeChunk[] = [
     {
       id: 'about',
       topic: 'About Mohammed Sufyan',
-      text: `${PERSONAL_INFO.name} is a ${PERSONAL_INFO.title}. ${PERSONAL_INFO.tagline} Location: ${PERSONAL_INFO.location}. ${PERSONAL_INFO.openTo}`,
-      keywords: ['about', 'who', 'sufyan', 'mohammed', 'bio', 'profile', 'introduction', 'background'],
+      text: [
+        `${PERSONAL_INFO.name} is a ${PERSONAL_INFO.title}.`,
+        PERSONAL_INFO.tagline,
+        `Location: ${PERSONAL_INFO.location}.`,
+        `Experience: ${PERSONAL_INFO.experienceYears} years; certifications: ${PERSONAL_INFO.certificationsCount}; academic CGPA: ${PERSONAL_INFO.academicCgpa}.`,
+        PERSONAL_INFO.openTo,
+      ].join(' '),
+      keywords: [
+        'about',
+        'who',
+        'sufyan',
+        'mohammed',
+        'bio',
+        'profile',
+        'introduction',
+        'background',
+        'years',
+        'experience',
+      ],
     },
     {
       id: 'contact',
       topic: 'Contact',
-      text: `Email ${PERSONAL_INFO.email}. LinkedIn ${PERSONAL_INFO.linkedin}. Prefer the contact form on this portfolio for inquiries; live chat is available when requested after email OTP verification.`,
-      keywords: ['contact', 'email', 'reach', 'linkedin', 'message', 'hire', 'recruit'],
+      text: [
+        `Email ${PERSONAL_INFO.email}.`,
+        `LinkedIn ${PERSONAL_INFO.linkedin}.`,
+        'Prefer the contact form on this portfolio for inquiries.',
+        'Portfolio live chat is available for verified visitors.',
+        'CV / resume can be requested through the CV studio on the site.',
+      ].join(' '),
+      keywords: [
+        'contact',
+        'email',
+        'reach',
+        'linkedin',
+        'message',
+        'hire',
+        'recruit',
+        'cv',
+        'resume',
+      ],
     },
     {
       id: 'philosophy',
       topic: 'Engineering philosophy',
-      text: `${PERSONAL_INFO.philosophy.quote1} ${PERSONAL_INFO.philosophy.body}`,
-      keywords: ['philosophy', 'approach', 'principles', 'zero trust', 'telemetry', 'trustworthy'],
+      text: [
+        PERSONAL_INFO.philosophy.quote1,
+        PERSONAL_INFO.philosophy.body,
+        `Poem: ${PERSONAL_INFO.philosophy.poem} — ${PERSONAL_INFO.philosophy.poemAuthor}`,
+      ].join(' '),
+      keywords: [
+        'philosophy',
+        'approach',
+        'principles',
+        'zero trust',
+        'telemetry',
+        'trustworthy',
+        'poem',
+      ],
     },
     {
       id: 'open-to',
       topic: 'Open to roles',
       text: PERSONAL_INFO.openTo,
-      keywords: ['open', 'roles', 'hiring', 'job', 'opportunity', 'san jose', 'hybrid', 'available'],
+      keywords: [
+        'open',
+        'roles',
+        'hiring',
+        'job',
+        'opportunity',
+        'san jose',
+        'hybrid',
+        'available',
+        'advisory',
+      ],
+    },
+    {
+      id: 'stats',
+      topic: 'Career highlights / stats',
+      text: STATS.map((s) => `${s.value}${s.fraction || ''} ${s.label}${s.sublabel ? ` (${s.sublabel})` : ''}`).join(
+        ' · '
+      ),
+      keywords: tokenize(
+        `stats highlights years certifications awards cgpa ${STATS.map((s) => `${s.label} ${s.sublabel || ''}`).join(' ')}`
+      ),
     },
   ];
 
   for (const company of WORK_EXPERIENCE) {
-    const roleBits = company.roles
+    // One overview chunk per company (all roles). Lead with role work so
+    // concise answers are not just the company/tenure header.
+    const overviewRoles = company.roles
       .map((r) => {
-        const highlight = (r.highlights || []).slice(0, 2).join(' ');
-        return `${r.role} (${r.period})${highlight ? `: ${highlight}` : ''}`;
+        const bits = [
+          `${r.role} (${r.period})`,
+          r.domain ? `Domain: ${r.domain}` : '',
+          r.proofMetric ? `Proof: ${r.proofMetric}` : '',
+          r.recognitionBadge ? `Recognition: ${r.recognitionBadge}` : '',
+          (r.highlights || []).join(' '),
+          r.technologies?.length ? `Technologies: ${r.technologies.join(', ')}` : '',
+        ].filter(Boolean);
+        return bits.join(' ');
       })
-      .join(' ');
+      .join('\n\n');
+    const employerAliases = employerAliasKeywords(company.company);
     chunks.push({
       id: `exp-${slug(company.company)}`,
       topic: `Experience — ${company.company}`,
-      // Lead with roles/highlights so concise answers are not just tenure headers.
-      text: `${roleBits} At ${company.company}${company.location ? ` (${company.location})` : ''}; tenure ${company.tenure}.`.slice(
-        0,
-        1600
-      ),
+      text: [
+        overviewRoles,
+        `Employer: ${company.company}${company.companyTag ? ` · ${company.companyTag}` : ''}.`,
+        `Tenure ${company.tenure}${company.location ? `; location ${company.location}` : ''}.`,
+      ]
+        .join(' ')
+        .slice(0, 12000),
       keywords: tokenize(
-        `${company.company} ${company.roles.map((r) => `${r.role} ${(r.highlights || []).join(' ')}`).join(' ')} experience career`
+        `${company.company} ${employerAliases.join(' ')} ${company.roles
+          .map((r) => `${r.role} ${r.domain || ''} ${(r.highlights || []).join(' ')} ${(r.technologies || []).join(' ')}`)
+          .join(' ')} experience career`
       ),
+    });
+
+    // Per-role chunks (including single-role employers like Cisco).
+    company.roles.forEach((role, index) => {
+      chunks.push({
+        id: `exp-${slug(company.company)}-role-${index + 1}`,
+        topic: `Experience — ${company.company} · ${role.role}`,
+        text: [
+          `${role.role} at ${company.company} (${role.period}).`,
+          role.location ? `Location: ${role.location}.` : '',
+          role.employmentType ? `Employment: ${role.employmentType}.` : '',
+          role.domain ? `Domain: ${role.domain}.` : '',
+          role.proofMetric ? `Proof metric: ${role.proofMetric}.` : '',
+          role.recognitionBadge ? `Recognition: ${role.recognitionBadge}.` : '',
+          (role.highlights || []).join(' '),
+          role.technologies?.length ? `Technologies: ${role.technologies.join(', ')}.` : '',
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .slice(0, 8000),
+        keywords: tokenize(
+          `${company.company} ${employerAliases.join(' ')} ${role.role} ${role.domain || ''} ${(role.highlights || []).join(' ')} ${(role.technologies || []).join(' ')}`
+        ),
+      });
     });
   }
 
@@ -188,7 +315,15 @@ function buildKnowledgeBase(): KnowledgeChunk[] {
     chunks.push({
       id: `skill-${discipline.id}`,
       topic: `Skills — ${discipline.title}`,
-      text: `${discipline.title} (maturity ${discipline.level}%): ${(discipline.technologies || []).join(', ')}. ${discipline.description || ''}`,
+      text: [
+        `${discipline.title} (maturity ${discipline.level}%).`,
+        discipline.description || '',
+        (discipline.technologies || []).length
+          ? `Technologies: ${(discipline.technologies || []).join(', ')}.`
+          : '',
+      ]
+        .filter(Boolean)
+        .join(' '),
       keywords: tokenize(
         `${discipline.title} ${(discipline.technologies || []).join(' ')} skills tech stack`
       ),
@@ -196,24 +331,49 @@ function buildKnowledgeBase(): KnowledgeChunk[] {
   }
 
   for (const cat of CERTIFICATION_CATEGORIES) {
-    const names = cat.certs.map((c) => c.title).join('; ');
+    const detail = cat.certs
+      .map((c) => {
+        const parts = [
+          c.title,
+          c.issuer ? `(${c.issuer}` : '',
+          c.issueDate ? `, ${c.issueDate}` : '',
+          c.issuer ? ')' : '',
+          c.skills?.length ? ` — skills: ${c.skills.join(', ')}` : '',
+          c.credentialUrl ? ` — credential: ${c.credentialUrl}` : '',
+        ];
+        return parts.join('');
+      })
+      .join('; ');
     chunks.push({
       id: `cert-${cat.id}`,
       topic: `Certifications — ${cat.name}`,
-      text: `${cat.name}: ${names}`,
+      text: `${cat.name}: ${detail}`.slice(0, 10000),
       keywords: tokenize(
-        `${cat.name} ${names} certification certifications certificate certificates cert certs certified license accredited credential credentials aws azure gcp hold holds`
+        `${cat.name} ${cat.certs.map((c) => `${c.title} ${c.issuer} ${(c.skills || []).join(' ')}`).join(' ')} certification certifications certificate certificates cert certs certified license accredited credential credentials aws azure gcp hold holds`
       ),
     });
   }
 
   for (const org of AWARDS_BY_ORGANIZATION) {
-    const awardNames = org.awards.map((a) => a.title).join('; ');
+    const detail = org.awards
+      .map((a) =>
+        [
+          `${a.title} (${a.date})`,
+          a.category ? `· ${a.category}` : '',
+          a.description ? `— ${a.description}` : '',
+          a.associatedWith ? `Associated with ${a.associatedWith}.` : '',
+        ]
+          .filter(Boolean)
+          .join(' ')
+      )
+      .join(' ');
     chunks.push({
       id: `award-${slug(org.organization)}`,
       topic: `Awards — ${org.organization}`,
-      text: `${org.organization}: ${awardNames}`,
-      keywords: tokenize(`${org.organization} ${awardNames} award honor recognition`),
+      text: `${org.organization}${org.tagline ? ` · ${org.tagline}` : ''}: ${detail}`.slice(0, 10000),
+      keywords: tokenize(
+        `${org.organization} ${org.awards.map((a) => `${a.title} ${a.category} ${a.description}`).join(' ')} award honor recognition`
+      ),
     });
   }
 
@@ -221,8 +381,45 @@ function buildKnowledgeBase(): KnowledgeChunk[] {
     chunks.push({
       id: `edu-${slug(edu.institution)}`,
       topic: `Education — ${edu.institution}`,
-      text: `${edu.degree} in ${edu.field} at ${edu.institution} (${edu.period}). Grade: ${edu.grade}. ${edu.details || ''}`,
-      keywords: tokenize(`${edu.institution} ${edu.degree} ${edu.field} education university college cgpa`),
+      text: [
+        `${edu.degree} in ${edu.field} at ${edu.institution} (${edu.period}).`,
+        `Grade: ${edu.grade}.`,
+        edu.location ? `Location: ${edu.location}.` : '',
+        edu.details || '',
+      ]
+        .filter(Boolean)
+        .join(' '),
+      keywords: tokenize(
+        `${edu.institution} ${edu.degree} ${edu.field} education university college cgpa ${edu.grade}`
+      ),
+    });
+  }
+
+  for (const ann of ANNOUNCEMENTS) {
+    chunks.push({
+      id: `ann-${ann.id}`,
+      topic: `Announcement — ${ann.title}`,
+      text: `${ann.date}: ${ann.title}. ${ann.summary}`,
+      keywords: tokenize(`${ann.title} ${ann.summary} announcement news update`),
+    });
+  }
+
+  for (const rec of LINKEDIN_RECOMMENDATIONS) {
+    chunks.push({
+      id: `rec-${rec.id}`,
+      topic: `Recommendation — ${rec.author}`,
+      text: [
+        `${rec.author}, ${rec.role} (${rec.date}).`,
+        `Relationship: ${rec.relationship} (${rec.relationshipType}).`,
+        rec.featured ? 'Featured recommendation.' : '',
+        rec.quote,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .slice(0, 6000),
+      keywords: tokenize(
+        `${rec.author} ${rec.role} ${rec.relationship} recommendation testimonial linkedin ${rec.quote}`
+      ),
     });
   }
 
@@ -388,6 +585,7 @@ function chunkFamily(chunk: KnowledgeChunk): ChatIntent | 'general' {
   if (chunk.id.startsWith('award-')) return 'awards';
   if (chunk.id.startsWith('edu-')) return 'education';
   if (chunk.id.startsWith('exp-')) return 'experience';
+  if (chunk.id.startsWith('rec-')) return 'general';
   if (chunk.id === 'contact') return 'contact';
   if (chunk.id === 'open-to') return 'open-to';
   if (chunk.id === 'philosophy') return 'philosophy';
@@ -402,10 +600,11 @@ function scoreChunk(
   questionLower: string
 ): number {
   if (tokens.length === 0 && intent === 'general') return 0;
+  const expanded = expandQueryAliases(tokens);
   const keywordSet = new Set(chunk.keywords.flatMap((k) => tokenVariants(k)));
   const hayWords = wordSet(`${chunk.topic} ${chunk.text} ${chunk.keywords.join(' ')}`);
   let score = 0;
-  for (const token of tokens) {
+  for (const token of expanded) {
     const variants = tokenVariants(token);
     if (variants.some((v) => keywordSet.has(v))) score += 3;
     else if (variants.some((v) => hayWords.has(v))) score += 1.2;
@@ -418,6 +617,15 @@ function scoreChunk(
     else if (family === 'experience' && intent === 'skills') score -= 8;
     else if (family === 'about' && intent === 'contact') score -= 6;
     else if (family !== intent && score > 0) score -= 4;
+  }
+
+  // Recommendations often name employers in quotes — never let them beat experience/skills.
+  if (chunk.id.startsWith('rec-')) {
+    if (intent === 'experience' || intent === 'skills' || intent === 'certifications') {
+      score -= 18;
+    } else {
+      score -= 6;
+    }
   }
 
   // Within skills, prefer the discipline that actually names cloud/security/etc.
@@ -433,28 +641,56 @@ function scoreChunk(
     }
   }
 
-  if (
-    family === 'experience' &&
-    /cisco/.test(chunk.id) &&
-    (/cisco/.test(questionLower) || /current role/.test(questionLower))
-  ) {
-    score += 8;
+  if (family === 'experience') {
+    const wantsWorkDetail =
+      /focus|secur|zero.?trust|project atlas|highlight|accomplish|built|build|work(ed)? on|did he do|what did/i.test(
+        questionLower
+      );
+    if (wantsWorkDetail && /-role-/.test(chunk.id)) score += 6;
+    if (/tcs|tata/.test(questionLower) && /tata|tcs/.test(chunk.id)) score += 10;
+    if (/hcl/.test(questionLower) && /hcl/.test(chunk.id)) score += 10;
+    if (
+      /cisco/.test(chunk.id) &&
+      (/cisco/.test(questionLower) || /current role/.test(questionLower))
+    ) {
+      score += 8;
+    }
+    // "before Cisco" / prior roles → prefer HCL/TCS, not the current Cisco shell.
+    if (/before cisco|prior to cisco|previous (to cisco|role|employer)/i.test(questionLower)) {
+      if (/cisco/.test(chunk.id)) score -= 12;
+      if (/hcl|tata/.test(chunk.id)) score += 10;
+    }
   }
 
   return score;
 }
 
-/** Keep answers short: prefer 1–2 sentences, hard-cap length. */
+/** Keep answers short: prefer a few content sentences, hard-cap length. */
 export function makeConciseAnswer(raw: string, maxChars = 360): string {
   const cleaned = raw.replace(/\s+/g, ' ').trim();
   if (!cleaned) return cleaned;
   const sentences = cleaned.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [cleaned];
+  // Skip pure employer/tenure banners when richer sentences follow.
+  const contentSentences = sentences.filter((s, i) => {
+    if (sentences.length <= 1) return true;
+    const t = s.trim();
+    if (/^Employer:/i.test(t)) return false;
+    if (/^Tenure\b/i.test(t)) return false;
+    if (i === 0 && /\bCURRENT ROLE\b|\bFULL-TIME\b.*\bMOS\b/i.test(t) && t.length < 90) {
+      return false;
+    }
+    return true;
+  });
+  const use = contentSentences.length > 0 ? contentSentences : sentences;
   let out = '';
-  for (const sentence of sentences) {
+  for (let i = 0; i < use.length; i++) {
+    const sentence = use[i];
     const next = `${out}${sentence}`.trim();
     if (out && next.length > maxChars) break;
     out = next;
-    if (out.length >= 120 && sentences.indexOf(sentence) >= 1) break;
+    // Allow more substance for experience/skills (was stopping ~120 chars / 2 sentences).
+    if (out.length >= 280 && i >= 1) break;
+    if (out.length >= 420 && i >= 0) break;
     if (out.length >= maxChars) break;
   }
   if (out.length > maxChars) {
@@ -547,7 +783,7 @@ export function buildChatAnswerFromChunks(
   const questionLower = question.toLowerCase();
   const intent = detectIntent(questionLower);
   const tokens = tokenizeQuery(question);
-  const topN = options?.topN ?? 2;
+  const topN = options?.topN ?? 4;
   const top = ranked.filter((row) => row.score > 0).slice(0, Math.max(1, topN));
   const bestScore = top[0]?.score ?? 0;
   const confidence =
@@ -580,11 +816,11 @@ export function buildChatAnswerFromChunks(
     usedChunks[1] && confidence > 0.45 && (retrieval !== 'keyword' || sameFamily)
       ? ` ${makeConciseAnswer(usedChunks[1].text, 140)}`
       : '';
-  const answer = makeConciseAnswer(`${primary}${secondary}`, 360);
+  const answer = makeConciseAnswer(`${primary}${secondary}`, 720);
   const retrievalContext = usedChunks
     .map((chunk) => `${chunk.topic}: ${chunk.text}`)
     .join('\n\n')
-    .slice(0, 2200);
+    .slice(0, 8000);
   const followUps = followUpsForChunks(usedChunks, question, intent);
 
   return {
@@ -611,7 +847,7 @@ export function answerPortfolioQuestion(questionRaw: string): ChatAnswer {
     .filter((row) => row.score > 0)
     .sort((a, b) => b.score - a.score);
 
-  return buildChatAnswerFromChunks(question, ranked, { retrieval: 'keyword', topN: 2 });
+  return buildChatAnswerFromChunks(question, ranked, { retrieval: 'keyword', topN: 4 });
 }
 
 export function listChatSuggestions(): string[] {
