@@ -12,7 +12,8 @@ interface PhilosophyProps {
 }
 
 export default function Philosophy({ readingMode = 'deep' }: PhilosophyProps) {
-  const { isLight } = useTheme();
+  const { isLight, accent } = useTheme();
+  const isAmber = accent === 'amber';
   const shouldReduceMotion = useReducedMotion();
   const pillars = [
     'Security Data Platforms',
@@ -22,17 +23,74 @@ export default function Philosophy({ readingMode = 'deep' }: PhilosophyProps) {
     'DevOps & Observability',
   ];
 
+  // Explicit accent classes — remaps miss Lucide SVG + some sky utilities in this card.
+  const labelAccent = isAmber
+    ? isLight
+      ? 'text-amber-800'
+      : 'text-amber-300'
+    : isLight
+      ? 'text-sky-700'
+      : 'text-cyan-300';
+  const iconAccent = isAmber
+    ? isLight
+      ? 'text-amber-700'
+      : 'text-amber-400'
+    : isLight
+      ? 'text-sky-700'
+      : 'text-cyan-400';
+  const indexAccent = isAmber
+    ? isLight
+      ? 'text-amber-700'
+      : 'text-amber-400'
+    : 'text-cyan-400';
+  const creedCardShell = isAmber
+    ? isLight
+      ? 'border border-amber-300 hover:border-amber-400 bg-gradient-to-br from-amber-50 via-white to-slate-50'
+      : 'border border-amber-500/30 hover:border-amber-400/40 bg-gradient-to-br from-[#1a140c] via-[#16100a] to-[#0c0a08]'
+    : isLight
+      ? 'border border-sky-200 hover:border-sky-300 bg-gradient-to-br from-sky-50 via-white to-slate-50'
+      : 'border border-cyan-500/30 hover:border-cyan-400/40 bg-gradient-to-br from-[#0c1524] via-[#0d1226] to-[#080b18]';
+  const creedGlow = isAmber
+    ? isLight
+      ? 'bg-amber-400/15'
+      : 'bg-amber-500/10'
+    : isLight
+      ? 'bg-sky-400/15'
+      : 'bg-cyan-500/10';
+  const creedDivider = isAmber
+    ? isLight
+      ? 'border-t border-amber-200'
+      : 'border-t border-amber-500/30'
+    : isLight
+      ? 'border-t border-sky-200'
+      : 'border-t border-cyan-500/30';
+  const creedBadge = isAmber
+    ? isLight
+      ? 'bg-amber-100 border border-amber-200 text-amber-800'
+      : 'bg-amber-500/20 border border-amber-500/30 text-amber-300'
+    : isLight
+      ? 'bg-sky-100 border border-sky-200 text-sky-700'
+      : 'bg-cyan-500/20 border border-cyan-500/30 text-cyan-300';
+  const ambientOrb = isAmber ? 'bg-amber-500/8' : 'bg-cyan-500/8';
+  const eyebrow = isAmber
+    ? isLight
+      ? 'text-amber-700'
+      : 'text-amber-400'
+    : 'text-cyan-400';
+
   return (
     <section id="philosophy" className="py-16 lg:py-24 2xl:py-28 border-b border-slate-800/80 bg-[#06080d] relative overflow-hidden">
       <SectionScanLine />
       <div
         aria-hidden="true"
-        className="ambient-orb pointer-events-none absolute -left-24 top-16 h-64 w-64 rounded-full bg-cyan-500/8 blur-3xl print:hidden"
+        className={`ambient-orb pointer-events-none absolute -left-24 top-16 h-64 w-64 rounded-full blur-3xl print:hidden ${ambientOrb}`}
       />
       <div className="page-shell">
         <Reveal className="mb-10 lg:mb-12">
           <HeaderSpotlight>
-            <div className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-cyan-400 tracking-wider uppercase mb-2">
+            <div
+              className={`inline-flex items-center gap-1.5 text-xs font-mono font-medium tracking-wider uppercase mb-2 ${eyebrow}`}
+            >
               <Compass className="w-3.5 h-3.5" />
               <span className="text-shimmer">ENGINEERING THESIS</span>
             </div>
@@ -91,7 +149,7 @@ export default function Philosophy({ readingMode = 'deep' }: PhilosophyProps) {
                     transition={{ duration: 0.3, delay: 0.05 + idx * 0.04, ease: EASE_OUT_EXPO }}
                     className="flex items-baseline gap-2.5 text-xs sm:text-sm font-mono py-1 border-b border-slate-800/50"
                   >
-                    <span className="text-[11px] text-cyan-400 tabular-nums">0{idx + 1}.</span>
+                    <span className={`text-[11px] tabular-nums ${indexAccent}`}>0{idx + 1}.</span>
                     <span className={isLight ? 'text-slate-800 font-medium' : 'text-slate-200'}>
                       {pillar}
                     </span>
@@ -107,28 +165,16 @@ export default function Philosophy({ readingMode = 'deep' }: PhilosophyProps) {
             viewport={{ once: true, amount: 0.12 }}
             transition={{ duration: 0.55, delay: 0.1, ease: EASE_OUT_EXPO }}
             whileHover={shouldReduceMotion ? undefined : { y: -3 }}
-            className={`lg:col-span-5 print:col-span-5 rounded-2xl p-6 sm:p-8 flex flex-col justify-between shadow-2xl relative overflow-hidden group transition-colors print:break-inside-avoid ${
-              isLight
-                ? 'border border-sky-200 hover:border-sky-300 bg-gradient-to-br from-sky-50 via-white to-slate-50'
-                : 'border border-cyan-500/30 hover:border-cyan-400/40 bg-gradient-to-br from-[#0c1524] via-[#0d1226] to-[#080b18]'
-            }`}
+            className={`lg:col-span-5 print:col-span-5 rounded-2xl p-6 sm:p-8 flex flex-col justify-between shadow-2xl relative overflow-hidden group transition-colors print:break-inside-avoid ${creedCardShell}`}
           >
             <div
-              className={`absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 rounded-full blur-3xl pointer-events-none group-hover:scale-110 transition-all duration-700 print:hidden ${
-                isLight ? 'bg-sky-400/15' : 'bg-cyan-500/10'
-              }`}
+              className={`absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 rounded-full blur-3xl pointer-events-none group-hover:scale-110 transition-all duration-700 print:hidden ${creedGlow}`}
             />
 
             <div className="relative z-10">
               <div className="flex items-center justify-between pb-6">
-                <Quote
-                  className={`w-8 h-8 ${isLight ? 'text-sky-700' : 'text-cyan-400'}`}
-                />
-                <span
-                  className={`text-[10px] font-mono uppercase tracking-widest ${
-                    isLight ? 'text-sky-700' : 'text-cyan-300'
-                  }`}
-                >
+                <Quote className={`w-8 h-8 ${iconAccent}`} />
+                <span className={`text-[10px] font-mono uppercase tracking-widest ${labelAccent}`}>
                   GUIDING CREED
                 </span>
               </div>
@@ -148,11 +194,7 @@ export default function Philosophy({ readingMode = 'deep' }: PhilosophyProps) {
               </blockquote>
             </div>
 
-            <div
-              className={`relative z-10 pt-8 mt-8 flex items-center justify-between ${
-                isLight ? 'border-t border-sky-200' : 'border-t border-cyan-500/30'
-              }`}
-            >
+            <div className={`relative z-10 pt-8 mt-8 flex items-center justify-between ${creedDivider}`}>
               <div>
                 <div
                   className={`text-sm font-display font-semibold tracking-wide ${
@@ -161,17 +203,11 @@ export default function Philosophy({ readingMode = 'deep' }: PhilosophyProps) {
                 >
                   Mohammed Sufyan
                 </div>
-                <div className={`text-xs font-mono ${isLight ? 'text-sky-700' : 'text-cyan-300'}`}>
-                  Software Engineer
-                </div>
+                <div className={`text-xs font-mono ${labelAccent}`}>Software Engineer</div>
               </div>
 
               <div
-                className={`flex h-10 w-10 items-center justify-center rounded-xl font-mono text-xs font-bold ${
-                  isLight
-                    ? 'bg-sky-100 border border-sky-200 text-sky-700'
-                    : 'bg-cyan-500/20 border border-cyan-500/30 text-cyan-300'
-                }`}
+                className={`flex h-10 w-10 items-center justify-center rounded-xl font-mono text-xs font-bold ${creedBadge}`}
               >
                 MS
               </div>
