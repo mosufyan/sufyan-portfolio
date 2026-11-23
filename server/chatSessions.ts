@@ -142,23 +142,37 @@ function loadCache(): void {
 
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 let redisHydratePromise: Promise<boolean> | null = null;
+let didBootHydrate = false;
+
+function persistCacheNow(): void {
+  try {
+    const payload = buildCachePayload();
+    fs.writeFileSync(CACHE_PATH, JSON.stringify(payload), 'utf8');
+    // Full console snapshot (sessions + counters) — no TTL — so Cloud Run
+    // redeploys / scale-from-zero can always rehydrate.
+    if (isDistributedStoreEnabled()) {
+      void redisSetJson(CHAT_CACHE_REDIS_KEY, payload);
+    }
+  } catch {
+    /* non-fatal */
+  }
+}
 
 function scheduleFlush(): void {
   if (flushTimer) return;
   flushTimer = setTimeout(() => {
     flushTimer = null;
-    try {
-      const payload = buildCachePayload();
-      fs.writeFileSync(CACHE_PATH, JSON.stringify(payload), 'utf8');
-      // Persist the full console snapshot (not only per-session keys) so redeploys
-      // can rehydrate list + counters when Redis is configured.
-      if (isDistributedStoreEnabled()) {
-        void redisSetJson(CHAT_CACHE_REDIS_KEY, payload);
-      }
-    } catch {
-      /* non-fatal */
-    }
-  }, 1500);
+    persistCacheNow();
+  }, 400);
+}
+
+/** Immediate durable flush (session create/close/reply, process shutdown). */
+export function flushChatCacheSync(): void {
+  if (flushTimer) {
+    clearTimeout(flushTimer);
+    flushTimer = null;
+  }
+  persistCacheNow();
 }
 
 loadCache();
@@ -168,23 +182,24 @@ loadCache();
  * (typical after Cloud Run scale-from-zero / new revision). Safe to call often.
  */
 export async function ensureChatCacheHydrated(): Promise<boolean> {
-  if (!isDistributedStoreEnabled()) return false;
-  if (sessions.size > 0) return false;
+  if (!isDistributedStoreEnabled()) return didBootHydrate;
+  if (didBootHydrate) return sessions.size > 0;
   if (!redisHydratePromise) {
     redisHydratePromise = (async () => {
       try {
         const remote = await redisGetJson<Partial<ChatCacheFile>>(CHAT_CACHE_REDIS_KEY);
-        if (remote.error || !remote.value) return false;
-        applyCachePayload(remote.value, { merge: true });
-        // Mirror onto disk for the current instance as a local fallback.
-        try {
-          fs.writeFileSync(CACHE_PATH, JSON.stringify(buildCachePayload()), 'utf8');
-        } catch {
-          /* ignore */
+        if (remote.error || !remote.value) {
+          didBootHydrate = true;
+          return sessions.size > 0;
         }
+        // Merge Redis snapshot with any local disk cache (newer updatedAt wins).
+        applyCachePayload(remote.value, { merge: true });
+        didBootHydrate = true;
+        persistCacheNow();
         return sessions.size > 0;
       } catch {
-        return false;
+        didBootHydrate = true;
+        return sessions.size > 0;
       } finally {
         redisHydratePromise = null;
       }
@@ -307,7 +322,7 @@ export function createChatSession(input: {
   };
   sessions.set(sessionId, session);
   liveSessions += 1;
-  scheduleFlush();
+  flushChatCacheSync();
   mirrorSession(session);
   return session;
 }
@@ -356,7 +371,7 @@ export function appendChatMessage(
     session.lastOwnerAtMs = now;
     session.status = 'active';
   }
-  scheduleFlush();
+  flushChatCacheSync();
   mirrorSession(session);
   return session;
 }
@@ -372,7 +387,7 @@ export function closeChatSession(sessionId: string): ChatSession | null {
     text: 'This live chat session was closed by the portfolio owner.',
     createdAtMs: session.updatedAtMs,
   });
-  scheduleFlush();
+  flushChatCacheSync();
   mirrorSession(session);
   return session;
 }
@@ -406,7 +421,7 @@ export function startNewChatThread(sessionId: string): ChatSession | null {
   if (session.messages.length > MAX_MESSAGES) {
     session.messages = session.messages.slice(-MAX_MESSAGES);
   }
-  scheduleFlush();
+  flushChatCacheSync();
   mirrorSession(session);
   return session;
 }

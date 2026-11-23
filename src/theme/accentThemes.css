@@ -37,7 +37,24 @@ html[data-accent='amber'] :is(.site-theme, .site-overlay) [class*='group-hover:t
 html[data-accent='amber'] :is(.site-theme, .site-overlay) .group:hover [class*='group-hover:text-cyan-'],
 html[data-accent='amber'] :is(.site-theme, .site-overlay) [class*='text-sky-'],
 html[data-accent='amber'] :is(.site-theme, .site-overlay) [class*='hover:text-sky-']:hover,
-html[data-accent='amber'] :is(.site-theme, .site-overlay) .text-\[\#38bdf8\] {
+html[data-accent='amber'] :is(.site-theme, .site-overlay) .text-\[\#38bdf8\],
+/* Explicit Tailwind hover utilities (beat lightTheme !important hover remaps) */
+html[data-accent='amber'] :is(.site-theme, .site-overlay) .hover\:text-cyan-200:hover,
+html[data-accent='amber'] :is(.site-theme, .site-overlay) .hover\:text-cyan-300:hover,
+html[data-accent='amber'] :is(.site-theme, .site-overlay) .hover\:text-cyan-400:hover,
+html[data-accent='amber'] :is(.site-theme, .site-overlay) .hover\:text-sky-700:hover,
+html[data-accent='amber'] :is(.site-theme, .site-overlay) .group-hover\:text-cyan-100:hover,
+html[data-accent='amber'] :is(.site-theme, .site-overlay) .group-hover\:text-cyan-300:hover,
+html[data-accent='amber'] :is(.site-theme, .site-overlay) .group-hover\:text-cyan-400:hover,
+html[data-accent='amber'] :is(.site-theme, .site-overlay) .group:hover .group-hover\:text-cyan-100,
+html[data-accent='amber'] :is(.site-theme, .site-overlay) .group:hover .group-hover\:text-cyan-300,
+html[data-accent='amber'] :is(.site-theme, .site-overlay) .group:hover .group-hover\:text-cyan-400,
+/* Navbar chrome keeps dark cyan in lightTheme — force amber when accent is amber */
+html[data-accent='amber'] :is(.site-theme, .site-overlay) .navbar-chrome [class*='text-cyan-'],
+html[data-accent='amber'] :is(.site-theme, .site-overlay) .navbar-chrome .text-cyan-400,
+html[data-accent='amber'] :is(.site-theme, .site-overlay) .navbar-chrome .text-cyan-300,
+html[data-accent='amber'] :is(.site-theme, .site-overlay) .navbar-chrome .hover\:text-cyan-300:hover,
+html[data-accent='amber'] :is(.site-theme, .site-overlay) .navbar-chrome .hover\:text-cyan-400:hover {
   color: #fbbf24 !important;
 }
 
@@ -119,7 +136,14 @@ html[data-accent='amber'] :is(.site-theme, .site-overlay) [class*='border-sky-']
 html[data-accent='amber'] :is(.site-theme, .site-overlay) [class*='hover:border-sky-']:hover,
 html[data-accent='amber'] :is(.site-theme, .site-overlay) [class*='focus:border-cyan-']:focus,
 html[data-accent='amber'] :is(.site-theme, .site-overlay) [class*='focus:border-sky-']:focus,
-html[data-accent='amber'] :is(.site-theme, .site-overlay) .border-\[\#38bdf8\] {
+html[data-accent='amber'] :is(.site-theme, .site-overlay) .border-\[\#38bdf8\],
+html[data-accent='amber'] :is(.site-theme, .site-overlay) .hover\:border-cyan-500\/50:hover,
+html[data-accent='amber'] :is(.site-theme, .site-overlay) .hover\:border-cyan-500\/40:hover,
+html[data-accent='amber'] :is(.site-theme, .site-overlay) .hover\:border-cyan-500\/35:hover,
+html[data-accent='amber'] :is(.site-theme, .site-overlay) .group-hover\:border-cyan-400\/60:hover,
+html[data-accent='amber'] :is(.site-theme, .site-overlay) .group:hover .group-hover\:border-cyan-400\/60,
+html[data-accent='amber'] :is(.site-theme, .site-overlay) .group-hover\:border-cyan-500\/30:hover,
+html[data-accent='amber'] :is(.site-theme, .site-overlay) .group:hover .group-hover\:border-cyan-500\/30 {
   border-color: rgb(245 158 11 / 0.55) !important;
 }
 
@@ -285,9 +309,24 @@ html[data-theme='light'][data-accent='amber'] .site-theme .group:hover [class*='
 html[data-theme='light'][data-accent='amber'] .site-theme [class*='text-sky-'],
 html[data-theme='light'][data-accent='amber'] .site-theme [class*='hover:text-sky-']:hover,
 html[data-theme='light'][data-accent='amber'] .site-theme .text-\[\#38bdf8\],
+html[data-theme='light'][data-accent='amber'] .site-theme .hover\:text-cyan-200:hover,
+html[data-theme='light'][data-accent='amber'] .site-theme .hover\:text-cyan-300:hover,
+html[data-theme='light'][data-accent='amber'] .site-theme .hover\:text-cyan-400:hover,
+html[data-theme='light'][data-accent='amber'] .site-theme .hover\:text-sky-700:hover,
+html[data-theme='light'][data-accent='amber'] .site-theme .group-hover\:text-cyan-300:hover,
+html[data-theme='light'][data-accent='amber'] .site-theme .group:hover .group-hover\:text-cyan-300,
 html[data-theme='light'][data-accent='amber'] .site-theme .featured-story-card .featured-story-eyebrow,
 html[data-theme='light'][data-accent='amber'] .site-theme .featured-story-card [class*='text-cyan-'] {
   color: #b45309 !important;
+}
+
+/* Navbar stays dark chrome in light mode — still follow amber accent on hover */
+html[data-theme='light'][data-accent='amber'] .site-theme .navbar-chrome [class*='text-cyan-'],
+html[data-theme='light'][data-accent='amber'] .site-theme .navbar-chrome .text-cyan-400,
+html[data-theme='light'][data-accent='amber'] .site-theme .navbar-chrome .text-cyan-300,
+html[data-theme='light'][data-accent='amber'] .site-theme .navbar-chrome .hover\:text-cyan-300:hover,
+html[data-theme='light'][data-accent='amber'] .site-theme .navbar-chrome .hover\:text-cyan-400:hover {
+  color: #fbbf24 !important;
 }
 
 html[data-theme='light'][data-accent='amber'] .site-theme [class*='bg-clip-text'] {

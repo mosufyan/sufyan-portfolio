@@ -101,6 +101,7 @@ import {
   publicSessionView,
   startNewChatThread,
   clearOwnerPresence,
+  flushChatCacheSync,
   touchOwnerPresence,
 } from './server/chatSessions.ts';
 import {
@@ -4698,6 +4699,21 @@ async function startServer() {
       res.status(200).setHeader('Content-Type', 'text/html').send(applyDynamicOgTags(raw, req));
     });
   }
+
+  // Rehydrate Owner Chat from Redis before serving traffic (Cloud Run cold start).
+  await ensureChatCacheHydrated().catch(() => false);
+
+  const shutdown = (signal: string) => {
+    try {
+      flushChatCacheSync();
+    } catch {
+      /* ignore */
+    }
+    console.log(`Received ${signal}; chat cache flushed.`);
+    process.exit(0);
+  };
+  process.once('SIGTERM', () => shutdown('SIGTERM'));
+  process.once('SIGINT', () => shutdown('SIGINT'));
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server listening on http://0.0.0.0:${PORT}`);
