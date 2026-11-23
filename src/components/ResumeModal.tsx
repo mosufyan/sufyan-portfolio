@@ -405,8 +405,9 @@ export default function ResumeModal({
       if (preserveSharedAccentRef.current) {
         preserveSharedAccentRef.current = false;
       } else {
-        // Keep CV SVG infographics (radar/trajectory) aligned with site accent.
-        setCvAccent(siteAccent);
+        // Keep default cyan/amber CV packs aligned with the site Appearance accent.
+        // Custom CV accents (cobalt, copper, …) stay until the visitor picks cyan/amber again.
+        setCvAccent((prev) => (prev === 'cyan' || prev === 'amber' ? siteAccent : prev));
       }
     } else {
       setPendingAction(null);
@@ -1417,6 +1418,14 @@ export default function ResumeModal({
   };
 
   const skillRows = chunkArray(TECHNICAL_DISCIPLINES, 2);
+
+  /**
+   * SVG polygon/hub fills use inline hex and ignore CSS amber remaps.
+   * When the CV accent is still the cyan/amber brand pack, follow site Appearance
+   * so Cloud & AI Radar / Impact strips match Amber/Cyan dark+light.
+   */
+  const infographicAccent: CvAccentId =
+    cvAccent === 'cyan' || cvAccent === 'amber' ? siteAccent : cvAccent;
 
   const accentTokens = (() => {
     switch (cvAccent) {
@@ -2495,7 +2504,9 @@ export default function ResumeModal({
                   ))}
                 </div>
 
-                {showInfographics && <CvTrajectoryAndCloudStrip isLight={isLight} accent={cvAccent} />}
+                {showInfographics && (
+                  <CvTrajectoryAndCloudStrip isLight={isLight} accent={infographicAccent} />
+                )}
               </div>
             </section>
                 );
@@ -3018,7 +3029,7 @@ export default function ResumeModal({
 
               {showInfographics && (
                 <div className="mb-7">
-                  <CvImpactProofStrip isLight={isLight} accent={cvAccent} />
+                  <CvImpactProofStrip isLight={isLight} accent={infographicAccent} />
                 </div>
               )}
 
@@ -3346,7 +3357,7 @@ export default function ResumeModal({
                   </div>
                 </div>
 
-                <CvVerificationQrBadge isLight={isLight} accent={cvAccent} />
+                <CvVerificationQrBadge isLight={isLight} accent={infographicAccent} />
               </div>
             </section>
           )}
