@@ -26,7 +26,13 @@ import {
   shouldAllowPreviewIframe,
   verifyTurnstileToken,
 } from './server/security.ts';
-import { getEmailPalette, parseEmailTheme, type EmailTheme } from './server/emailTheme.ts';
+import {
+  getEmailPalette,
+  parseEmailAccent,
+  parseEmailTheme,
+  type EmailAccent,
+  type EmailTheme,
+} from './server/emailTheme.ts';
 import {
   assessVisitorRisk,
   configureOtpRedisBridge,
@@ -173,6 +179,7 @@ interface ChatLiveOtpPayload {
   interest: string;
   openingMessage: string;
   theme: EmailTheme;
+  accent?: EmailAccent;
   userAgent: string;
   ipAddress: string;
 }
@@ -527,9 +534,10 @@ function buildOwnerAlertEmailHtml(input: {
   title: string;
   detail: string;
   theme?: EmailTheme;
+  accent?: EmailAccent;
   timestamp?: string;
 }): string {
-  const p = getEmailPalette(parseEmailTheme(input.theme));
+  const p = getEmailPalette(parseEmailTheme(input.theme), parseEmailAccent(input.accent));
   const isUrgent = input.alertClass === 'urgent';
   const badgeBg = isUrgent ? (p.theme === 'light' ? '#ffe4e6' : '#4c0519') : p.badgeSuccessBg;
   const badgeBorder = isUrgent ? (p.theme === 'light' ? '#fb7185' : '#e11d48') : p.badgeSuccessBorder;
@@ -646,10 +654,13 @@ async function emitOwnerAlert(input: {
   dedupeKey: string;
   /** Visitor site theme so the alert email matches their light/dark choice. */
   theme?: EmailTheme;
+  /** Visitor accent pack (cyan / amber) for branded alert chrome. */
+  accent?: EmailAccent;
 }): Promise<void> {
   try {
     const prefs = prefsFromPortfolioSettings(runtimeOwnerPolicy);
     const theme = parseEmailTheme(input.theme);
+    const accent = parseEmailAccent(input.accent);
     await routeOwnerNotification({
       prefs,
       eventType: input.eventType,
@@ -668,6 +679,7 @@ async function emitOwnerAlert(input: {
           title,
           detail,
           theme,
+          accent,
           timestamp,
         });
         const text = [
@@ -675,7 +687,7 @@ async function emitOwnerAlert(input: {
           '==============================',
           detail,
           '',
-          `Theme: ${theme}`,
+          `Theme: ${theme} · Accent: ${accent}`,
           'Open Owner Console → Alerts / Chat / Messages',
           cleanSecretEnv(process.env.APP_URL) || 'https://www.mohammedsufyan.com',
         ].join('\n');
@@ -892,12 +904,13 @@ interface ContactPayload {
   subject?: string;
   message: string;
   theme?: EmailTheme;
+  accent?: EmailAccent;
   messageId?: string;
   telemetryNote?: string;
 }
 
 function buildPortfolioEmailHtml(payload: ContactPayload, timestamp: string): string {
-  const p = getEmailPalette(parseEmailTheme(payload.theme));
+  const p = getEmailPalette(parseEmailTheme(payload.theme), parseEmailAccent(payload.accent));
   const safeName = escapeHtml(payload.name);
   const safeEmail = escapeHtml(payload.email);
   const safePhone = payload.phone ? escapeHtml(payload.phone) : 'Not provided';
@@ -1056,6 +1069,7 @@ function buildPlainTextEmail(payload: ContactPayload, timestamp: string): string
     `Received: ${timestamp}`,
     ...(payload.messageId ? [`Ref ID:   ${payload.messageId}`] : []),
     `Theme:    ${parseEmailTheme(payload.theme)}`,
+    `Accent:   ${parseEmailAccent(payload.accent)}`,
     `Name:     ${payload.name}`,
     `Email:    ${payload.email}`,
     `Phone:    ${payload.phone || 'Not provided'}`,
@@ -1085,6 +1099,7 @@ interface CvAccessPayload {
   action: 'pdf' | 'print' | 'ats' | 'install';
   formatLabel: string;
   theme?: EmailTheme;
+  accent?: EmailAccent;
 }
 
 function formatCvActionLabel(action: CvAccessPayload['action']): string {
@@ -1114,7 +1129,7 @@ function buildCvAccessEmailHtml(
   telemetry: VisitorTelemetryReport,
   isSubsequent: boolean
 ): string {
-  const p = getEmailPalette(parseEmailTheme(payload.theme));
+  const p = getEmailPalette(parseEmailTheme(payload.theme), parseEmailAccent(payload.accent));
   const safeName = escapeHtml(payload.name?.trim() || 'Not provided');
   const safeEmail = payload.email?.trim() ? escapeHtml(payload.email.trim()) : '';
   const safePhone = payload.phone?.trim() ? escapeHtml(payload.phone.trim()) : 'Not provided';
@@ -1388,6 +1403,7 @@ function buildCvAccessPlainText(
     `Verification: ${formatVerificationLabel(telemetry.verificationStatus)}`,
     `Exported:     ${timestamp}`,
     `Theme:        ${parseEmailTheme(payload.theme)}`,
+    `Accent:       ${parseEmailAccent(payload.accent)}`,
     `Action:       ${formatCvActionLabel(payload.action)}`,
     `Format:       ${payload.formatLabel}`,
     `Name:         ${payload.name?.trim() || 'Not provided'}`,
@@ -1416,9 +1432,10 @@ function buildOtpEmailHtml(
   name: string,
   code: string,
   theme: EmailTheme,
-  purpose: 'cv' | 'contact' | 'chat' = 'cv'
+  purpose: 'cv' | 'contact' | 'chat' = 'cv',
+  accent: EmailAccent = 'cyan'
 ): string {
-  const p = getEmailPalette(theme);
+  const p = getEmailPalette(theme, accent);
   const safeName = escapeHtml(name || 'there');
   const safeCode = escapeHtml(code);
   const actionPhrase =
@@ -1702,9 +1719,13 @@ function buildOwnerReplyEmailHtml(params: {
   body: string;
   originalSubject?: string;
   theme?: EmailTheme;
+  accent?: EmailAccent;
   timestamp?: string;
 }): string {
-  const p = getEmailPalette(parseEmailTheme(params.theme ?? 'light'));
+  const p = getEmailPalette(
+    parseEmailTheme(params.theme ?? 'light'),
+    parseEmailAccent(params.accent)
+  );
   const safeName = escapeHtml(sanitizeDisplayName(params.toName) || 'there');
   const safeBody = escapeHtml(params.body).replace(/\r?\n/g, '<br />');
   const safeTime = escapeHtml(params.timestamp || new Date().toUTCString());
@@ -1815,15 +1836,19 @@ async function sendOwnerReplyEmail(params: {
   body: string;
   originalSubject?: string;
   theme?: EmailTheme;
+  accent?: EmailAccent;
 }): Promise<{ provider: string }> {
   const safeName = sanitizeDisplayName(params.toName) || 'there';
   const safeSubject = sanitizeHeaderValue(params.subject).slice(0, 200);
   const timestamp = new Date().toUTCString();
+  const replyTheme = parseEmailTheme(params.theme ?? 'light');
+  const replyAccent = parseEmailAccent(params.accent);
   const html = buildOwnerReplyEmailHtml({
     toName: safeName,
     body: params.body,
     originalSubject: params.originalSubject,
-    theme: params.theme ?? 'light',
+    theme: replyTheme,
+    accent: replyAccent,
     timestamp,
   });
   const text = [
@@ -1848,7 +1873,8 @@ async function sendOwnerReplyEmail(params: {
   structuredLog('info', 'owner_reply_email_built', {
     htmlBytes: html.length,
     branded: html.includes('Portfolio Owner Reply'),
-    theme: params.theme ?? 'light',
+    theme: replyTheme,
+    accent: replyAccent,
   });
 
   return dispatchEmailMessage({
@@ -1866,10 +1892,17 @@ async function sendVisitorOtpEmail(params: {
   name: string;
   code: string;
   theme: EmailTheme;
+  accent?: EmailAccent;
   purpose?: 'cv' | 'contact' | 'chat';
 }): Promise<{ provider: string }> {
   const purpose = params.purpose ?? 'cv';
-  const html = buildOtpEmailHtml(params.name, params.code, params.theme, purpose);
+  const html = buildOtpEmailHtml(
+    params.name,
+    params.code,
+    params.theme,
+    purpose,
+    parseEmailAccent(params.accent)
+  );
   const purposeLabel =
     purpose === 'contact' ? 'Transmit Message' : purpose === 'chat' ? 'Live Chat' : 'CV Access';
   const text = `Hi ${params.name || 'there'},\n\nYour verification code for mohammedsufyan.com (${purposeLabel}) is: ${params.code}\n\nThis code expires in 10 minutes.`;
@@ -1944,6 +1977,7 @@ function buildTrackingSummaryForClient(
     action: payload.action,
     formatLabel: payload.formatLabel.slice(0, 80),
     theme: parseEmailTheme(payload.theme),
+    accent: parseEmailAccent(payload.accent),
     verificationStatus: telemetry.verificationStatus,
     ipAddress: telemetry.ip.ipAddress.slice(0, 64),
     country: (telemetry.ip.country || 'Unknown').slice(0, 80),
@@ -2346,6 +2380,7 @@ async function startServer() {
         subject?: unknown;
         body?: unknown;
         theme?: unknown;
+        accent?: unknown;
       };
       const subject =
         typeof raw.subject === 'string' && raw.subject.trim()
@@ -2354,6 +2389,7 @@ async function startServer() {
       const body =
         typeof raw.body === 'string' ? raw.body.trim().slice(0, 20000) : '';
       const digestTheme = parseEmailTheme(raw.theme);
+      const digestAccent = parseEmailAccent(raw.accent);
       const queued = drainDigestItems();
       const queuedText = formatDigestQueueText(queued);
       const combined = [queuedText, body].filter(Boolean).join('\n\n').trim();
@@ -2366,6 +2402,7 @@ async function startServer() {
         title: subject,
         detail: combined.slice(0, 20000),
         theme: digestTheme,
+        accent: digestAccent,
       });
       const result = await dispatchEmailMessage({
         to: DESTINATION_EMAIL,
@@ -2689,8 +2726,9 @@ async function startServer() {
         subject: subject.slice(0, 200),
         body: body.slice(0, 5000),
         originalSubject,
-        // Outbound professional replies default to light; honor inquiry theme when set.
+        // Outbound professional replies default to light; honor inquiry theme/accent when set.
         theme: parseEmailTheme(inquiry.theme ?? 'light'),
+        accent: parseEmailAccent(inquiry.accent),
       });
 
       // Mark triage via Admin SDK so client Firestore rules can't block a successful send.
@@ -2759,6 +2797,7 @@ async function startServer() {
         website?: unknown;
         turnstileToken?: unknown;
         theme?: unknown;
+        accent?: unknown;
         clientTimezone?: unknown;
         referrer?: unknown;
       };
@@ -2863,6 +2902,7 @@ async function startServer() {
         phoneCountry: contactPhoneCheck.countryCode || undefined,
       });
       const cleanTheme = parseEmailTheme(body.theme);
+      const cleanAccent = parseEmailAccent(body.accent);
 
       if (!otpRequiredFor('contact')) {
         const messageId = `MSG-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
@@ -2878,6 +2918,7 @@ async function startServer() {
           subject: cleanSubject,
           message: cleanMessage,
           theme: cleanTheme,
+          accent: cleanAccent,
           messageId,
           telemetryNote,
         });
@@ -2889,6 +2930,7 @@ async function startServer() {
           subject: cleanSubject.slice(0, 200),
           message: cleanMessage.slice(0, 5000),
           theme: cleanTheme,
+          accent: cleanAccent,
           ipAddress: ipIntel.ipAddress.slice(0, 64),
           country: ipIntel.country.slice(0, 80),
           region: ipIntel.region.slice(0, 80),
@@ -2912,6 +2954,7 @@ async function startServer() {
           }`,
           dedupeKey: `inquiry:${messageId}`,
           theme: cleanTheme,
+          accent: cleanAccent,
         });
         res.status(200).json({
           ok: true,
@@ -2944,6 +2987,7 @@ async function startServer() {
           subject: cleanSubject,
           message: cleanMessage,
           theme: cleanTheme,
+          accent: cleanAccent,
           clientTimezone,
           referrer,
           userAgent,
@@ -2959,6 +3003,7 @@ async function startServer() {
         name: cleanName,
         code: challenge.code,
         theme: cleanTheme,
+        accent: cleanAccent,
         purpose: 'contact',
       });
 
@@ -3053,6 +3098,7 @@ async function startServer() {
         subject: p.subject,
         message: p.message,
         theme: p.theme,
+        accent: p.accent,
         messageId,
         telemetryNote,
       });
@@ -3065,6 +3111,7 @@ async function startServer() {
         subject: p.subject.slice(0, 200),
         message: p.message.slice(0, 5000),
         theme: p.theme,
+        accent: p.accent,
         ipAddress: p.ip.ipAddress.slice(0, 64),
         country: p.ip.country.slice(0, 80),
         region: p.ip.region.slice(0, 80),
@@ -3089,6 +3136,7 @@ async function startServer() {
         }`,
         dedupeKey: `inquiry:${messageId}`,
         theme: p.theme,
+        accent: p.accent,
       });
 
       res.status(200).json({
@@ -3128,6 +3176,7 @@ async function startServer() {
         website?: unknown;
         turnstileToken?: unknown;
         theme?: unknown;
+        accent?: unknown;
         clientTimezone?: unknown;
         clientLanguage?: unknown;
         clientScreen?: unknown;
@@ -3191,6 +3240,7 @@ async function startServer() {
             ? 'Portfolio PWA'
             : 'Executive Summary';
       const cleanTheme = parseEmailTheme(body.theme);
+      const cleanAccent = parseEmailAccent(body.accent);
 
       if (!cleanEmail) {
         res.status(400).json({
@@ -3303,6 +3353,7 @@ async function startServer() {
             action: cleanAction,
             formatLabel: cleanFormat,
             theme: cleanTheme,
+            accent: cleanAccent,
             clientTimezone,
             clientLanguage,
             clientScreen,
@@ -3320,6 +3371,7 @@ async function startServer() {
           name: cleanName,
           code: challenge.code,
           theme: cleanTheme,
+          accent: cleanAccent,
           purpose: 'cv',
         });
 
@@ -3360,6 +3412,7 @@ async function startServer() {
         action: cleanAction,
         formatLabel: cleanFormat,
         theme: cleanTheme,
+        accent: cleanAccent,
       };
 
       const result = await sendCvAccessEmail(accessPayload, telemetry, false);
@@ -3388,6 +3441,7 @@ async function startServer() {
           }`,
           dedupeKey: `cvrisk:${cleanEmail.toLowerCase()}:${Math.floor(Date.now() / 3_600_000)}`,
           theme: cleanTheme,
+          accent: cleanAccent,
         });
       }
 
@@ -3502,6 +3556,7 @@ async function startServer() {
         action: p.action,
         formatLabel: p.formatLabel,
         theme: p.theme,
+        accent: p.accent,
       };
 
       const result = await sendCvAccessEmail(accessPayload, telemetry, false);
@@ -3567,6 +3622,7 @@ async function startServer() {
         action?: unknown;
         formatLabel?: unknown;
         theme?: unknown;
+        accent?: unknown;
         clientTimezone?: unknown;
         clientLanguage?: unknown;
         clientScreen?: unknown;
@@ -3621,6 +3677,7 @@ async function startServer() {
           ? sanitizeHeaderValue(body.formatLabel).slice(0, 80) || 'Executive Summary'
           : 'Executive Summary';
       const cleanTheme = parseEmailTheme(body.theme);
+      const cleanAccent = parseEmailAccent(body.accent);
       const clientTimezone = typeof body.clientTimezone === 'string' ? sanitizeHeaderValue(body.clientTimezone).slice(0, 64) : '';
       const clientLanguage = typeof body.clientLanguage === 'string' ? sanitizeHeaderValue(body.clientLanguage).slice(0, 32) : '';
       const clientScreen = typeof body.clientScreen === 'string' ? sanitizeHeaderValue(body.clientScreen).slice(0, 32) : '';
@@ -3655,6 +3712,7 @@ async function startServer() {
         action: cleanAction,
         formatLabel: cleanFormat,
         theme: cleanTheme,
+        accent: cleanAccent,
       };
 
       // Dispatch email alert asynchronously/safely without blocking subsequent download if mail blips
@@ -4069,6 +4127,7 @@ async function startServer() {
         website?: unknown;
         turnstileToken?: unknown;
         theme?: unknown;
+        accent?: unknown;
       };
       if (isHoneypotTriggered(raw.website)) {
         res.status(200).json({
@@ -4091,6 +4150,7 @@ async function startServer() {
       const openingMessage =
         typeof raw.openingMessage === 'string' ? raw.openingMessage.trim().slice(0, 2000) : '';
       const theme = parseEmailTheme(raw.theme);
+      const accent = parseEmailAccent(raw.accent);
 
       if (!name || name.length < 2) {
         res.status(400).json({ error: 'Please enter your name.' });
@@ -4173,6 +4233,7 @@ async function startServer() {
           } · session ${session.sessionId} · owner ${isOwnerOnline() ? 'online' : 'offline/queued'}`,
           dedupeKey: `live:${session.sessionId}`,
           theme,
+          accent,
         });
         res.status(200).json({
           ok: true,
@@ -4206,6 +4267,7 @@ async function startServer() {
           interest,
           openingMessage,
           theme,
+          accent,
           userAgent,
           ipAddress: clientIp,
         },
@@ -4217,6 +4279,7 @@ async function startServer() {
         name,
         code: challenge.code,
         theme,
+        accent,
         purpose: 'chat',
       });
       res.status(200).json({
@@ -4314,6 +4377,7 @@ async function startServer() {
         } · session ${session.sessionId} · owner ${isOwnerOnline() ? 'online' : 'offline/queued'}`,
         dedupeKey: `live:${session.sessionId}`,
         theme: p.theme,
+        accent: p.accent,
       });
 
       res.status(200).json({

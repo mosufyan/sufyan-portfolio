@@ -591,6 +591,8 @@ export interface OtpPendingPayload {
   action: 'pdf' | 'print' | 'ats' | 'install';
   formatLabel: string;
   theme: 'dark' | 'light';
+  /** Optional for in-flight challenges created before accent was threaded. */
+  accent?: 'cyan' | 'amber';
   clientTimezone: string;
   clientLanguage: string;
   clientScreen: string;
@@ -607,6 +609,8 @@ export interface ContactOtpPendingPayload {
   subject: string;
   message: string;
   theme: 'dark' | 'light';
+  /** Optional for in-flight challenges created before accent was threaded. */
+  accent?: 'cyan' | 'amber';
   clientTimezone: string;
   referrer: string;
   userAgent: string;

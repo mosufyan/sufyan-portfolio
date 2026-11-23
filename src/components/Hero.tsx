@@ -148,7 +148,15 @@ export default function Hero({
   readingMode = 'deep',
   onChangeReadingMode,
 }: HeroProps) {
-  const { isLight } = useTheme();
+  const { isLight, accent } = useTheme();
+  const heroGridDot =
+    accent === 'amber'
+      ? isLight
+        ? 'rgba(180, 83, 9, 0.18)'
+        : 'rgba(245, 158, 11, 0.16)'
+      : isLight
+        ? 'rgba(2, 132, 199, 0.18)'
+        : 'rgba(56, 189, 248, 0.16)';
   const [copied, setCopied] = useState(false);
   const [shared, setShared] = useState(false);
   const [marqueePaused, setMarqueePaused] = useState(false);
@@ -231,8 +239,7 @@ export default function Hero({
         aria-hidden="true"
         className="absolute inset-0 z-0 pointer-events-none opacity-45 print:hidden"
         style={{
-          backgroundImage:
-            'radial-gradient(rgba(56, 189, 248, 0.16) 1px, transparent 1px)',
+          backgroundImage: `radial-gradient(${heroGridDot} 1px, transparent 1px)`,
           backgroundSize: '28px 28px',
           maskImage: 'radial-gradient(ellipse 80% 70% at 50% 35%, black 20%, transparent 100%)',
           WebkitMaskImage:

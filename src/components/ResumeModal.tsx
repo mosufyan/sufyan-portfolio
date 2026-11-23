@@ -938,6 +938,7 @@ export default function ResumeModal({
         action: 'pdf',
         formatLabel: getFormatLabel(),
         theme: isLight ? 'light' : 'dark',
+        accent: siteAccent,
         onPersistLog: recordCvDownloadLog,
       });
       if (track.status === 'expired') {
@@ -1355,6 +1356,7 @@ export default function ResumeModal({
           action: 'print',
           formatLabel: getFormatLabel(),
           theme: isLight ? 'light' : 'dark',
+          accent: siteAccent,
           onPersistLog: recordCvDownloadLog,
         });
         if (track.status === 'expired') {
@@ -1382,6 +1384,7 @@ export default function ResumeModal({
           action: 'ats',
           formatLabel: getFormatLabel(),
           theme: isLight ? 'light' : 'dark',
+          accent: siteAccent,
           onPersistLog: recordCvDownloadLog,
         });
         if (track.status === 'expired') {

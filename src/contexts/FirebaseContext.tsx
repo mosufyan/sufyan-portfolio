@@ -453,6 +453,7 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
             action: (d.action as CvDownloadLogRecord['action']) || 'pdf',
             formatLabel: typeof d.formatLabel === 'string' ? d.formatLabel : 'Executive Summary',
             theme: d.theme === 'light' ? 'light' : 'dark',
+            accent: d.accent === 'amber' ? 'amber' : d.accent === 'cyan' ? 'cyan' : undefined,
             verificationStatus:
               (d.verificationStatus as CvDownloadLogRecord['verificationStatus']) || 'mx_verified',
             ipAddress: typeof d.ipAddress === 'string' ? d.ipAddress : '',
@@ -517,6 +518,7 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
             subject: typeof d.subject === 'string' ? d.subject : '',
             message: typeof d.message === 'string' ? d.message : '',
             theme: d.theme === 'light' ? 'light' : 'dark',
+            accent: d.accent === 'amber' ? 'amber' : d.accent === 'cyan' ? 'cyan' : undefined,
             ipAddress: typeof d.ipAddress === 'string' ? d.ipAddress : '',
             country: typeof d.country === 'string' ? d.country : 'Unknown',
             region: typeof d.region === 'string' ? d.region : '',

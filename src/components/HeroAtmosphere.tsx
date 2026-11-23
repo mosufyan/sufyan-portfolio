@@ -17,8 +17,9 @@ interface MatrixNode {
  */
 export default function HeroAtmosphere() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const { isLight } = useTheme();
+  const { isLight, accent } = useTheme();
   const shouldReduceMotion = useReducedMotion();
+  const isAmber = accent === 'amber';
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -35,6 +36,29 @@ export default function HeroAtmosphere() {
     let dpr = 1;
     let nodes: MatrixNode[] = [];
     const pointer = { x: -9999, y: -9999, active: false };
+
+    // Match site accent tokens (canvas cannot use CSS remaps).
+    const nodeColor = isAmber
+      ? isLight
+        ? '180, 83, 9'
+        : '245, 158, 11'
+      : isLight
+        ? '3, 105, 161'
+        : '56, 189, 248';
+    const lineColor = isAmber
+      ? isLight
+        ? '146, 64, 14'
+        : '217, 119, 6'
+      : isLight
+        ? '14, 116, 144'
+        : '34, 211, 238';
+    const contourColor = isAmber
+      ? isLight
+        ? 'rgba(180, 83, 9, 0.06)'
+        : 'rgba(245, 158, 11, 0.055)'
+      : isLight
+        ? 'rgba(2, 132, 199, 0.06)'
+        : 'rgba(56, 189, 248, 0.055)';
 
     const buildNodes = (w: number, h: number) => {
       const area = w * h;
@@ -70,10 +94,6 @@ export default function HeroAtmosphere() {
 
     const drawStaticFrame = (timeMs: number) => {
       ctx.clearRect(0, 0, width, height);
-
-      const nodeColor = isLight ? '3, 105, 161' : '56, 189, 248';
-      const lineColor = isLight ? '14, 116, 144' : '34, 211, 238';
-      const contourColor = isLight ? 'rgba(2, 132, 199, 0.06)' : 'rgba(56, 189, 248, 0.055)';
 
       // Topographic horizon waves anchored calmly near bottom-right of Hero
       ctx.lineWidth = 1;
@@ -187,7 +207,7 @@ export default function HeroAtmosphere() {
       window.removeEventListener('resize', resize);
       window.removeEventListener('pointermove', onPointerMove);
     };
-  }, [isLight, shouldReduceMotion]);
+  }, [isLight, isAmber, shouldReduceMotion]);
 
   return (
     <canvas

@@ -154,7 +154,7 @@ function clearStoredSession(): void {
 }
 
 export default function ChatWidget() {
-  const { isLight } = useTheme();
+  const { isLight, accent } = useTheme();
   const shouldReduceMotion = useReducedMotion();
   const [open, setOpen] = useState(false);
   const [enabled, setEnabled] = useState(true);
@@ -836,6 +836,7 @@ export default function ChatWidget() {
           website: form.website,
           turnstileToken: turnstileToken || undefined,
           theme: isLight ? 'light' : 'dark',
+          accent,
         }),
       });
       const data = (await res.json().catch(() => ({}))) as {
