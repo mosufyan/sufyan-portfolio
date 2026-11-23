@@ -26,7 +26,19 @@ export default function CloudConstellation({
   onSelectCertification,
   onFilterGridByProvider,
 }: CloudConstellationProps) {
-  const { isLight, theme } = useTheme();
+  const { isLight, theme, accent: siteAccent } = useTheme();
+  const isAmber = siteAccent === 'amber';
+  const brandFill = isAmber ? (isLight ? '#b45309' : '#f59e0b') : isLight ? '#0369a1' : '#38bdf8';
+  const brandSoft = isAmber ? (isLight ? '#fffbeb' : '#3b2a14') : isLight ? '#f0f9ff' : '#0d121f';
+  const brandStroke = isAmber ? (isLight ? '#fcd34d' : '#92400e') : isLight ? '#7dd3fc' : '#1e293b';
+  const polygonFill = isAmber
+    ? isLight
+      ? 'rgba(217, 119, 6, 0.16)'
+      : 'rgba(245, 158, 11, 0.16)'
+    : isLight
+      ? 'rgba(14, 165, 233, 0.16)'
+      : 'rgba(34, 211, 238, 0.16)';
+  const polygonStroke = isAmber ? (isLight ? '#d97706' : '#fbbf24') : isLight ? '#0284c7' : '#22d3ee';
   const shouldReduceMotion = useReducedMotion();
 
   const pillars = useMemo<ProviderPillar[]>(() => {
@@ -186,15 +198,16 @@ export default function CloudConstellation({
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.45, ease: EASE_OUT_EXPO }}
               style={{ transformOrigin: `${cx}px ${cy}px` }}
-              fill={isLight ? 'rgba(14, 165, 233, 0.16)' : 'rgba(34, 211, 238, 0.16)'}
-              stroke={isLight ? '#0284c7' : '#22d3ee'}
+              fill={polygonFill}
+              stroke={polygonStroke}
               strokeWidth="2.2"
             />
 
             {/* Interactive Vendor Nodes */}
             {vertices.map((v) => {
               const isSelected = v.pillar.id === selectedPillarId;
-              const accent = isLight ? v.pillar.accentLight : v.pillar.accentDark;
+              // Keep per-vendor colors; only brand labels/hub follow site accent.
+              const nodeAccent = isLight ? v.pillar.accentLight : v.pillar.accentDark;
               return (
                 <g
                   key={v.pillar.id}
@@ -218,7 +231,7 @@ export default function CloudConstellation({
                       cy={v.y}
                       r="12"
                       fill="none"
-                      stroke={accent}
+                      stroke={nodeAccent}
                       strokeWidth="1.5"
                       strokeOpacity="0.6"
                     />
@@ -227,7 +240,7 @@ export default function CloudConstellation({
                     cx={v.x}
                     cy={v.y}
                     r={isSelected ? 7.5 : 5.5}
-                    fill={accent}
+                    fill={nodeAccent}
                     stroke={isLight ? '#ffffff' : '#07090e'}
                     strokeWidth="2"
                   />
@@ -239,7 +252,9 @@ export default function CloudConstellation({
                     fill={
                       isSelected
                         ? isLight
-                          ? '#0c4a6e'
+                          ? isAmber
+                            ? '#78350f'
+                            : '#0c4a6e'
                           : '#ffffff'
                         : isLight
                           ? '#334155'
@@ -253,7 +268,7 @@ export default function CloudConstellation({
                     y={v.labelY + 11}
                     textAnchor="middle"
                     className="font-mono text-[10px] tabular-nums"
-                    fill={isLight ? '#0369a1' : '#38bdf8'}
+                    fill={brandFill}
                   >
                     {v.pillar.certs.length} certs
                   </text>
@@ -266,8 +281,8 @@ export default function CloudConstellation({
               cx={cx}
               cy={cy}
               r="24"
-              fill={isLight ? '#f0f9ff' : '#0d121f'}
-              stroke={isLight ? '#7dd3fc' : '#1e293b'}
+              fill={brandSoft}
+              stroke={brandStroke}
               strokeWidth="1.5"
             />
             <text
@@ -275,7 +290,7 @@ export default function CloudConstellation({
               y={cy + 4}
               textAnchor="middle"
               className="font-display text-[14px] font-extrabold tabular-nums"
-              fill={isLight ? '#0369a1' : '#38bdf8'}
+              fill={brandFill}
             >
               20x
             </text>

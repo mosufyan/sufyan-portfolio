@@ -36,7 +36,7 @@ type QrMode = 'url' | 'vcard';
 type ModalTab = 'qr' | 'social';
 
 export default function DigitalCardModal({ isOpen, onClose }: DigitalCardModalProps) {
-  const { isLight } = useTheme();
+  const { isLight, accent: siteAccent } = useTheme();
   const alignClass = useModalPlacement(isOpen);
   const [activeTab, setActiveTab] = useState<ModalTab>('qr');
   const [qrMode, setQrMode] = useState<QrMode>('url');
@@ -154,20 +154,39 @@ export default function DigitalCardModal({ isOpen, onClose }: DigitalCardModalPr
       if (!ctx) return;
 
       const cardLight = shareCardTheme === 'light';
+      const isAmber = siteAccent === 'amber';
       const bg = cardLight ? '#f8fafc' : '#06080d';
       const panel = cardLight ? '#ffffff' : '#0b111f';
       const border = cardLight ? '#cbd5e1' : '#1e293b';
       const heading = cardLight ? '#0f172a' : '#f8fafc';
       const subtext = cardLight ? '#334155' : '#cbd5e1';
       const muted = cardLight ? '#64748b' : '#94a3b8';
-      const accent = cardLight ? '#0284c7' : '#38bdf8';
-      const accentSoft = cardLight ? '#e0f2fe' : '#082f49';
+      const accent = isAmber
+        ? cardLight
+          ? '#b45309'
+          : '#f59e0b'
+        : cardLight
+          ? '#0284c7'
+          : '#38bdf8';
+      const accentSoft = isAmber
+        ? cardLight
+          ? '#fffbeb'
+          : '#3b2a14'
+        : cardLight
+          ? '#e0f2fe'
+          : '#082f49';
 
       ctx.fillStyle = bg;
       ctx.fillRect(0, 0, 1200, 630);
 
       // Subtle architectural dot matrix
-      ctx.fillStyle = cardLight ? 'rgba(2,132,199,0.14)' : 'rgba(56,189,248,0.14)';
+      ctx.fillStyle = isAmber
+        ? cardLight
+          ? 'rgba(180,83,9,0.14)'
+          : 'rgba(245,158,11,0.14)'
+        : cardLight
+          ? 'rgba(2,132,199,0.14)'
+          : 'rgba(56,189,248,0.14)';
       for (let x = 24; x < 1200; x += 28) {
         for (let y = 24; y < 630; y += 28) {
           ctx.beginPath();
@@ -294,7 +313,7 @@ export default function DigitalCardModal({ isOpen, onClose }: DigitalCardModalPr
           exit={{ opacity: 0 }}
           transition={{ duration: 0.18 }}
           onClick={onClose}
-          className={`fixed inset-0 z-50 flex ${alignClass} justify-center p-2.5 sm:p-5 pt-[max(0.75rem,env(safe-area-inset-top))] sm:pt-6 pb-[max(0.75rem,env(safe-area-inset-bottom))] bg-black/80 backdrop-blur-md overflow-y-auto print:hidden`}
+          className={`site-overlay fixed inset-0 z-50 flex ${alignClass} justify-center p-2.5 sm:p-5 pt-[max(0.75rem,env(safe-area-inset-top))] sm:pt-6 pb-[max(0.75rem,env(safe-area-inset-bottom))] bg-black/80 backdrop-blur-md overflow-y-auto print:hidden`}
         >
           <motion.div
             initial={{ opacity: 0, scale: 0.96, y: 12 }}
@@ -525,7 +544,7 @@ export default function DigitalCardModal({ isOpen, onClose }: DigitalCardModalPr
                         type="button"
                         onClick={handleDownloadSocialPng}
                         disabled={downloadingBanner}
-                        className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[#38bdf8] hover:bg-sky-300 text-slate-950 font-semibold text-xs transition-colors shadow-sm shadow-sky-500/20 cursor-pointer disabled:opacity-60"
+                        className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-semibold text-xs transition-colors shadow-sm shadow-cyan-500/20 cursor-pointer disabled:opacity-60"
                       >
                         <Download className="w-4 h-4" />
                         <span>{downloadingBanner ? 'Rendering PNG...' : 'Download 1200×630 PNG'}</span>
@@ -694,7 +713,7 @@ export default function DigitalCardModal({ isOpen, onClose }: DigitalCardModalPr
                   <button
                     type="button"
                     onClick={handleDownloadVcf}
-                    className="relative w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[#38bdf8] hover:bg-sky-300 text-slate-950 font-semibold text-xs transition-colors shadow-sm shadow-sky-500/20 cursor-pointer overflow-hidden"
+                    className="relative w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-semibold text-xs transition-colors shadow-sm shadow-cyan-500/20 cursor-pointer overflow-hidden"
                   >
                     {vcfSaved ? (
                       <>

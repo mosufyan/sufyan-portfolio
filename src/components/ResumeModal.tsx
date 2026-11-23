@@ -1746,7 +1746,7 @@ export default function ResumeModal({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.2 }}
-          className={`fixed inset-0 z-50 flex ${alignClass} justify-center p-2 sm:p-4 pt-[max(0.75rem,env(safe-area-inset-top))] sm:pt-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] bg-black/85 backdrop-blur-md overflow-y-auto print:static print:inset-auto print:block print:p-0 print:overflow-visible print-no-blur print-reset-motion ${
+          className={`site-overlay fixed inset-0 z-50 flex ${alignClass} justify-center p-2 sm:p-4 pt-[max(0.75rem,env(safe-area-inset-top))] sm:pt-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] bg-black/85 backdrop-blur-md overflow-y-auto print:static print:inset-auto print:block print:p-0 print:overflow-visible print-no-blur print-reset-motion ${
             isLight ? 'print:bg-white' : 'print:bg-[#06080d]'
           }`}
           onClick={onClose}
