@@ -89,6 +89,18 @@
   }
 }
 
+/*
+ * Theme-aware text selection.
+ * Do not use Tailwind selection:* utilities on .site-theme — in v4 they also emit
+ * descendant `::selection` rules (e.g. .selection\:text-cyan-200 ::selection), and
+ * pale cyan text on a light highlight becomes unreadable in light theme.
+ */
+.site-theme::selection,
+.site-theme *::selection {
+  background-color: rgb(34 211 238 / 0.28);
+  color: #ecfeff;
+}
+
 /* Shared responsive page shell used across sections */
 .page-shell {
   width: 100%;
