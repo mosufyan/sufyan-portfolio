@@ -14,6 +14,7 @@ html[data-accent='amber'] {
   --accent-glow: rgba(245, 158, 11, 0.45);
   --accent-glow-soft: rgba(245, 158, 11, 0.22);
   --accent-dot: rgba(251, 191, 36, 0.35);
+  --accent-shimmer: rgba(245, 158, 11, 0.95);
 }
 
 html:not([data-accent='amber']) {
@@ -25,6 +26,7 @@ html:not([data-accent='amber']) {
   --accent-glow: rgba(34, 211, 238, 0.45);
   --accent-glow-soft: rgba(34, 211, 238, 0.22);
   --accent-dot: rgba(56, 189, 248, 0.35);
+  --accent-shimmer: rgba(34, 211, 238, 0.95);
 }
 
 /* ---------- Dark (and shared) text ---------- */
@@ -337,8 +339,13 @@ html[data-theme='light'][data-accent='amber'] .site-theme [class*='bg-clip-text'
 html[data-theme='light'][data-accent='amber'] .site-theme [class*='border-cyan-'],
 html[data-theme='light'][data-accent='amber'] .site-theme [class*='hover:border-cyan-']:hover,
 html[data-theme='light'][data-accent='amber'] .site-theme [class*='border-sky-'],
-html[data-theme='light'][data-accent='amber'] .site-theme [class*='hover:border-sky-']:hover {
-  border-color: rgb(180 83 9 / 0.45) !important;
+html[data-theme='light'][data-accent='amber'] .site-theme [class*='hover:border-sky-']:hover,
+/* Explicit Featured Credentials / card hover utilities (beat Tailwind sky hover) */
+html[data-theme='light'][data-accent='amber'] .site-theme .hover\:border-sky-400:hover,
+html[data-theme='light'][data-accent='amber'] .site-theme .hover\:border-sky-300:hover,
+html[data-theme='light'][data-accent='amber'] .site-theme .hover\:border-cyan-500\/40:hover,
+html[data-theme='light'][data-accent='amber'] .site-theme .hover\:border-cyan-400\/40:hover {
+  border-color: #d97706 !important;
 }
 
 html[data-theme='light'][data-accent='amber'] .site-theme .skill-filter-banner {
