@@ -303,7 +303,7 @@ export default function App() {
     <MotionConfig reducedMotion="user">
       <div className="min-h-screen print:min-h-0">
         {/* Portfolio chrome follows site theme; ResumeModal stays outside so CV export keeps its own dark/light toggle */}
-        <div className="site-theme min-h-screen min-w-0 w-full overflow-x-clip bg-[#06080d] text-slate-200 selection:bg-cyan-500/30 selection:text-cyan-200 transition-colors duration-300">
+        <div className="site-theme min-h-screen min-w-0 w-full overflow-x-clip bg-[#06080d] text-slate-200 transition-colors duration-300">
           <div className={resumeOpen ? 'print:hidden' : ''}>
             <div className="sticky top-0 z-40 print:hidden">
               <Navbar

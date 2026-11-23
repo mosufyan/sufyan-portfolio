@@ -389,10 +389,10 @@ html[data-theme='light'] .site-theme [class*='bg-clip-text'] {
   color: #0369a1;
 }
 
-/* Selection */
-html[data-theme='light'] .site-theme .selection\:bg-cyan-500\/30::selection,
-html[data-theme='light'] .site-theme::selection {
-  background-color: rgb(14 165 233 / 0.25);
+/* Selection — must cover descendants (*::selection); parent-only ::selection is not enough */
+html[data-theme='light'] .site-theme::selection,
+html[data-theme='light'] .site-theme *::selection {
+  background-color: rgb(14 165 233 / 0.35);
   color: #0c4a6e;
 }
 
