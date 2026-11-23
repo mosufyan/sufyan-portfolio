@@ -94,7 +94,7 @@ export default function PWAInstallButton() {
   const [gateAction, setGateAction] = useState<AccessGateAction | null>(null);
   const [gateReverifyMessage, setGateReverifyMessage] = useState<string | null>(null);
   const guideAlignClass = useModalPlacement(showManualGuide);
-  const { isLight } = useTheme();
+  const { isLight, accent } = useTheme();
   const { recordCvDownloadLog, effectivePortfolioSettings } = useFirebase();
 
   if (
@@ -122,6 +122,7 @@ export default function PWAInstallButton() {
         action: 'install',
         formatLabel: 'Portfolio PWA',
         theme: isLight ? 'light' : 'dark',
+        accent,
         onPersistLog: recordCvDownloadLog,
       });
       if (track.status === 'expired') {

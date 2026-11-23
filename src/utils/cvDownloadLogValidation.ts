@@ -33,6 +33,7 @@ export interface CvTrackingSummary {
   action: CvDownloadAction;
   formatLabel: string;
   theme: 'dark' | 'light';
+  accent?: 'cyan' | 'amber';
   verificationStatus: CvVerificationStatus;
   ipAddress: string;
   country: string;
@@ -100,6 +101,8 @@ export function sanitizeCvDownloadLogPayload(input: Partial<CvTrackingSummary>):
   }
 
   const theme: 'dark' | 'light' = input.theme === 'light' ? 'light' : 'dark';
+  const accent: 'cyan' | 'amber' | undefined =
+    input.accent === 'amber' ? 'amber' : input.accent === 'cyan' ? 'cyan' : undefined;
 
   const verificationStatus: CvVerificationStatus =
     input.verificationStatus === 'otp_verified' ||
@@ -122,6 +125,7 @@ export function sanitizeCvDownloadLogPayload(input: Partial<CvTrackingSummary>):
     action,
     formatLabel,
     theme,
+    ...(accent ? { accent } : {}),
     verificationStatus,
     ipAddress: clampString(input.ipAddress, CV_DOWNLOAD_CONSTRAINTS.ipMaxLength),
     country: clampString(input.country, CV_DOWNLOAD_CONSTRAINTS.geoMaxLength) || 'Unknown',

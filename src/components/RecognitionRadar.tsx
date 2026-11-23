@@ -346,8 +346,13 @@ export default function RecognitionRadar({
             {/* Interactive Pillar Nodes */}
             {vertices.map((v) => {
               const isSelected = v.pillar.id === selectedPillarId;
-              // Keep per-pillar colors; brand hub / count labels follow site accent.
-              const pillarAccent = isLight ? v.pillar.accentLight : v.pillar.accentDark;
+              // Keep multi-color pillars, but remap cyan/sky brand nodes to site amber.
+              const rawPillarAccent = isLight ? v.pillar.accentLight : v.pillar.accentDark;
+              const pillarAccent =
+                isAmber &&
+                /^(#22d3ee|#38bdf8|#0284c7|#0369a1|#0ea5e9|#0891b2)$/i.test(rawPillarAccent)
+                  ? brandFill
+                  : rawPillarAccent;
               return (
                 <g
                   key={v.pillar.id}

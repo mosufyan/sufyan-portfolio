@@ -157,7 +157,13 @@ export async function adminWriteContactMessage(
 
 export async function adminGetContactMessage(
   messageId: string
-): Promise<{ senderEmail: string; senderName: string; ownerNote?: string; theme?: string } | null> {
+): Promise<{
+  senderEmail: string;
+  senderName: string;
+  ownerNote?: string;
+  theme?: string;
+  accent?: string;
+} | null> {
   if (!tryInitAdmin() || !firestore) return null;
   try {
     const snap = await firestore.collection('contact_messages').doc(messageId).get();
@@ -169,7 +175,8 @@ export async function adminGetContactMessage(
     const senderName = typeof data.senderName === 'string' ? data.senderName.trim() : '';
     const ownerNote = typeof data.ownerNote === 'string' ? data.ownerNote : '';
     const theme = typeof data.theme === 'string' ? data.theme : undefined;
-    return { senderEmail, senderName, ownerNote, theme };
+    const accent = typeof data.accent === 'string' ? data.accent : undefined;
+    return { senderEmail, senderName, ownerNote, theme, accent };
   } catch (error) {
     console.error('Admin contact_messages read failed:', error);
     return null;

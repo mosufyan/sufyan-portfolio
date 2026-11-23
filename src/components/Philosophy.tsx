@@ -110,7 +110,7 @@ export default function Philosophy({ readingMode = 'deep' }: PhilosophyProps) {
             className={`lg:col-span-5 print:col-span-5 rounded-2xl p-6 sm:p-8 flex flex-col justify-between shadow-2xl relative overflow-hidden group transition-colors print:break-inside-avoid ${
               isLight
                 ? 'border border-sky-200 hover:border-sky-300 bg-gradient-to-br from-sky-50 via-white to-slate-50'
-                : 'border border-cyan-500/20 hover:border-cyan-400/35 bg-gradient-to-br from-[#0c1524] via-[#0d1226] to-[#080b18]'
+                : 'border border-cyan-500/30 hover:border-cyan-400/40 bg-gradient-to-br from-[#0c1524] via-[#0d1226] to-[#080b18]'
             }`}
           >
             <div
@@ -122,11 +122,11 @@ export default function Philosophy({ readingMode = 'deep' }: PhilosophyProps) {
             <div className="relative z-10">
               <div className="flex items-center justify-between pb-6">
                 <Quote
-                  className={`w-8 h-8 ${isLight ? 'text-sky-700/80' : 'text-cyan-400/80'}`}
+                  className={`w-8 h-8 ${isLight ? 'text-sky-700' : 'text-cyan-400'}`}
                 />
                 <span
                   className={`text-[10px] font-mono uppercase tracking-widest ${
-                    isLight ? 'text-sky-700/70' : 'text-cyan-300/60'
+                    isLight ? 'text-sky-700' : 'text-cyan-300'
                   }`}
                 >
                   GUIDING CREED
@@ -150,7 +150,7 @@ export default function Philosophy({ readingMode = 'deep' }: PhilosophyProps) {
 
             <div
               className={`relative z-10 pt-8 mt-8 flex items-center justify-between ${
-                isLight ? 'border-t border-sky-200' : 'border-t border-cyan-500/20'
+                isLight ? 'border-t border-sky-200' : 'border-t border-cyan-500/30'
               }`}
             >
               <div>
@@ -161,7 +161,7 @@ export default function Philosophy({ readingMode = 'deep' }: PhilosophyProps) {
                 >
                   Mohammed Sufyan
                 </div>
-                <div className={`text-xs font-mono ${isLight ? 'text-sky-700' : 'text-cyan-300/80'}`}>
+                <div className={`text-xs font-mono ${isLight ? 'text-sky-700' : 'text-cyan-300'}`}>
                   Software Engineer
                 </div>
               </div>

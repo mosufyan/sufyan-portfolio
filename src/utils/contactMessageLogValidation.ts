@@ -32,6 +32,7 @@ export interface ContactMessageSummary {
   subject: string;
   message: string;
   theme: 'dark' | 'light';
+  accent?: 'cyan' | 'amber';
   ipAddress: string;
   country: string;
   region: string;
@@ -200,6 +201,8 @@ export function sanitizeContactMessageLogPayload(
   }
 
   const theme: ContactMessageSummary['theme'] = input.theme === 'light' ? 'light' : 'dark';
+  const accent: ContactMessageSummary['accent'] =
+    input.accent === 'amber' ? 'amber' : input.accent === 'cyan' ? 'cyan' : undefined;
   const riskLevel: ContactMessageSummary['riskLevel'] =
     input.riskLevel === 'high' || input.riskLevel === 'medium' ? input.riskLevel : 'low';
 
@@ -211,6 +214,7 @@ export function sanitizeContactMessageLogPayload(
     subject: clampString(input.subject, CONTACT_MESSAGE_LOG_CONSTRAINTS.subjectMaxLength),
     message,
     theme,
+    ...(accent ? { accent } : {}),
     ipAddress: clampString(input.ipAddress, CONTACT_MESSAGE_LOG_CONSTRAINTS.ipMaxLength),
     country: clampString(input.country, CONTACT_MESSAGE_LOG_CONSTRAINTS.geoMaxLength) || 'Unknown',
     region: clampString(input.region, CONTACT_MESSAGE_LOG_CONSTRAINTS.geoMaxLength),
