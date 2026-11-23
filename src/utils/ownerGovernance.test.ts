@@ -5,6 +5,7 @@ import {
   getEffectivePortfolioSettings,
   sanitizeAdminAuditPayload,
   sanitizePortfolioSettings,
+  summarizePortfolioSettingsChanges,
   toPublicPortfolioSettings,
   validateAccessRuleDraft,
   validateAdminDelegateDraft,
@@ -205,5 +206,24 @@ describe('ownerGovernance utilities', () => {
     });
     expect(blockedOverAllow.blocked).toBe(true);
     expect(blockedOverAllow.allowlisted).toBe(false);
+  });
+
+  it('summarizes portfolio settings diffs for Site Controls save toast', () => {
+    const before = { ...DEFAULT_PORTFOLIO_SETTINGS };
+    const after = {
+      ...DEFAULT_PORTFOLIO_SETTINGS,
+      incidentMode: true,
+      enableContactForm: false,
+      availabilityStatus: 'advisory' as const,
+      alertClassNewInquiry: 'urgent' as const,
+    };
+    const lines = summarizePortfolioSettingsChanges(before, after);
+    expect(lines).toEqual([
+      'Availability → Advisory Only',
+      'Contact submissions → Off',
+      'Incident Mode → On',
+      'New contact inquiry → urgent',
+    ]);
+    expect(summarizePortfolioSettingsChanges(before, before)).toEqual([]);
   });
 });

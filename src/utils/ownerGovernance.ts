@@ -570,6 +570,104 @@ export function sanitizePortfolioSettings(input: Partial<PortfolioSettings> | nu
   };
 }
 
+const AVAILABILITY_STATUS_LABELS: Record<AvailabilityStatus, string> = {
+  open: 'Open to Roles',
+  advisory: 'Advisory Only',
+  unavailable: 'Unavailable',
+};
+
+/** Human labels for Site Controls save confirmation / toast diffs. */
+export const PORTFOLIO_SETTINGS_FIELD_LABELS: Partial<Record<keyof PortfolioSettings, string>> = {
+  availabilityStatus: 'Availability',
+  availabilityText: 'Custom status text',
+  maintenanceMode: 'Maintenance Banner Mode',
+  maintenanceMessage: 'Maintenance banner message',
+  enableContactForm: 'Contact submissions',
+  enableCvDownloads: 'CV exports & print',
+  strictOtpForAll: 'Strict OTP (legacy)',
+  requireOtpForChat: 'Require OTP for portfolio chat',
+  requireOtpForContact: 'Require OTP for contact submissions',
+  requireOtpForCv: 'Require OTP for CV exports',
+  showAnnouncementsBadge: 'Announcements badge',
+  enableAnnouncements: 'Announcements',
+  enableResumeStudio: 'Resume / CV Studio',
+  enableDigitalCard: 'Digital business card',
+  enableCommandPalette: 'Command palette',
+  enableTerminal: 'Engineering terminal',
+  enablePwaInstall: 'PWA install',
+  enableSkillFilter: 'Skill filter',
+  enableReadingModes: 'Reading modes',
+  enableScrollHud: 'Scroll HUD / rail',
+  enableSiteTelemetry: 'Site telemetry',
+  incidentMode: 'Incident Mode',
+  incidentMessage: 'Incident mode message',
+  notifyOnNewInquiry: 'Alert tag on new inquiries',
+  enablePortfolioChat: 'Portfolio chat',
+  enableLiveChat: 'Live agent chat',
+  enableChatLlm: 'Chat LLM enrichment',
+  enableVoiceAgent: 'Voice agent',
+  chatMaxQuestionsPerVisitor: 'Max chat questions / visitor',
+  chatMaxLlmPerVisitor: 'Max LLM answers / visitor',
+  chatMaxLiveSessionsPerVisitor: 'Max live sessions / visitor',
+  chatMaxVoiceTurnsPerVisitor: 'Max voice turns / visitor',
+  chatRateWindowHours: 'Chat rate window (hours)',
+  chatLlmModel: 'Chat LLM model',
+  chatShowSuggestions: 'Chat suggestion chips',
+  chatOfferLiveAgent: 'Offer live-agent handoff',
+  alertEmailEnabled: 'Alert email routing',
+  alertEmailUrgent: 'Email urgent alerts',
+  alertEmailWarning: 'Email warning alerts',
+  alertEmailDigest: 'Email digest alerts',
+  alertClassNewInquiry: OWNER_ALERT_EVENT_LABELS.new_inquiry,
+  alertClassLiveChat: OWNER_ALERT_EVENT_LABELS.live_chat,
+  alertClassRiskDownload: OWNER_ALERT_EVENT_LABELS.risk_download,
+  alertClassUnusualTraffic: OWNER_ALERT_EVENT_LABELS.unusual_traffic,
+  alertClassChatLimit: OWNER_ALERT_EVENT_LABELS.chat_limit,
+  alertClassOverdueCrm: OWNER_ALERT_EVENT_LABELS.overdue_crm,
+};
+
+function formatPortfolioSettingValue(key: keyof PortfolioSettings, value: unknown): string {
+  if (typeof value === 'boolean') return value ? 'On' : 'Off';
+  if (key === 'availabilityStatus' && typeof value === 'string') {
+    return AVAILABILITY_STATUS_LABELS[value as AvailabilityStatus] || value;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return '(empty)';
+    return trimmed.length > 48 ? `${trimmed.slice(0, 45)}…` : trimmed;
+  }
+  if (typeof value === 'number') return String(value);
+  return String(value);
+}
+
+/**
+ * Diff two portfolio settings snapshots into short human lines for save toasts.
+ * Order follows PORTFOLIO_SETTINGS_FIELD_LABELS declaration order.
+ */
+export function summarizePortfolioSettingsChanges(
+  before: PortfolioSettings,
+  after: PortfolioSettings,
+  options: { maxLines?: number } = {}
+): string[] {
+  const maxLines = options.maxLines ?? 8;
+  const lines: string[] = [];
+  for (const key of Object.keys(PORTFOLIO_SETTINGS_FIELD_LABELS) as (keyof PortfolioSettings)[]) {
+    const label = PORTFOLIO_SETTINGS_FIELD_LABELS[key];
+    if (!label) continue;
+    const prev = before[key];
+    const next = after[key];
+    if (Object.is(prev, next)) continue;
+    lines.push(`${label} → ${formatPortfolioSettingValue(key, next)}`);
+    if (lines.length >= maxLines) break;
+  }
+  const totalChanged = (Object.keys(PORTFOLIO_SETTINGS_FIELD_LABELS) as (keyof PortfolioSettings)[])
+    .filter((key) => !Object.is(before[key], after[key])).length;
+  if (totalChanged > lines.length) {
+    lines.push(`+${totalChanged - lines.length} more change${totalChanged - lines.length === 1 ? '' : 's'}`);
+  }
+  return lines;
+}
+
 /** UX-only subset safe to expose on `portfolio_settings/public` (no caps/alerts/LLM). */
 export type PublicPortfolioSettings = Pick<
   PortfolioSettings,

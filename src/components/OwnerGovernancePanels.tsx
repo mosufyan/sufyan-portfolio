@@ -1,4 +1,5 @@
 import { type FormEvent, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   AlertTriangle,
   Check,
@@ -27,10 +28,12 @@ import {
   Terminal,
   Trash2,
   Wrench,
+  X,
 } from 'lucide-react';
 import { useFirebase } from '../contexts/FirebaseContext';
 import {
   DEFAULT_PORTFOLIO_SETTINGS,
+  summarizePortfolioSettingsChanges,
   type AccessRuleDraft,
   type AccessRuleMatchType,
   type AccessRuleType,
@@ -388,11 +391,17 @@ export function SiteControlsPanel({ isLight }: { isLight: boolean }) {
   const [draft, setDraft] = useState<PortfolioSettings>(() => ({ ...portfolioSettings }));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [savedNotice, setSavedNotice] = useState<string | null>(null);
+  const [saveToast, setSaveToast] = useState<{ lines: string[] } | null>(null);
 
   useEffect(() => {
     setDraft({ ...portfolioSettings });
   }, [portfolioSettings]);
+
+  useEffect(() => {
+    if (!saveToast) return;
+    const timer = window.setTimeout(() => setSaveToast(null), 5000);
+    return () => window.clearTimeout(timer);
+  }, [saveToast]);
 
   const hasUnsaved = JSON.stringify(draft) !== JSON.stringify(portfolioSettings);
 
@@ -412,11 +421,17 @@ export function SiteControlsPanel({ isLight }: { isLight: boolean }) {
     e.preventDefault();
     if (saving) return;
     setError(null);
-    setSavedNotice(null);
     setSaving(true);
+    const before = { ...portfolioSettings };
     try {
       await savePortfolioSettings(draft);
-      setSavedNotice('Site settings updated in Firestore & synced with backend security rules.');
+      const lines = summarizePortfolioSettingsChanges(before, draft);
+      setSaveToast({
+        lines:
+          lines.length > 0
+            ? lines
+            : ['No field changes — settings re-synced with live site.'],
+      });
     } catch (err) {
       setError(toUserFacingError(err, 'Unable to save site controls.'));
     } finally {
@@ -469,20 +484,6 @@ export function SiteControlsPanel({ isLight }: { isLight: boolean }) {
             }`}
           >
             {error}
-          </div>
-        )}
-
-        {savedNotice && (
-          <div
-            role="status"
-            className={`rounded-lg border px-3 py-2 text-xs flex items-center gap-1.5 ${
-              isLight
-                ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
-                : 'border-emerald-500/40 bg-emerald-950/35 text-emerald-200'
-            }`}
-          >
-            <Check className="w-3.5 h-3.5 shrink-0" />
-            <span>{savedNotice}</span>
           </div>
         )}
 
@@ -796,6 +797,55 @@ export function SiteControlsPanel({ isLight }: { isLight: boolean }) {
           </button>
         </div>
       </div>
+
+      {saveToast &&
+        createPortal(
+          <div
+            role="status"
+            aria-live="polite"
+            className={`fixed z-[80] bottom-4 right-4 sm:bottom-6 sm:right-6 w-[min(22rem,calc(100vw-1.5rem))] rounded-xl border shadow-lg p-3.5 ${
+              isLight
+                ? 'border-emerald-200 bg-white text-slate-900 shadow-slate-900/10'
+                : 'border-emerald-500/35 bg-[#0b101b] text-slate-100 shadow-black/40'
+            }`}
+          >
+            <div className="flex items-start gap-2.5">
+              <span
+                className={`mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${
+                  isLight ? 'bg-emerald-100 text-emerald-700' : 'bg-emerald-950/60 text-emerald-300'
+                }`}
+              >
+                <Check className="w-3.5 h-3.5" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className={`text-sm font-semibold ${titleCls}`}>Site controls saved</div>
+                <p className={`text-[11px] mt-0.5 ${mutedCls}`}>
+                  Synced to Firestore and live enforcement.
+                </p>
+                <ul className={`mt-2 space-y-1 text-[11px] font-mono ${mutedCls}`}>
+                  {saveToast.lines.map((line) => (
+                    <li key={line} className="truncate">
+                      {line}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <button
+                type="button"
+                aria-label="Dismiss save confirmation"
+                onClick={() => setSaveToast(null)}
+                className={`p-1 rounded-md transition-colors cursor-pointer shrink-0 ${
+                  isLight
+                    ? 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
+                    : 'text-slate-500 hover:text-slate-200 hover:bg-slate-800'
+                }`}
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>,
+          document.body
+        )}
     </form>
   );
 }
