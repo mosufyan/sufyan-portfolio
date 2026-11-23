@@ -277,7 +277,7 @@ export default function EngineeringTerminal({
           exit={{ opacity: 0 }}
           transition={{ duration: 0.18 }}
           onClick={onClose}
-          className={`fixed inset-0 z-50 flex ${alignClass} justify-center backdrop-blur-sm p-2.5 sm:p-5 pt-[max(0.75rem,env(safe-area-inset-top))] sm:pt-6 pb-[max(0.75rem,env(safe-area-inset-bottom))] overflow-y-auto print:hidden ${
+          className={`site-overlay fixed inset-0 z-50 flex ${alignClass} justify-center backdrop-blur-sm p-2.5 sm:p-5 pt-[max(0.75rem,env(safe-area-inset-top))] sm:pt-6 pb-[max(0.75rem,env(safe-area-inset-bottom))] overflow-y-auto print:hidden ${
             isLight ? 'bg-slate-900/45' : 'bg-black/75'
           }`}
           role="dialog"

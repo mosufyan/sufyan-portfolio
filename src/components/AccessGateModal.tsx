@@ -598,7 +598,7 @@ export default function AccessGateModal({
           exit={{ opacity: 0 }}
           transition={{ duration: 0.18 }}
           onClick={close}
-          className={`fixed inset-0 z-[60] flex ${alignClass} justify-center p-2.5 sm:p-5 pt-[max(0.75rem,env(safe-area-inset-top))] sm:pt-6 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur-sm overflow-y-auto print:hidden ${
+          className={`site-overlay fixed inset-0 z-[60] flex ${alignClass} justify-center p-2.5 sm:p-5 pt-[max(0.75rem,env(safe-area-inset-top))] sm:pt-6 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur-sm overflow-y-auto print:hidden ${
             isLight ? 'bg-slate-900/45' : 'bg-black/80'
           }`}
         >

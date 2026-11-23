@@ -148,7 +148,7 @@ export default function SecurityArchitectureModal({
     <AnimatePresence>
       {open && (
         <motion.div
-          className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center p-0 sm:p-6"
+          className="site-overlay fixed inset-0 z-[80] flex items-end sm:items-center justify-center p-0 sm:p-6"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
