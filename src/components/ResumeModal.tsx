@@ -331,12 +331,15 @@ export default function ResumeModal({
   onClose,
   initialShareConfig,
 }: ResumeModalProps) {
-  const { theme: siteTheme } = useTheme();
+  const { theme: siteTheme, accent: siteAccent } = useTheme();
   const alignClass = useModalPlacement(isOpen);
   const modalScrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const measureRef = useRef<HTMLDivElement>(null);
   const preserveSharedThemeRef = useRef<boolean>(Boolean(initialShareConfig?.shouldOpen && initialShareConfig?.theme));
+  const preserveSharedAccentRef = useRef<boolean>(
+    Boolean(initialShareConfig?.shouldOpen && initialShareConfig?.accent)
+  );
 
   const [preset, setPreset] = useState<PresetMode>(() => resolveInitialConfig(initialShareConfig).preset);
   const [config, setConfig] = useState<ExportConfig>(() => resolveInitialConfig(initialShareConfig).config);
@@ -349,7 +352,10 @@ export default function ResumeModal({
     () => (initialShareConfig?.shouldOpen && initialShareConfig.density ? initialShareConfig.density : 'executive')
   );
   const [cvAccent, setCvAccent] = useState<CvAccentId>(
-    () => (initialShareConfig?.shouldOpen && initialShareConfig.accent ? initialShareConfig.accent : 'cyan')
+    () =>
+      initialShareConfig?.shouldOpen && initialShareConfig.accent
+        ? initialShareConfig.accent
+        : siteAccent
   );
   const [showCustomize, setShowCustomize] = useState(false);
   const [controlsOpen, setControlsOpen] = useState(true);
@@ -396,6 +402,12 @@ export default function ResumeModal({
       } else {
         setCvTheme(siteTheme);
       }
+      if (preserveSharedAccentRef.current) {
+        preserveSharedAccentRef.current = false;
+      } else {
+        // Keep CV SVG infographics (radar/trajectory) aligned with site accent.
+        setCvAccent(siteAccent);
+      }
     } else {
       setPendingAction(null);
       setGateReverifyMessage(null);
@@ -403,7 +415,7 @@ export default function ResumeModal({
       setControlsOpen(true);
       setIsBodyScrolled(false);
     }
-  }, [isOpen, siteTheme]);
+  }, [isOpen, siteTheme, siteAccent]);
 
   useEffect(() => {
     if (!isOpen) return;
