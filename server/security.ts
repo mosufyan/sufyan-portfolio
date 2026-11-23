@@ -144,7 +144,7 @@ export function isCspStrictStylesEnabled(env: NodeJS.ProcessEnv = process.env): 
 }
 
 /** Theme boot script in index.html — keep hash in sync if that inline block changes. */
-export const THEME_BOOT_SCRIPT_HASH = "'sha256-CgJhvzskzf709G6UFOCppYV+yn4GzdLGTM7wjEj6gdU='";
+export const THEME_BOOT_SCRIPT_HASH = "'sha256-O4CQilOGOhTnEIrcmOBIAfQx9jpXZpXwqN224L11mJs='";
 
 function buildStyleDirectives(mode: 'compatible' | 'strict' | 'report'): string[] {
   if (mode === 'compatible') {

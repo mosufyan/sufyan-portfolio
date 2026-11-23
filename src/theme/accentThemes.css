@@ -1,0 +1,114 @@
+/*
+  Accent packs on top of dark/light bases.
+  Default accent is cyan (no remap). Amber remaps cyan/sky brand accents site-wide.
+  Scoped under .site-theme; navbar-chrome stays consistent via the same utilities.
+*/
+
+html[data-accent='amber'] {
+  --accent-500: #f59e0b;
+  --accent-400: #fbbf24;
+  --accent-300: #fcd34d;
+  --accent-200: #fde68a;
+  --accent-glow: rgba(245, 158, 11, 0.45);
+}
+
+html:not([data-accent='amber']) {
+  --accent-500: #06b6d4;
+  --accent-400: #22d3ee;
+  --accent-300: #67e8f9;
+  --accent-200: #a5f3fc;
+  --accent-glow: rgba(34, 211, 238, 0.45);
+}
+
+/* ---------- Amber accent remaps (Tailwind cyan / sky brand chips) ---------- */
+
+html[data-accent='amber'] .site-theme .text-cyan-200,
+html[data-accent='amber'] .site-theme .text-cyan-300,
+html[data-accent='amber'] .site-theme .hover\:text-cyan-300:hover,
+html[data-accent='amber'] .site-theme .text-cyan-400,
+html[data-accent='amber'] .site-theme .hover\:text-cyan-400:hover,
+html[data-accent='amber'] .site-theme .group-hover\:text-cyan-300:hover,
+html[data-accent='amber'] .site-theme .group-hover\:text-cyan-400:hover {
+  color: #fbbf24 !important;
+}
+
+html[data-accent='amber'] .site-theme .text-cyan-500,
+html[data-accent='amber'] .site-theme .text-sky-400,
+html[data-accent='amber'] .site-theme .text-sky-500 {
+  color: #f59e0b !important;
+}
+
+html[data-accent='amber'] .site-theme .bg-cyan-500,
+html[data-accent='amber'] .site-theme .hover\:bg-cyan-400:hover,
+html[data-accent='amber'] .site-theme .bg-cyan-400 {
+  background-color: #f59e0b !important;
+  color: #0f172a !important;
+}
+
+html[data-accent='amber'] .site-theme .hover\:bg-cyan-400:hover {
+  background-color: #fbbf24 !important;
+}
+
+html[data-accent='amber'] .site-theme .bg-cyan-500\/20,
+html[data-accent='amber'] .site-theme .bg-cyan-950\/30,
+html[data-accent='amber'] .site-theme .bg-cyan-950\/35,
+html[data-accent='amber'] .site-theme .bg-cyan-950\/40,
+html[data-accent='amber'] .site-theme .hover\:bg-cyan-900\/50:hover {
+  background-color: rgb(120 53 15 / 0.35) !important;
+}
+
+html[data-accent='amber'] .site-theme .border-cyan-400,
+html[data-accent='amber'] .site-theme .border-cyan-400\/40,
+html[data-accent='amber'] .site-theme .border-cyan-500\/40,
+html[data-accent='amber'] .site-theme .border-cyan-500\/45,
+html[data-accent='amber'] .site-theme .hover\:border-cyan-500\/40:hover,
+html[data-accent='amber'] .site-theme .border-cyan-500 {
+  border-color: rgb(245 158 11 / 0.55) !important;
+}
+
+html[data-accent='amber'] .site-theme .from-cyan-400,
+html[data-accent='amber'] .site-theme .via-cyan-400,
+html[data-accent='amber'] .site-theme .to-sky-400,
+html[data-accent='amber'] .site-theme .to-cyan-400 {
+  --tw-gradient-from: #fbbf24 !important;
+  --tw-gradient-to: #f59e0b !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important;
+}
+
+html[data-accent='amber'] .site-theme .shadow-\[0_0_10px_rgba\(34\,211\,238\,0\.7\)\],
+html[data-accent='amber'] .site-theme .shadow-\[0_0_8px_rgba\(34\,211\,238\,0\.5\)\],
+html[data-accent='amber'] .site-theme .shadow-\[0_0_12px_rgba\(34\,211\,238\,0\.2\)\] {
+  --tw-shadow-color: rgb(245 158 11 / 0.45);
+  box-shadow: 0 0 10px rgb(245 158 11 / 0.4) !important;
+}
+
+html[data-accent='amber'] .site-theme .ring-cyan-500,
+html[data-accent='amber'] .site-theme .focus\:ring-cyan-500:focus,
+html[data-accent='amber'] .site-theme .focus\:border-cyan-500:focus {
+  --tw-ring-color: #f59e0b;
+  border-color: #f59e0b !important;
+}
+
+html[data-accent='amber'] .site-theme .accent-cyan-500,
+html[data-accent='amber'] .site-theme input[type='checkbox'].text-cyan-500 {
+  accent-color: #f59e0b;
+  color: #f59e0b !important;
+}
+
+/* Light + amber: keep readable sky→amber ink for clipped headings already remapped in lightTheme */
+html[data-theme='light'][data-accent='amber'] .site-theme [class*='bg-clip-text'] {
+  -webkit-text-fill-color: #b45309;
+  color: #b45309;
+}
+
+html[data-theme='light'][data-accent='amber'] .site-theme::selection,
+html[data-theme='light'][data-accent='amber'] .site-theme *::selection {
+  background-color: rgb(245 158 11 / 0.28);
+  color: #78350f;
+}
+
+html[data-theme='dark'][data-accent='amber'] .site-theme::selection,
+html[data-theme='dark'][data-accent='amber'] .site-theme *::selection {
+  background-color: rgb(245 158 11 / 0.32);
+  color: #fffbeb;
+}

@@ -4,6 +4,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { FirebaseProvider } from './contexts/FirebaseContext';
 import './index.css';
 import './theme/lightTheme.css';
+import './theme/accentThemes.css';
 import { ThemeProvider } from './theme/ThemeProvider';
 
 createRoot(document.getElementById('root')!).render(

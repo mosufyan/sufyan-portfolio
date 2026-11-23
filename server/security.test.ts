@@ -110,7 +110,7 @@ describe('CSP / headers', () => {
     expect(csp).not.toContain('unsafe-eval');
     expect(csp).toMatch(/script-src 'self' 'sha256-[^']+'/);
     expect(csp).not.toMatch(/script-src[^;]*'unsafe-inline'/);
-    expect(csp).toContain("'sha256-CgJhvzskzf709G6UFOCppYV+yn4GzdLGTM7wjEj6gdU='");
+    expect(csp).toContain("'sha256-O4CQilOGOhTnEIrcmOBIAfQx9jpXZpXwqN224L11mJs='");
   });
 
   it('applies core security headers', () => {
@@ -164,7 +164,7 @@ describe('CSP / headers', () => {
     expect(reportOnly).not.toMatch(/style-src[^;]*'unsafe-inline'/);
     expect(reportOnly).not.toMatch(/script-src[^;]*'unsafe-inline'/);
     // Prod report-only still allows the hashed theme boot script.
-    expect(reportOnly).toContain("'sha256-CgJhvzskzf709G6UFOCppYV+yn4GzdLGTM7wjEj6gdU='");
+    expect(reportOnly).toContain("'sha256-O4CQilOGOhTnEIrcmOBIAfQx9jpXZpXwqN224L11mJs='");
   });
 
   it('applySecurityHeaders honors CSP_STRICT_STYLES kill switch via env', () => {
