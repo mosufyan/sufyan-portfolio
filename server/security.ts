@@ -345,11 +345,17 @@ export async function verifyTurnstileToken(
   }
 }
 
+/** AI dataset scrapers, agent crawlers, SEO bots, and vulnerability scanners — always blocked. */
 const BLOCKED_CRAWLER_AND_SCANNER_UA_REGEX =
-  /\b(gptbot|chatgpt-user|oai-searchbot|google-extended|ccbot|claudebot|claude-web|anthropic-ai|bytespider|perplexitybot|applebot-extended|amazonbot|meta-externalagent|facebookbot|diffbot|cohere-ai|omgilibot|omgili|youbot|imagesiftbot|timpibot|scrapy|sqlmap|nikto|gobuster|dirbuster|masscan|nuclei|semrushbot|ahrefsbot|mj12bot|dotbot)\b/i;
+  /\b(gptbot|chatgpt-user|oai-searchbot|google-extended|ccbot|claudebot|claude-web|anthropic-ai|bytespider|perplexitybot|applebot-extended|amazonbot|meta-externalagent|facebookbot|diffbot|cohere-ai|omgilibot|omgili|youbot|imagesiftbot|timpibot|ai2bot|petalbot|dataforseobot|webzio|webz\.io|seekr|duckassistbot|icc-crawler|velenpublicwebcrawler|magpie-crawler|turnitinbot|whisper|scrapy|sqlmap|nikto|gobuster|dirbuster|masscan|nuclei|semrushbot|ahrefsbot|mj12bot|dotbot)\b/i;
 
+/**
+ * Headless browsers, HTTP libraries, and agentic automation frameworks.
+ * Only enforced on sensitive POST mutations (contact / CV / chat) so legitimate
+ * link-preview unfurlers and search crawlers are not collateral damage.
+ */
 const BLOCKED_POST_SCRIPT_UA_REGEX =
-  /\b(headlesschrome|phantomjs|python-urllib|python-requests|go-http-client|java\/|httpclient|aiohttp|httpx)\b/i;
+  /\b(headlesschrome|phantomjs|selenium|puppeteer|playwright|browser-use|crawl4ai|langchain|python-urllib|python-requests|go-http-client|java\/|httpclient|aiohttp|httpx|axios\/|node-fetch|undici|got\/|curl\/|wget|libwww|okhttp|postmanruntime|insomnia|httpie)\b/i;
 
 /** Reject blatant AI scrapers, vulnerability scanners, and automated form-submission scripts. */
 export function isBlockedBotUserAgent(
@@ -364,6 +370,18 @@ export function isBlockedBotUserAgent(
   if (BLOCKED_CRAWLER_AND_SCANNER_UA_REGEX.test(clean)) return true;
   if (isPostMutation && BLOCKED_POST_SCRIPT_UA_REGEX.test(clean)) return true;
   return false;
+}
+
+/** Detect Cloudflare edge proxy from request headers (no secrets). */
+export function isCloudflareEdgeProxied(headers: {
+  'cf-ray'?: string | string[];
+  'cf-connecting-ip'?: string | string[];
+}): boolean {
+  const ray = headers['cf-ray'];
+  const ip = headers['cf-connecting-ip'];
+  const hasRay = typeof ray === 'string' ? ray.trim().length > 0 : Array.isArray(ray) && ray.length > 0;
+  const hasIp = typeof ip === 'string' ? ip.trim().length > 0 : Array.isArray(ip) && ip.length > 0;
+  return hasRay || hasIp;
 }
 
 /** Reject browser requests explicitly marked as cross-site via Fetch Metadata. */

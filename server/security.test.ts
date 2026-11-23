@@ -9,6 +9,7 @@ import {
   isAiStudioPreviewHost,
   isAllowedRequestOrigin,
   isBlockedBotUserAgent,
+  isCloudflareEdgeProxied,
   isCspStrictStylesEnabled,
   isDisallowedFetchSite,
   isFormSubmitFallbackAllowed,
@@ -277,6 +278,9 @@ describe('anti-bot & fetch-metadata hardening', () => {
     expect(isBlockedBotUserAgent('ClaudeBot/1.0')).toBe(true);
     expect(isBlockedBotUserAgent('CCBot/2.0')).toBe(true);
     expect(isBlockedBotUserAgent('Bytespider')).toBe(true);
+    expect(isBlockedBotUserAgent('AI2Bot')).toBe(true);
+    expect(isBlockedBotUserAgent('PetalBot')).toBe(true);
+    expect(isBlockedBotUserAgent('DuckAssistBot/1.0')).toBe(true);
     expect(isBlockedBotUserAgent('sqlmap/1.7')).toBe(true);
     expect(isBlockedBotUserAgent('Scrapy/2.11')).toBe(true);
   });
@@ -288,6 +292,10 @@ describe('anti-bot & fetch-metadata hardening', () => {
     expect(isBlockedBotUserAgent(undefined, true)).toBe(true);
     expect(isBlockedBotUserAgent('python-requests/2.31.0', true)).toBe(true);
     expect(isBlockedBotUserAgent('HeadlessChrome/128.0.0.0', true)).toBe(true);
+    expect(isBlockedBotUserAgent('Playwright/1.48', true)).toBe(true);
+    expect(isBlockedBotUserAgent('browser-use/0.1', true)).toBe(true);
+    expect(isBlockedBotUserAgent('curl/8.5.0', true)).toBe(true);
+    expect(isBlockedBotUserAgent('Playwright/1.48', false)).toBe(false);
   });
 
   it('rejects explicit cross-site Fetch Metadata requests', () => {
@@ -295,6 +303,12 @@ describe('anti-bot & fetch-metadata hardening', () => {
     expect(isDisallowedFetchSite('same-origin')).toBe(false);
     expect(isDisallowedFetchSite('same-site')).toBe(false);
     expect(isDisallowedFetchSite(undefined)).toBe(false);
+  });
+
+  it('detects Cloudflare edge from CF-Ray / CF-Connecting-IP headers', () => {
+    expect(isCloudflareEdgeProxied({ 'cf-ray': 'abc-SJC' })).toBe(true);
+    expect(isCloudflareEdgeProxied({ 'cf-connecting-ip': '1.2.3.4' })).toBe(true);
+    expect(isCloudflareEdgeProxied({})).toBe(false);
   });
 
   it('prevents host header injection when resolving dynamic OG base URL', () => {

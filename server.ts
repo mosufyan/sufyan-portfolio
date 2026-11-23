@@ -13,6 +13,7 @@ import {
   isAiStudioPreviewHost,
   isAllowedRequestOrigin,
   isBlockedBotUserAgent,
+  isCloudflareEdgeProxied,
   isCspStrictStylesEnabled,
   isDisallowedFetchSite,
   isFormSubmitFallbackAllowed,
@@ -67,6 +68,7 @@ import {
 import {
   bumpMetric,
   captureException,
+  evaluateBotProtection,
   evaluateGoldPathHardening,
   getObservabilitySnapshot,
   postSlackAlert,
@@ -2115,8 +2117,14 @@ async function startServer() {
     next(err);
   });
 
-  app.get('/api/health', (_req: Request, res: Response) => {
+  app.get('/api/health', (req: Request, res: Response) => {
     const gold = evaluateGoldPathHardening();
+    const botProtection = evaluateBotProtection({
+      cloudflareEdge: isCloudflareEdgeProxied({
+        'cf-ray': req.headers['cf-ray'],
+        'cf-connecting-ip': req.headers['cf-connecting-ip'],
+      }),
+    });
     const strict =
       (process.env.STRICT_PROD_HARDENING || '').toLowerCase() === 'true' &&
       process.env.NODE_ENV === 'production';
@@ -2137,6 +2145,7 @@ async function startServer() {
         sentry: Boolean((process.env.SENTRY_DSN || '').trim()),
         slack: Boolean((process.env.SLACK_ALERT_WEBHOOK_URL || '').trim()),
       },
+      botProtection,
       goldPath: {
         score: gold.score,
         max: gold.max,
@@ -2147,8 +2156,13 @@ async function startServer() {
   });
 
   /** Public boolean status for the Security Architecture page (no secrets). */
-  app.get('/api/status', (_req: Request, res: Response) => {
+  app.get('/api/status', (req: Request, res: Response) => {
     const gold = evaluateGoldPathHardening();
+    const cloudflareEdge = isCloudflareEdgeProxied({
+      'cf-ray': req.headers['cf-ray'],
+      'cf-connecting-ip': req.headers['cf-connecting-ip'],
+    });
+    const botProtection = evaluateBotProtection({ cloudflareEdge });
     res.status(200).json({
       ok: true,
       version: APP_VERSION,
@@ -2171,7 +2185,11 @@ async function startServer() {
         cspReporting: true,
         cspStrictStyles: isCspStrictStylesEnabled(),
         httpsIpIntel: true,
+        cloudflareEdge,
+        uaBlocklist: true,
+        honeypot: true,
       },
+      botProtection,
       goldPathScore: `${gold.score}/${gold.max}`,
     });
   });

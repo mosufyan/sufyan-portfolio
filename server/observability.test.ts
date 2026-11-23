@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   bumpMetric,
+  evaluateBotProtection,
   evaluateGoldPathHardening,
   getObservabilitySnapshot,
   structuredLog,
@@ -48,5 +49,14 @@ describe('observability', () => {
     expect(gold.score).toBe(gold.max);
     expect(gold.productionReady).toBe(true);
     expect(gold.items.every((i) => i.ok)).toBe(true);
+
+    const bots = evaluateBotProtection({ cloudflareEdge: true });
+    expect(bots.uaBlocklist).toBe(true);
+    expect(bots.honeypot).toBe(true);
+    expect(bots.turnstile).toBe(true);
+    expect(bots.redisSharedLimits).toBe(true);
+    expect(bots.adminSdkWrites).toBe(true);
+    expect(bots.appCheck).toBe(true);
+    expect(bots.cloudflareEdge).toBe(true);
   });
 });
