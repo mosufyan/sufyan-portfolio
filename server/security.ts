@@ -133,27 +133,61 @@ export function shouldAllowPreviewIframe(
   return isAiStudioPreviewHost(options.host);
 }
 
+/**
+ * Progressive style CSP tighten. Default off — keep React/Motion `style={}` working.
+ * When true: drop blanket style-src 'unsafe-inline', allow only style-src-attr 'unsafe-inline'
+ * (style elements must come from 'self' / Google Fonts). Flip off instantly if anything breaks.
+ */
+export function isCspStrictStylesEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  const flag = (env.CSP_STRICT_STYLES || '').toLowerCase();
+  return flag === '1' || flag === 'true' || flag === 'yes';
+}
+
+/** Theme boot script in index.html — keep hash in sync if that inline block changes. */
+export const THEME_BOOT_SCRIPT_HASH = "'sha256-CgJhvzskzf709G6UFOCppYV+yn4GzdLGTM7wjEj6gdU='";
+
+function buildStyleDirectives(mode: 'compatible' | 'strict' | 'report'): string[] {
+  if (mode === 'compatible') {
+    // Safe default: React / Motion / CSS-in-JS may use inline styles or <style> tags.
+    return ["style-src 'self' 'unsafe-inline' https://fonts.googleapis.com"];
+  }
+  if (mode === 'strict') {
+    // Enforce: no inline <style> elements; React style attributes still allowed.
+    return [
+      "style-src 'self' https://fonts.googleapis.com",
+      "style-src-elem 'self' https://fonts.googleapis.com",
+      "style-src-attr 'unsafe-inline'",
+    ];
+  }
+  // Report-only: measure both element and attribute violations without breaking users.
+  return [
+    "style-src 'self' https://fonts.googleapis.com",
+    "style-src-elem 'self' https://fonts.googleapis.com",
+    "style-src-attr 'none'",
+  ];
+}
+
 /** Build Content-Security-Policy matching production static assets + Google Fonts + Firebase. */
 export function buildContentSecurityPolicy(
   isDev: boolean,
-  options: { allowPreviewIframe?: boolean } = {}
+  options: { allowPreviewIframe?: boolean } = {},
+  env: NodeJS.ProcessEnv = process.env
 ): string {
   const frameAncestors = options.allowPreviewIframe
     ? "frame-ancestors 'self' https://aistudio.google.com https://*.google.com https://*.googleusercontent.com"
     : "frame-ancestors 'none'";
 
-  // Theme boot script in index.html — keep hash in sync if that inline block changes.
   // IMPORTANT: do NOT combine a script hash with 'unsafe-inline' in Chrome.
   // When a hash/nonce is present, browsers ignore 'unsafe-inline', which blocks
   // Vite's React Refresh / PWA inline scripts and leaves localhost blank.
-  const themeBootScriptHash = "'sha256-CgJhvzskzf709G6UFOCppYV+yn4GzdLGTM7wjEj6gdU='";
+  const styleMode = isCspStrictStylesEnabled(env) ? 'strict' : 'compatible';
 
   return [
     "default-src 'self'",
     isDev
       ? `script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com https://www.gstatic.com https://www.google.com https://www.gstatic.com/recaptcha/ https://www.recaptcha.net https://challenges.cloudflare.com`
-      : `script-src 'self' ${themeBootScriptHash} https://apis.google.com https://www.gstatic.com https://www.google.com https://www.gstatic.com/recaptcha/ https://www.recaptcha.net https://challenges.cloudflare.com`,
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      : `script-src 'self' ${THEME_BOOT_SCRIPT_HASH} https://apis.google.com https://www.gstatic.com https://www.google.com https://www.gstatic.com/recaptcha/ https://www.recaptcha.net https://challenges.cloudflare.com`,
+    ...buildStyleDirectives(styleMode),
     "img-src 'self' data: blob: https://*.googleusercontent.com https://www.gstatic.com https://www.recaptcha.net",
     "font-src 'self' data: https://fonts.gstatic.com",
     isDev
@@ -170,13 +204,26 @@ export function buildContentSecurityPolicy(
   ].join('; ');
 }
 
-/** Stricter report-only policy (no unsafe-inline / unsafe-eval) for migration telemetry. */
+/**
+ * Stricter report-only policy for migration telemetry.
+ * Scripts: no unsafe-inline/eval (prod keeps the theme-boot hash).
+ * Styles: style-src-elem/attr split with attr 'none' so /api/csp-report shows real impact
+ * before flipping CSP_STRICT_STYLES on the enforcing header.
+ */
 export function buildContentSecurityPolicyReportOnly(
   isDev: boolean,
-  options: { allowPreviewIframe?: boolean } = {}
+  options: { allowPreviewIframe?: boolean } = {},
+  env: NodeJS.ProcessEnv = process.env
 ): string {
-  const enforced = buildContentSecurityPolicy(isDev, options);
-  return enforced
+  // Build from a non-strict baseline so we control style directives explicitly,
+  // then strip script unsafe-inline/eval for telemetry.
+  const baselineEnv = { ...env, CSP_STRICT_STYLES: 'false' };
+  const enforced = buildContentSecurityPolicy(isDev, options, baselineEnv);
+  const withoutCompatibleStyles = enforced.replace(
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    buildStyleDirectives('report').join('; ')
+  );
+  return withoutCompatibleStyles
     .replace(" 'unsafe-inline'", '')
     .replace(" 'unsafe-eval'", '');
 }

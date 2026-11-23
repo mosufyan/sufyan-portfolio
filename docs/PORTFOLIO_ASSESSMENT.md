@@ -19,7 +19,7 @@ Related: [SECURITY.md](./SECURITY.md) · [SECURITY_CONFIGURATION.md](./SECURITY_
 1. Firebase Console **App Check Enforcement** on for Firestore  
 2. Live `SENTRY_DSN` + Slack webhook + Upstash Redis/Vector + Turnstile + `SESSION_SECRET` + Grok secrets in Cloud Run  
 3. External uptime vendor green for **30 days** on `/api/uptime`  
-4. Optional: CSP nonce migration (report-only is already collecting violations)
+4. Optional: enable `CSP_STRICT_STYLES=true` after `/api/csp-report` is quiet (style-src-elem/attr split; default stays compatible so React/Motion cannot blank the page)
 
 Inflating the score to 99 without those would be dishonest — and recruiters who can read rules/logs will notice.
 
@@ -57,7 +57,8 @@ quadrantChart
 - Client **PII creates denied** (`cv_downloads` / `contact_messages` → Admin SDK only)  
 - **`portfolio_settings/public`** UX slice vs **`global`** owner policy  
 - IP intel **HTTPS-only** (ipwho.is → ipapi.co)  
-- CSP **`report-uri`** + **Report-Only** (no `unsafe-inline` scripts) for migration telemetry  
+- CSP **`report-uri`** + **Report-Only** (no `unsafe-inline` scripts; style elem/attr telemetry) for migration  
+- Optional **`CSP_STRICT_STYLES`** kill-switch for enforcing `style-src-elem` / `style-src-attr` split  
 - `/api/uptime` probe for external monitors  
 - Case notes on the Security Architecture page  
 

@@ -3,11 +3,13 @@ import {
   MAX_FIELD_LENGTHS,
   applySecurityHeaders,
   buildContentSecurityPolicy,
+  buildContentSecurityPolicyReportOnly,
   createRateLimitBucket,
   escapeHtml,
   isAiStudioPreviewHost,
   isAllowedRequestOrigin,
   isBlockedBotUserAgent,
+  isCspStrictStylesEnabled,
   isDisallowedFetchSite,
   isFormSubmitFallbackAllowed,
   isHoneypotTriggered,
@@ -132,6 +134,54 @@ describe('CSP / headers', () => {
     expect(csp).toMatch(/script-src[^;]*'unsafe-inline'/);
     expect(csp).toMatch(/script-src[^;]*'unsafe-eval'/);
     expect(csp).not.toMatch(/script-src[^;]*'sha256-/);
+  });
+
+  it('defaults to compatible style-src (unsafe-inline) so React/Motion cannot blank the page', () => {
+    expect(isCspStrictStylesEnabled({})).toBe(false);
+    expect(isCspStrictStylesEnabled({ CSP_STRICT_STYLES: 'false' })).toBe(false);
+    const csp = buildContentSecurityPolicy(false, {}, {});
+    expect(csp).toContain("style-src 'self' 'unsafe-inline' https://fonts.googleapis.com");
+    expect(csp).not.toContain('style-src-elem');
+    expect(csp).not.toContain('style-src-attr');
+  });
+
+  it('CSP_STRICT_STYLES splits style-src-elem / style-src-attr (attrs still allowed)', () => {
+    expect(isCspStrictStylesEnabled({ CSP_STRICT_STYLES: 'true' })).toBe(true);
+    expect(isCspStrictStylesEnabled({ CSP_STRICT_STYLES: '1' })).toBe(true);
+    const csp = buildContentSecurityPolicy(false, {}, { CSP_STRICT_STYLES: 'true' });
+    expect(csp).toContain("style-src 'self' https://fonts.googleapis.com");
+    expect(csp).toContain("style-src-elem 'self' https://fonts.googleapis.com");
+    expect(csp).toContain("style-src-attr 'unsafe-inline'");
+    // Blanket style-src must not keep unsafe-inline when the attr/elem split is active.
+    expect(csp).not.toContain("style-src 'self' 'unsafe-inline'");
+  });
+
+  it('report-only strips style unsafe-inline and surfaces elem/attr directives for telemetry', () => {
+    const reportOnly = buildContentSecurityPolicyReportOnly(false, {}, {});
+    expect(reportOnly).toContain("style-src 'self' https://fonts.googleapis.com");
+    expect(reportOnly).toContain("style-src-elem 'self' https://fonts.googleapis.com");
+    expect(reportOnly).toContain("style-src-attr 'none'");
+    expect(reportOnly).not.toMatch(/style-src[^;]*'unsafe-inline'/);
+    expect(reportOnly).not.toMatch(/script-src[^;]*'unsafe-inline'/);
+    // Prod report-only still allows the hashed theme boot script.
+    expect(reportOnly).toContain("'sha256-CgJhvzskzf709G6UFOCppYV+yn4GzdLGTM7wjEj6gdU='");
+  });
+
+  it('applySecurityHeaders honors CSP_STRICT_STYLES kill switch via env', () => {
+    const prev = process.env.CSP_STRICT_STYLES;
+    process.env.CSP_STRICT_STYLES = 'true';
+    try {
+      const headers: Record<string, string> = {};
+      applySecurityHeaders((k, v) => {
+        headers[k] = v;
+      }, { isDev: false, isHttps: true });
+      expect(headers['Content-Security-Policy']).toContain("style-src-attr 'unsafe-inline'");
+      expect(headers['Content-Security-Policy']).toContain('style-src-elem');
+      expect(headers['Content-Security-Policy-Report-Only']).toContain("style-src-attr 'none'");
+    } finally {
+      if (prev === undefined) delete process.env.CSP_STRICT_STYLES;
+      else process.env.CSP_STRICT_STYLES = prev;
+    }
   });
 
   it('allows AI Studio preview iframe in dev or on *.run.app while staying strict for custom domain prod', () => {
