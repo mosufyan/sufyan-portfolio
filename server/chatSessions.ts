@@ -18,6 +18,8 @@ import { VERIFIED_SESSION_TTL_MS } from './sessionPolicy.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CACHE_PATH = path.join(__dirname, '..', '.owner-chat-cache.json');
+/** Durable Redis snapshot so Cloud Run redeploys do not wipe the owner chat console. */
+const CHAT_CACHE_REDIS_KEY = 'owner:chat-cache';
 
 export type ChatMessageRole = 'visitor' | 'owner' | 'system' | 'bot';
 
@@ -76,63 +78,83 @@ let llmCalls = 0;
 let llmFallbacks = 0;
 const sessions = new Map<string, ChatSession>();
 
+function applyCachePayload(parsed: Partial<ChatCacheFile>, options?: { merge?: boolean }): void {
+  const merge = Boolean(options?.merge);
+  if (!merge) {
+    sessions.clear();
+  }
+  ownerPresenceAtMs = Math.max(ownerPresenceAtMs, Number(parsed.ownerPresenceAtMs) || 0);
+  botQuestions = Math.max(botQuestions, Number(parsed.botQuestions) || 0);
+  liveRequests = Math.max(liveRequests, Number(parsed.liveRequests) || 0);
+  liveSessions = Math.max(liveSessions, Number(parsed.liveSessions) || 0);
+  llmCalls = Math.max(llmCalls, Number(parsed.llmCalls) || 0);
+  llmFallbacks = Math.max(llmFallbacks, Number(parsed.llmFallbacks) || 0);
+  if (Array.isArray(parsed.sessions)) {
+    for (const s of parsed.sessions.slice(-MAX_SESSIONS)) {
+      if (!s?.sessionId) continue;
+      const existing = sessions.get(s.sessionId);
+      if (existing && existing.updatedAtMs >= (Number(s.updatedAtMs) || 0)) continue;
+      sessions.set(s.sessionId, {
+        ...s,
+        company: typeof s.company === 'string' ? s.company : '',
+        interest: typeof s.interest === 'string' ? s.interest : '',
+        threadStartedAtMs:
+          typeof s.threadStartedAtMs === 'number' && s.threadStartedAtMs > 0
+            ? s.threadStartedAtMs
+            : s.createdAtMs || 0,
+      });
+    }
+  }
+  if (Array.isArray(parsed.usages)) {
+    importChatUsageSnapshot(
+      parsed.usages.map((row) => ({
+        ...row,
+        voiceTurns: Number(row.voiceTurns) || 0,
+      }))
+    );
+  }
+}
+
+function buildCachePayload(): ChatCacheFile {
+  return {
+    sessions: [...sessions.values()]
+      .sort((a, b) => b.updatedAtMs - a.updatedAtMs)
+      .slice(0, MAX_SESSIONS),
+    ownerPresenceAtMs,
+    botQuestions,
+    liveRequests,
+    liveSessions,
+    llmCalls,
+    llmFallbacks,
+    usages: exportChatUsageSnapshot(),
+  };
+}
+
 function loadCache(): void {
   try {
     if (!fs.existsSync(CACHE_PATH)) return;
     const parsed = JSON.parse(fs.readFileSync(CACHE_PATH, 'utf8')) as Partial<ChatCacheFile>;
-    ownerPresenceAtMs = Number(parsed.ownerPresenceAtMs) || 0;
-    botQuestions = Number(parsed.botQuestions) || 0;
-    liveRequests = Number(parsed.liveRequests) || 0;
-    liveSessions = Number(parsed.liveSessions) || 0;
-    llmCalls = Number(parsed.llmCalls) || 0;
-    llmFallbacks = Number(parsed.llmFallbacks) || 0;
-    if (Array.isArray(parsed.sessions)) {
-      for (const s of parsed.sessions.slice(-MAX_SESSIONS)) {
-        if (!s?.sessionId) continue;
-        sessions.set(s.sessionId, {
-          ...s,
-          company: typeof s.company === 'string' ? s.company : '',
-          interest: typeof s.interest === 'string' ? s.interest : '',
-          threadStartedAtMs:
-            typeof s.threadStartedAtMs === 'number' && s.threadStartedAtMs > 0
-              ? s.threadStartedAtMs
-              : s.createdAtMs || 0,
-        });
-      }
-    }
-    if (Array.isArray(parsed.usages)) {
-      importChatUsageSnapshot(
-        parsed.usages.map((row) => ({
-          ...row,
-          voiceTurns: Number(row.voiceTurns) || 0,
-        }))
-      );
-    }
+    applyCachePayload(parsed);
   } catch {
     /* ignore */
   }
 }
 
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
+let redisHydratePromise: Promise<boolean> | null = null;
 
 function scheduleFlush(): void {
   if (flushTimer) return;
   flushTimer = setTimeout(() => {
     flushTimer = null;
     try {
-      const payload: ChatCacheFile = {
-        sessions: [...sessions.values()]
-          .sort((a, b) => b.updatedAtMs - a.updatedAtMs)
-          .slice(0, MAX_SESSIONS),
-        ownerPresenceAtMs,
-        botQuestions,
-        liveRequests,
-        liveSessions,
-        llmCalls,
-        llmFallbacks,
-        usages: exportChatUsageSnapshot(),
-      };
+      const payload = buildCachePayload();
       fs.writeFileSync(CACHE_PATH, JSON.stringify(payload), 'utf8');
+      // Persist the full console snapshot (not only per-session keys) so redeploys
+      // can rehydrate list + counters when Redis is configured.
+      if (isDistributedStoreEnabled()) {
+        void redisSetJson(CHAT_CACHE_REDIS_KEY, payload);
+      }
     } catch {
       /* non-fatal */
     }
@@ -140,6 +162,36 @@ function scheduleFlush(): void {
 }
 
 loadCache();
+
+/**
+ * Rehydrate sessions/stats from Redis when this replica has an empty local map
+ * (typical after Cloud Run scale-from-zero / new revision). Safe to call often.
+ */
+export async function ensureChatCacheHydrated(): Promise<boolean> {
+  if (!isDistributedStoreEnabled()) return false;
+  if (sessions.size > 0) return false;
+  if (!redisHydratePromise) {
+    redisHydratePromise = (async () => {
+      try {
+        const remote = await redisGetJson<Partial<ChatCacheFile>>(CHAT_CACHE_REDIS_KEY);
+        if (remote.error || !remote.value) return false;
+        applyCachePayload(remote.value, { merge: true });
+        // Mirror onto disk for the current instance as a local fallback.
+        try {
+          fs.writeFileSync(CACHE_PATH, JSON.stringify(buildCachePayload()), 'utf8');
+        } catch {
+          /* ignore */
+        }
+        return sessions.size > 0;
+      } catch {
+        return false;
+      } finally {
+        redisHydratePromise = null;
+      }
+    })();
+  }
+  return redisHydratePromise;
+}
 
 const CHAT_SESSION_TTL_MS = VERIFIED_SESSION_TTL_MS;
 

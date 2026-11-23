@@ -93,6 +93,7 @@ import {
   bumpLlmCall,
   closeChatSession,
   createChatSession,
+  ensureChatCacheHydrated,
   getChatSessionAsync,
   getChatStats,
   isOwnerOnline,
@@ -4491,6 +4492,8 @@ async function startServer() {
       return;
     }
     touchOwnerPresence();
+    // Cloud Run instances start empty; rehydrate from Redis before listing.
+    await ensureChatCacheHydrated().catch(() => false);
     res.status(200).json({
       ok: true,
       stats: {
