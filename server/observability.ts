@@ -226,6 +226,57 @@ export async function postSlackAlert(input: {
   }
 }
 
+/**
+ * Boolean readiness map for agent/bot abuse controls (no secrets).
+ * `cloudflareEdge` is request-derived when a headers object is supplied.
+ */
+export function evaluateBotProtection(options?: {
+  cloudflareEdge?: boolean;
+}): {
+  uaBlocklist: true;
+  honeypot: true;
+  fetchMetadata: true;
+  originAllowlist: true;
+  robotsNoAi: true;
+  turnstile: boolean;
+  redisSharedLimits: boolean;
+  adminSdkWrites: boolean;
+  appCheck: boolean;
+  sessionSecret: boolean;
+  trustProxy: boolean;
+  cloudflareEdge: boolean | null;
+} {
+  const isProd = process.env.NODE_ENV === 'production';
+  return {
+    uaBlocklist: true,
+    honeypot: true,
+    fetchMetadata: true,
+    originAllowlist: true,
+    robotsNoAi: true,
+    turnstile: Boolean(
+      (process.env.TURNSTILE_SECRET_KEY || '').trim() &&
+        ((process.env.VITE_TURNSTILE_SITE_KEY || '').trim() ||
+          (process.env.TURNSTILE_SITE_KEY || '').trim())
+    ),
+    redisSharedLimits: Boolean(
+      (process.env.UPSTASH_REDIS_REST_URL || '').trim() &&
+        (process.env.UPSTASH_REDIS_REST_TOKEN || '').trim()
+    ),
+    adminSdkWrites: Boolean(
+      (process.env.FIREBASE_SERVICE_ACCOUNT_JSON || '').trim() ||
+        (process.env.GOOGLE_APPLICATION_CREDENTIALS || '').trim()
+    ),
+    appCheck: Boolean(
+      (process.env.VITE_RECAPTCHA_SITE_KEY || '').trim() ||
+        (process.env.RECAPTCHA_SITE_KEY || '').trim()
+    ),
+    sessionSecret: Boolean(process.env.SESSION_SECRET?.trim()),
+    trustProxy: !isProd || process.env.TRUST_PROXY !== '0',
+    cloudflareEdge:
+      typeof options?.cloudflareEdge === 'boolean' ? options.cloudflareEdge : null,
+  };
+}
+
 export function evaluateGoldPathHardening(): {
   score: number;
   max: number;

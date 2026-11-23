@@ -27,12 +27,22 @@ interface ControlStatus {
   piiClientCreatesDenied?: boolean;
   cspReporting?: boolean;
   httpsIpIntel?: boolean;
+  cloudflareEdge?: boolean;
+  uaBlocklist?: boolean;
+  honeypot?: boolean;
 }
 
 interface StatusPayload {
   ok: boolean;
   goldPathScore?: string;
   controls?: ControlStatus;
+  botProtection?: {
+    turnstile?: boolean;
+    redisSharedLimits?: boolean;
+    adminSdkWrites?: boolean;
+    appCheck?: boolean;
+    cloudflareEdge?: boolean | null;
+  };
 }
 
 interface SecurityArchitectureModalProps {
@@ -49,9 +59,9 @@ const LAYERS: Array<{
     title: 'Edge',
     icon: Radar,
     items: [
-      'Cloudflare proxy / Bot Fight / Turnstile challenge',
+      'Cloudflare proxy / Bot Fight / Block AI Bots / Turnstile',
       'Origin allowlist + Sec-Fetch-Site checks',
-      'Sensitive-route bot UA blocking (contact, CV, chat)',
+      'AI-agent + headless UA blocking on contact / CV / chat',
     ],
   },
   {
@@ -225,6 +235,12 @@ export default function SecurityArchitectureModal({
                   />
                   <StatusPill ok={Boolean(controls?.cspReporting)} label="CSP reporting" />
                   <StatusPill ok={Boolean(controls?.httpsIpIntel)} label="HTTPS IP intel" />
+                  <StatusPill ok={Boolean(controls?.uaBlocklist)} label="UA blocklist" />
+                  <StatusPill ok={Boolean(controls?.honeypot)} label="Honeypot" />
+                  <StatusPill
+                    ok={Boolean(controls?.cloudflareEdge)}
+                    label="Cloudflare edge"
+                  />
                   <StatusPill ok={Boolean(controls?.incidentMode)} label="Incident mode" />
                 </div>
               </section>
@@ -243,6 +259,11 @@ export default function SecurityArchitectureModal({
                   <li>
                     <span className="text-cyan-300/90 font-mono">Firestore rules</span> — deny-by-default
                     schemas; PII collections are Admin-SDK-write-only; public settings are a UX-only slice.
+                  </li>
+                  <li>
+                    <span className="text-cyan-300/90 font-mono">Agent bots</span> — Turnstile +
+                    honeypot + expanded UA denylist stop scripted scrapers and agent frameworks on
+                    forms; enable Cloudflare Bot Fight / Block AI Bots at the edge for headless farms.
                   </li>
                 </ul>
               </section>
