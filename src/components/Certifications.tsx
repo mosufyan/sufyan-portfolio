@@ -325,14 +325,10 @@ export default function Certifications({
                   transition={{ duration: 0.35, delay: idx * 0.04, ease: EASE_OUT_EXPO }}
                   whileHover={{ y: -3 }}
                   onClick={() => onSelectCertification(cert)}
-                  className={`w-full rounded-xl border p-3.5 text-left transition-colors ${
-                    isAmber
-                      ? isLight
-                        ? 'border-slate-200 bg-white hover:border-amber-500 shadow-sm'
-                        : 'border-slate-800 bg-[#0d121f]/80 hover:border-amber-500/40'
-                      : isLight
-                        ? 'border-slate-200 bg-white hover:border-sky-400 shadow-sm'
-                        : 'border-slate-800 bg-[#0d121f]/80 hover:border-cyan-500/40'
+                  className={`featured-cred-card w-full rounded-xl border p-3.5 text-left transition-colors ${
+                    isLight
+                      ? 'border-slate-200 bg-white shadow-sm'
+                      : 'border-slate-800 bg-[#0d121f]/80'
                   }`}
                 >
                   <div className="flex items-center gap-2 mb-2">
