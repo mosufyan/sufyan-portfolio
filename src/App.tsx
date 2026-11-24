@@ -306,20 +306,24 @@ export default function App() {
         <div className="site-theme min-h-screen min-w-0 w-full overflow-x-clip bg-[#06080d] text-slate-200 transition-colors duration-300">
           <div className={resumeOpen ? 'print:hidden' : ''}>
             <div className="sticky top-0 z-40 print:hidden">
-              <Navbar
-                onOpenResume={openResume}
-                onOpenAnnouncements={openAnnouncements}
-                onOpenCommandPalette={openCommandPalette}
-                onOpenTerminal={openTerminal}
-                ownerViewActive={ownerViewActive}
-                onEnterOwnerConsole={handleEnterOwnerConsole}
-                onExitOwnerConsole={handleExitOwnerConsole}
-              />
+              {/* Navbar + menus must stack above the maintenance strip; otherwise the
+                  banner paints over Appearance/dropdowns (same sticky context, later DOM). */}
+              <div className="relative z-[55]">
+                <Navbar
+                  onOpenResume={openResume}
+                  onOpenAnnouncements={openAnnouncements}
+                  onOpenCommandPalette={openCommandPalette}
+                  onOpenTerminal={openTerminal}
+                  ownerViewActive={ownerViewActive}
+                  onEnterOwnerConsole={handleEnterOwnerConsole}
+                  onExitOwnerConsole={handleExitOwnerConsole}
+                />
+              </div>
 
               {!ownerViewActive && features.maintenanceMode && (
                 <div
                   role="status"
-                  className={`border-b backdrop-blur-md ${
+                  className={`relative z-40 border-b backdrop-blur-md ${
                     features.incidentMode
                       ? 'border-rose-500/40 bg-rose-950/85 text-rose-100'
                       : 'border-amber-500/35 bg-amber-950/85 text-amber-200'

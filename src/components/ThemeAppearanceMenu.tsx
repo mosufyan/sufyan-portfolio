@@ -42,14 +42,14 @@ export default function ThemeAppearanceMenu({
     : isLight
       ? 'border-sky-400 bg-sky-50 text-sky-900'
       : 'border-[#22d3ee]/70 bg-cyan-950/40 text-cyan-200';
-  const triggerBtn = isAmber
-    ? isLight
+  // Dark: neutral at rest, accent on hover (cyan utilities remap to amber via CSS).
+  // Do not force amber text at rest — that made the palette icon always amber.
+  const triggerBtn = isLight
+    ? isAmber
       ? 'border-[#d97706]/70 bg-amber-50 text-amber-800 hover:bg-amber-100'
-      : 'border-[#f59e0b]/50 bg-slate-900/70 text-amber-200 hover:text-amber-100 hover:border-[#f59e0b]/70'
-    : isLight
-      ? 'border-sky-300 bg-sky-50 text-sky-800 hover:bg-sky-100'
-      : 'border-slate-700/90 bg-slate-900/70 text-slate-300 hover:text-cyan-300 hover:border-cyan-500/40';
-  const moonColorClass = isAmber ? 'text-amber-400' : 'text-cyan-400';
+      : 'border-sky-300 bg-sky-50 text-sky-800 hover:bg-sky-100'
+    : 'border-slate-700/90 bg-slate-900/70 text-slate-300 hover:text-cyan-300 hover:border-cyan-500/40';
+  const moonColorClass = 'text-cyan-400';
   const idleBtn = isLight
     ? 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
     : 'border-slate-700 bg-slate-900/50 text-slate-300 hover:border-slate-500';
@@ -122,7 +122,7 @@ export default function ThemeAppearanceMenu({
           id={menuId}
           role="dialog"
           aria-label="Appearance"
-          className={`absolute right-0 top-[calc(100%+0.4rem)] z-[70] w-56 rounded-xl border p-2.5 shadow-xl ${
+          className={`absolute right-0 top-[calc(100%+0.4rem)] z-[80] w-56 rounded-xl border p-2.5 shadow-xl ${
             isLight
               ? 'border-slate-200 bg-white text-slate-900 shadow-slate-900/10'
               : 'border-slate-700 bg-[#0b101b] text-slate-100 shadow-black/50'

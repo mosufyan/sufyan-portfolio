@@ -658,7 +658,7 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
                           : 'border-slate-700 bg-slate-900/80 hover:bg-slate-800 text-slate-200'
                       }`}
                     >
-                      <QrCode className={`w-3.5 h-3.5 ${isLight ? 'text-sky-700' : 'text-cyan-400'}`} />
+                      <QrCode className="w-3.5 h-3.5" />
                       <span>QR Code</span>
                     </button>
                   )}
