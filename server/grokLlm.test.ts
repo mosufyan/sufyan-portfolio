@@ -47,6 +47,30 @@ describe('grokLlm', () => {
     expect(
       shouldSkipGrokEnrichment('Cisco role?', grounded({ confidence: 0.4, sources: [] }))
     ).toBe(false);
+    expect(
+      shouldSkipGrokEnrichment(
+        'What did he do before Cisco?',
+        grounded({
+          composed: true,
+          confidence: 0.95,
+          answer:
+            'Before Cisco he worked at HCL America Inc./HCLTech and Tata Consultancy Services (TCS).',
+          retrievalContext: 'HCL and TCS experience. '.repeat(20),
+        })
+      )
+    ).toBe(true);
+    expect(
+      shouldSkipGrokEnrichment(
+        'How many certifications does he have?',
+        grounded({
+          composed: true,
+          confidence: 0.94,
+          answer: 'Mohammed holds 20 professional certifications across AI, Cloud, and Data.',
+          sources: ['Certifications — AI'],
+          retrievalContext: 'certs '.repeat(40),
+        })
+      )
+    ).toBe(true);
   });
 
   it('falls back to grounded answers when Grok API is unavailable', async () => {

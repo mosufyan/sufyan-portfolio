@@ -34,11 +34,17 @@ type ChatTrackingStats = {
   queuedSessions?: number;
   activeSessions?: number;
   ownerOnline?: boolean;
+  voiceTurns?: number;
+  voiceRealtimeSessions?: number;
+  voiceRealtimeMinutes?: number;
   usage?: {
     trackedVisitors?: number;
     questions?: number;
     llmCalls?: number;
     liveSessions?: number;
+    voiceTurns?: number;
+    voiceRealtimeSessions?: number;
+    voiceRealtimeMinutes?: number;
   };
   policy?: {
     llmConfigured?: boolean;
@@ -229,6 +235,13 @@ export default function OwnerProfilePanel({
             ['Live sessions', chatStats?.liveSessions ?? '—'],
             ['Open / queued', `${chatStats?.openSessions ?? 0}/${chatStats?.queuedSessions ?? 0}`],
             ['Tracked visitors', chatStats?.usage?.trackedVisitors ?? '—'],
+            ['PTT turns', chatStats?.voiceTurns ?? '—'],
+            ['S2S sessions', chatStats?.voiceRealtimeSessions ?? '—'],
+            ['S2S minutes', chatStats?.voiceRealtimeMinutes ?? '—'],
+            [
+              'PTT / S2S (window)',
+              `${chatStats?.usage?.voiceTurns ?? 0} / ${chatStats?.usage?.voiceRealtimeSessions ?? 0}`,
+            ],
             [
               'Max Q / visitor',
               chatStats?.policy?.chatMaxQuestionsPerVisitor ??

@@ -56,6 +56,12 @@ interface ChatCacheFile {
   liveSessions: number;
   llmCalls: number;
   llmFallbacks: number;
+  /** Lifetime push-to-talk turns (server process / cache). */
+  voiceTurns: number;
+  /** Lifetime live S2S sessions started. */
+  voiceRealtimeSessions: number;
+  /** Lifetime prepaid live S2S minutes granted. */
+  voiceRealtimeMinutes: number;
   usages?: Array<{
     visitorKey: string;
     windowStartedAtMs: number;
@@ -63,6 +69,8 @@ interface ChatCacheFile {
     llmCalls: number;
     liveSessions: number;
     voiceTurns: number;
+    voiceRealtimeSessions?: number;
+    voiceRealtimeMinutes?: number;
   }>;
 }
 
@@ -76,6 +84,9 @@ let liveRequests = 0;
 let liveSessions = 0;
 let llmCalls = 0;
 let llmFallbacks = 0;
+let voiceTurns = 0;
+let voiceRealtimeSessions = 0;
+let voiceRealtimeMinutes = 0;
 const sessions = new Map<string, ChatSession>();
 
 function applyCachePayload(parsed: Partial<ChatCacheFile>, options?: { merge?: boolean }): void {
@@ -89,6 +100,15 @@ function applyCachePayload(parsed: Partial<ChatCacheFile>, options?: { merge?: b
   liveSessions = Math.max(liveSessions, Number(parsed.liveSessions) || 0);
   llmCalls = Math.max(llmCalls, Number(parsed.llmCalls) || 0);
   llmFallbacks = Math.max(llmFallbacks, Number(parsed.llmFallbacks) || 0);
+  voiceTurns = Math.max(voiceTurns, Number(parsed.voiceTurns) || 0);
+  voiceRealtimeSessions = Math.max(
+    voiceRealtimeSessions,
+    Number(parsed.voiceRealtimeSessions) || 0
+  );
+  voiceRealtimeMinutes = Math.max(
+    voiceRealtimeMinutes,
+    Number(parsed.voiceRealtimeMinutes) || 0
+  );
   if (Array.isArray(parsed.sessions)) {
     for (const s of parsed.sessions.slice(-MAX_SESSIONS)) {
       if (!s?.sessionId) continue;
@@ -110,6 +130,8 @@ function applyCachePayload(parsed: Partial<ChatCacheFile>, options?: { merge?: b
       parsed.usages.map((row) => ({
         ...row,
         voiceTurns: Number(row.voiceTurns) || 0,
+        voiceRealtimeSessions: Number(row.voiceRealtimeSessions) || 0,
+        voiceRealtimeMinutes: Number(row.voiceRealtimeMinutes) || 0,
       }))
     );
   }
@@ -126,6 +148,9 @@ function buildCachePayload(): ChatCacheFile {
     liveSessions,
     llmCalls,
     llmFallbacks,
+    voiceTurns,
+    voiceRealtimeSessions,
+    voiceRealtimeMinutes,
     usages: exportChatUsageSnapshot(),
   };
 }
@@ -148,8 +173,6 @@ function persistCacheNow(): void {
   try {
     const payload = buildCachePayload();
     fs.writeFileSync(CACHE_PATH, JSON.stringify(payload), 'utf8');
-    // Full console snapshot (sessions + counters) — no TTL — so Cloud Run
-    // redeploys / scale-from-zero can always rehydrate.
     if (isDistributedStoreEnabled()) {
       void redisSetJson(CHAT_CACHE_REDIS_KEY, payload);
     }
@@ -192,7 +215,6 @@ export async function ensureChatCacheHydrated(): Promise<boolean> {
           didBootHydrate = true;
           return sessions.size > 0;
         }
-        // Merge Redis snapshot with any local disk cache (newer updatedAt wins).
         applyCachePayload(remote.value, { merge: true });
         didBootHydrate = true;
         persistCacheNow();
@@ -221,6 +243,17 @@ function mirrorSession(session: ChatSession): void {
 
 export function bumpBotQuestion(): void {
   botQuestions += 1;
+  scheduleFlush();
+}
+
+export function bumpVoiceTurn(): void {
+  voiceTurns += 1;
+  scheduleFlush();
+}
+
+export function bumpVoiceRealtimeSession(minutesGranted = 0): void {
+  voiceRealtimeSessions += 1;
+  voiceRealtimeMinutes += Math.max(0, Math.floor(minutesGranted));
   scheduleFlush();
 }
 
@@ -258,6 +291,9 @@ export function getChatStats() {
     liveSessions,
     llmCalls,
     llmFallbacks,
+    voiceTurns,
+    voiceRealtimeSessions,
+    voiceRealtimeMinutes,
     openSessions: open.length,
     queuedSessions: open.filter((s) => s.status === 'queued').length,
     activeSessions: open.filter((s) => s.status === 'active').length,
@@ -322,7 +358,7 @@ export function createChatSession(input: {
   };
   sessions.set(sessionId, session);
   liveSessions += 1;
-  flushChatCacheSync();
+  scheduleFlush();
   mirrorSession(session);
   return session;
 }
@@ -371,7 +407,7 @@ export function appendChatMessage(
     session.lastOwnerAtMs = now;
     session.status = 'active';
   }
-  flushChatCacheSync();
+  scheduleFlush();
   mirrorSession(session);
   return session;
 }
@@ -387,7 +423,7 @@ export function closeChatSession(sessionId: string): ChatSession | null {
     text: 'This live chat session was closed by the portfolio owner.',
     createdAtMs: session.updatedAtMs,
   });
-  flushChatCacheSync();
+  scheduleFlush();
   mirrorSession(session);
   return session;
 }
@@ -421,7 +457,7 @@ export function startNewChatThread(sessionId: string): ChatSession | null {
   if (session.messages.length > MAX_MESSAGES) {
     session.messages = session.messages.slice(-MAX_MESSAGES);
   }
-  flushChatCacheSync();
+  scheduleFlush();
   mirrorSession(session);
   return session;
 }

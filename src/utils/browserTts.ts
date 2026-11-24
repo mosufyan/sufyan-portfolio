@@ -40,14 +40,49 @@ export function speakWithBrowserTts(
 export function playAudioBase64(
   base64: string,
   mimeType = 'audio/mpeg'
-): { audio: HTMLAudioElement; done: Promise<void> } {
-  const audio = new Audio(`data:${mimeType};base64,${base64}`);
+): {
+  audio: HTMLAudioElement;
+  done: Promise<void>;
+  /** Starts playback; false if blocked (CSP / autoplay / decode). */
+  play: () => Promise<boolean>;
+} {
+  let objectUrl: string | null = null;
+  try {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    objectUrl = URL.createObjectURL(new Blob([bytes], { type: mimeType || 'audio/mpeg' }));
+  } catch {
+    objectUrl = `data:${mimeType};base64,${base64}`;
+  }
+  const audio = new Audio(objectUrl);
+  const revoke = () => {
+    if (objectUrl && objectUrl.startsWith('blob:')) {
+      try {
+        URL.revokeObjectURL(objectUrl);
+      } catch {
+        /* ignore */
+      }
+    }
+  };
   const done = new Promise<void>((resolve) => {
-    audio.onended = () => resolve();
-    audio.onerror = () => resolve();
+    audio.onended = () => {
+      revoke();
+      resolve();
+    };
+    audio.onerror = () => {
+      revoke();
+      resolve();
+    };
   });
-  void audio.play().catch(() => {
-    /* autoplay / permission — ignore */
-  });
-  return { audio, done };
+  const play = async () => {
+    try {
+      await audio.play();
+      return true;
+    } catch {
+      revoke();
+      return false;
+    }
+  };
+  return { audio, done, play };
 }

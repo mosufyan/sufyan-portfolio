@@ -1,5 +1,4 @@
-import { type FormEvent, useEffect, useMemo, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   Check,
@@ -33,6 +32,7 @@ import {
 import { useFirebase } from '../contexts/FirebaseContext';
 import {
   DEFAULT_PORTFOLIO_SETTINGS,
+  sanitizePortfolioSettings,
   summarizePortfolioSettingsChanges,
   type AccessRuleDraft,
   type AccessRuleMatchType,
@@ -391,19 +391,37 @@ export function SiteControlsPanel({ isLight }: { isLight: boolean }) {
   const [draft, setDraft] = useState<PortfolioSettings>(() => ({ ...portfolioSettings }));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [saveToast, setSaveToast] = useState<{ lines: string[] } | null>(null);
+  const [savedNotice, setSavedNotice] = useState<string | null>(null);
+  const successToastTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     setDraft({ ...portfolioSettings });
   }, [portfolioSettings]);
 
   useEffect(() => {
-    if (!saveToast) return;
-    const timer = window.setTimeout(() => setSaveToast(null), 5000);
-    return () => window.clearTimeout(timer);
-  }, [saveToast]);
+    return () => {
+      if (successToastTimerRef.current != null) {
+        window.clearTimeout(successToastTimerRef.current);
+      }
+    };
+  }, []);
+
+  const clearFeedback = () => {
+    setError(null);
+    setSavedNotice(null);
+    if (successToastTimerRef.current != null) {
+      window.clearTimeout(successToastTimerRef.current);
+      successToastTimerRef.current = null;
+    }
+  };
 
   const hasUnsaved = JSON.stringify(draft) !== JSON.stringify(portfolioSettings);
+  const feedbackMessage = error || savedNotice;
+  const feedbackTone: 'error' | 'success' | null = error
+    ? 'error'
+    : savedNotice
+      ? 'success'
+      : null;
 
   const card = isLight
     ? 'border-slate-200 bg-white'
@@ -420,18 +438,17 @@ export function SiteControlsPanel({ isLight }: { isLight: boolean }) {
   const handleSave = async (e: FormEvent) => {
     e.preventDefault();
     if (saving) return;
-    setError(null);
+    clearFeedback();
     setSaving(true);
-    const before = { ...portfolioSettings };
+    const previous = portfolioSettings;
+    const nextClean = sanitizePortfolioSettings(draft);
     try {
       await savePortfolioSettings(draft);
-      const lines = summarizePortfolioSettingsChanges(before, draft);
-      setSaveToast({
-        lines:
-          lines.length > 0
-            ? lines
-            : ['No field changes — settings re-synced with live site.'],
-      });
+      setSavedNotice(summarizePortfolioSettingsChanges(previous, nextClean));
+      successToastTimerRef.current = window.setTimeout(() => {
+        setSavedNotice(null);
+        successToastTimerRef.current = null;
+      }, 5500);
     } catch (err) {
       setError(toUserFacingError(err, 'Unable to save site controls.'));
     } finally {
@@ -473,19 +490,6 @@ export function SiteControlsPanel({ isLight }: { isLight: boolean }) {
             </span>
           )}
         </div>
-
-        {error && (
-          <div
-            role="alert"
-            className={`rounded-lg border px-3 py-2 text-xs ${
-              isLight
-                ? 'border-rose-300 bg-rose-50 text-rose-800'
-                : 'border-rose-500/40 bg-rose-950/40 text-rose-200'
-            }`}
-          >
-            {error}
-          </div>
-        )}
 
         {/* Availability Status */}
         <div className={`rounded-xl border p-3.5 space-y-3 ${rowCard}`}>
@@ -774,78 +778,70 @@ export function SiteControlsPanel({ isLight }: { isLight: boolean }) {
         <ChatConfigFields draft={draft} setDraft={setDraft} isLight={isLight} />
         <AlertNotifyConfigFields draft={draft} setDraft={setDraft} isLight={isLight} />
 
-        <div className="flex items-center justify-end gap-2 pt-1">
-          <button
-            type="button"
-            disabled={saving || !hasUnsaved}
-            onClick={() => setDraft({ ...portfolioSettings })}
-            className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors cursor-pointer disabled:opacity-40 ${
-              isLight
-                ? 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
-                : 'border-slate-700 bg-slate-900/70 text-slate-300 hover:bg-slate-800'
-            }`}
-          >
-            Reset
-          </button>
-          <button
-            type="submit"
-            disabled={saving}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#38bdf8] hover:bg-sky-300 disabled:opacity-50 text-slate-950 font-semibold text-xs transition-colors cursor-pointer whitespace-nowrap"
-          >
-            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-            <span>Save &amp; Sync Site Controls</span>
-          </button>
-        </div>
-      </div>
-
-      {saveToast &&
-        createPortal(
-          <div
-            role="status"
-            aria-live="polite"
-            className={`fixed z-[80] bottom-4 right-4 sm:bottom-6 sm:right-6 w-[min(22rem,calc(100vw-1.5rem))] rounded-xl border shadow-lg p-3.5 ${
-              isLight
-                ? 'border-emerald-200 bg-white text-slate-900 shadow-slate-900/10'
-                : 'border-emerald-500/35 bg-[#0b101b] text-slate-100 shadow-black/40'
-            }`}
-          >
-            <div className="flex items-start gap-2.5">
-              <span
-                className={`mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${
-                  isLight ? 'bg-emerald-100 text-emerald-700' : 'bg-emerald-950/60 text-emerald-300'
-                }`}
-              >
-                <Check className="w-3.5 h-3.5" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className={`text-sm font-semibold ${titleCls}`}>Site controls saved</div>
-                <p className={`text-[11px] mt-0.5 ${mutedCls}`}>
-                  Synced to Firestore and live enforcement.
-                </p>
-                <ul className={`mt-2 space-y-1 text-[11px] font-mono ${mutedCls}`}>
-                  {saveToast.lines.map((line) => (
-                    <li key={line} className="truncate">
-                      {line}
-                    </li>
-                  ))}
-                </ul>
-              </div>
+        <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:items-end sm:justify-end">
+          {feedbackMessage && feedbackTone && (
+            <div
+              role={feedbackTone === 'error' ? 'alert' : 'status'}
+              aria-live={feedbackTone === 'error' ? 'assertive' : 'polite'}
+              className={`flex min-w-0 max-w-xl flex-1 items-start gap-2 rounded-lg border px-3 py-2 text-[11px] leading-snug sm:mr-auto ${
+                feedbackTone === 'error'
+                  ? isLight
+                    ? 'border-rose-300 bg-rose-50 text-rose-900'
+                    : 'border-rose-500/40 bg-rose-950/45 text-rose-100'
+                  : isLight
+                    ? 'border-emerald-300 bg-emerald-50 text-emerald-900'
+                    : 'border-emerald-500/40 bg-emerald-950/40 text-emerald-100'
+              }`}
+            >
+              {feedbackTone === 'success' ? (
+                <Check className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              ) : (
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              )}
+              <span className="min-w-0 flex-1">{feedbackMessage}</span>
               <button
                 type="button"
-                aria-label="Dismiss save confirmation"
-                onClick={() => setSaveToast(null)}
-                className={`p-1 rounded-md transition-colors cursor-pointer shrink-0 ${
-                  isLight
-                    ? 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
-                    : 'text-slate-500 hover:text-slate-200 hover:bg-slate-800'
+                onClick={clearFeedback}
+                className={`shrink-0 rounded-md p-0.5 cursor-pointer ${
+                  isLight ? 'hover:bg-black/5' : 'hover:bg-white/10'
                 }`}
+                aria-label="Dismiss notification"
               >
-                <X className="w-3.5 h-3.5" />
+                <X className="h-3.5 w-3.5" />
               </button>
             </div>
-          </div>,
-          document.body
-        )}
+          )}
+          <div className="flex items-center justify-end gap-2 shrink-0">
+            <button
+              type="button"
+              disabled={saving || !hasUnsaved}
+              onClick={() => {
+                clearFeedback();
+                setDraft({ ...portfolioSettings });
+              }}
+              className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors cursor-pointer disabled:opacity-40 ${
+                isLight
+                  ? 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+                  : 'border-slate-700 bg-slate-900/70 text-slate-300 hover:bg-slate-800'
+              }`}
+            >
+              Reset
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#38bdf8] hover:bg-sky-300 disabled:opacity-50 text-slate-950 font-semibold text-xs transition-colors cursor-pointer whitespace-nowrap"
+            >
+              {saving ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Save className="w-3.5 h-3.5" />
+              )}
+              <span>Save &amp; Sync Site Controls</span>
+            </button>
+          </div>
+        </div>
+      </div>
     </form>
   );
 }

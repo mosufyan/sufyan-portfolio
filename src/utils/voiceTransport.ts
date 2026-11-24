@@ -20,7 +20,7 @@ export interface VoiceTurnResponse {
   followUps?: string[];
   suggestions?: string[];
   provider?: 'grok' | 'grounded' | string;
-  ttsProvider?: 'elevenlabs' | 'none' | string;
+  ttsProvider?: 'grok' | 'elevenlabs' | 'none' | string;
   audioBase64?: string;
   audioMimeType?: string;
   ownerOnline?: boolean;

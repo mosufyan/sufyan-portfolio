@@ -25,11 +25,18 @@ const DEFAULT_BASE = 'https://api.x.ai/v1';
 const DEFAULT_MODEL = 'grok-4.3';
 const DEFAULT_TIMEOUT_MS = 8_000;
 
-/** Skip Grok when retrieval already has a strong factual match (faster chat). */
+/** Skip Grok when retrieval already has a strong factual match (faster chat + voice). */
 export function shouldSkipGrokEnrichment(question: string, grounded: ChatAnswer): boolean {
   const q = question.toLowerCase();
+  // Structured composers already produce visitor-ready answers — skip LLM latency/hedging.
+  if (grounded.composed && grounded.confidence >= 0.9 && grounded.sources.length > 0) {
+    // Still allow Grok for explicit compare / deep-dive asks that need synthesis across angles.
+    if (!/\b(compare|versus|vs\.?|deep dive|in detail|walk me through)\b/i.test(q)) {
+      return true;
+    }
+  }
   const wantsSynthesis =
-    /summar|overview|compare|walk me through|tell me about|explain|deep dive|in detail|focus|secur|zero.?trust|before cisco|what did/i.test(
+    /summar|overview|compare|walk me through|tell me about|explain|deep dive|in detail|focus|secur|zero.?trust|what did/i.test(
       q
     );
   if (wantsSynthesis) return false;
@@ -56,6 +63,9 @@ function buildMessages(question: string, grounded: ChatAnswer): Array<{ role: st
         'Do not invent employers, titles, dates, or certifications.',
         'Do not mention retrieval sources, chunk IDs, or “according to the context”.',
         'Do not list follow-up questions in the answer body — the UI adds those separately.',
+        'HCL America/HCLTech work delivered on Cisco accounts is still HCL employment — not the same as his current Cisco Systems Inc. job.',
+        'When the visitor asks what he did before Cisco and context includes HCL and TCS/Tata, summarize both prior employers chronologically. Never claim earlier history is missing if those tenures are in context.',
+        'For certification questions, state the total count when present and summarize by category (AI, Cloud/DevOps, Data). Do not dump credential URLs.',
         'If the context is insufficient, say so briefly and invite the visitor to ask Mohammed in chat.',
       ].join(' '),
     },

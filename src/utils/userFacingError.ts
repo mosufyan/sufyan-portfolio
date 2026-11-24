@@ -105,6 +105,14 @@ function messageFromHints(haystack: string): string | null {
   if (h.includes('timed out') || h.includes('timeout')) {
     return CODE_MESSAGES['deadline-exceeded'];
   }
+  if (
+    h.includes('voice endpoints') ||
+    h.includes('lacks the permissions') ||
+    h.includes('add the permissions') ||
+    (h.includes('console.x.ai') && h.includes('voice'))
+  ) {
+    return 'Grok voice APIs are not enabled on this API key. In console.x.ai, edit the key and add Voice permissions, then retry.';
+  }
   return null;
 }
 

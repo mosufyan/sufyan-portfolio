@@ -1,20 +1,20 @@
 /**
- * ElevenLabs text-to-speech. Returns null audio on missing key / quota / errors
- * so the client can fall back to browser speechSynthesis.
- * Server-only — ELEVENLABS_API_KEY must never be exposed to the client.
+ * Grok (xAI) text-to-speech via POST /v1/tts.
+ * Returns null audio on missing key / quota / errors so the client can fall
+ * back to browser speechSynthesis. Server-only — GROK_API_KEY must never ship to the client.
  */
-const DEFAULT_BASE = 'https://api.elevenlabs.io/v1';
-/** Flash model stretches free-tier credits. */
-const DEFAULT_MODEL = 'eleven_flash_v2_5';
-/** Public stock voice; override with ELEVENLABS_VOICE_ID. */
-const DEFAULT_VOICE_ID = '21m00Tcm4TlvDq8ikWAM';
+import { resolveGrokApiKey } from './voiceStt.ts';
+
+const DEFAULT_BASE = 'https://api.x.ai/v1';
+/** Built-in Grok voice; override with GROK_TTS_VOICE_ID. */
+const DEFAULT_VOICE_ID = 'eve';
 const DEFAULT_TIMEOUT_MS = 15_000;
 const MAX_CHARS = 600;
 
 export interface VoiceTtsOptions {
   apiKey?: string;
   voiceId?: string;
-  modelId?: string;
+  language?: string;
   timeoutMs?: number;
   baseUrl?: string;
   fetchImpl?: typeof fetch;
@@ -29,23 +29,31 @@ export interface VoiceTtsResult {
   skipped?: boolean;
 }
 
-export function isVoiceTtsConfigured(apiKey = process.env.ELEVENLABS_API_KEY || ''): boolean {
-  return Boolean(apiKey && apiKey.trim().length >= 8);
+export function isVoiceTtsConfigured(apiKey = resolveGrokApiKey()): boolean {
+  return Boolean(apiKey && apiKey.length >= 8);
 }
 
+/** @deprecated Use synthesizeSpeechWithGrok — kept for older imports. */
 export async function synthesizeSpeechWithElevenLabs(
   textRaw: string,
   options: VoiceTtsOptions = {}
 ): Promise<VoiceTtsResult> {
+  return synthesizeSpeechWithGrok(textRaw, options);
+}
+
+export async function synthesizeSpeechWithGrok(
+  textRaw: string,
+  options: VoiceTtsOptions = {}
+): Promise<VoiceTtsResult> {
   const started = Date.now();
-  const apiKey = (options.apiKey ?? process.env.ELEVENLABS_API_KEY ?? '').trim();
+  const apiKey = resolveGrokApiKey(options.apiKey);
   const text = textRaw.trim().slice(0, MAX_CHARS);
   if (!apiKey) {
     return {
       ok: false,
       skipped: true,
       latencyMs: Date.now() - started,
-      error: 'ElevenLabs TTS is not configured.',
+      error: 'Grok TTS is not configured.',
     };
   }
   if (!text) {
@@ -53,14 +61,14 @@ export async function synthesizeSpeechWithElevenLabs(
   }
 
   const fetchImpl = options.fetchImpl || fetch;
-  const baseUrl = (options.baseUrl || process.env.ELEVENLABS_API_BASE_URL || DEFAULT_BASE).replace(
+  const baseUrl = (options.baseUrl || process.env.GROK_API_BASE_URL || DEFAULT_BASE).replace(
     /\/$/,
     ''
   );
   const voiceId =
-    (options.voiceId || process.env.ELEVENLABS_VOICE_ID || '').trim() || DEFAULT_VOICE_ID;
-  const modelId =
-    (options.modelId || process.env.ELEVENLABS_MODEL_ID || '').trim() || DEFAULT_MODEL;
+    (options.voiceId || process.env.GROK_TTS_VOICE_ID || '').trim() || DEFAULT_VOICE_ID;
+  const language =
+    (options.language || process.env.GROK_TTS_LANGUAGE || '').trim() || 'en';
   const timeoutMs = Math.min(
     60_000,
     Math.max(
@@ -73,19 +81,21 @@ export async function synthesizeSpeechWithElevenLabs(
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const res = await fetchImpl(`${baseUrl}/text-to-speech/${encodeURIComponent(voiceId)}`, {
+    const res = await fetchImpl(`${baseUrl}/tts`, {
       method: 'POST',
       headers: {
-        'xi-api-key': apiKey,
+        Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
         Accept: 'audio/mpeg',
       },
       body: JSON.stringify({
         text,
-        model_id: modelId,
-        voice_settings: {
-          stability: 0.45,
-          similarity_boost: 0.7,
+        voice_id: voiceId,
+        language,
+        output_format: {
+          codec: 'mp3',
+          sample_rate: 24000,
+          bit_rate: 128000,
         },
       }),
       signal: controller.signal,
@@ -93,11 +103,16 @@ export async function synthesizeSpeechWithElevenLabs(
 
     if (!res.ok) {
       const errText = await res.text().catch(() => '');
+      const permissionDenied =
+        res.status === 403 &&
+        /lacks the permissions|voice endpoints|does not have permission/i.test(errText);
       return {
         ok: false,
-        skipped: res.status === 401 || res.status === 402 || res.status === 429,
+        skipped: res.status === 401 || res.status === 402 || res.status === 429 || permissionDenied,
         latencyMs: Date.now() - started,
-        error: `ElevenLabs TTS ${res.status}: ${errText.slice(0, 180)}`,
+        error: permissionDenied
+          ? 'Grok voice APIs are not enabled on this API key. In console.x.ai, edit the key and add Voice permissions, then retry.'
+          : `Grok TTS ${res.status}: ${errText.replace(/\s+/g, ' ').slice(0, 160)}`,
       };
     }
 
@@ -106,7 +121,7 @@ export async function synthesizeSpeechWithElevenLabs(
       return {
         ok: false,
         latencyMs: Date.now() - started,
-        error: 'ElevenLabs TTS returned empty audio.',
+        error: 'Grok TTS returned empty audio.',
       };
     }
 
@@ -123,10 +138,10 @@ export async function synthesizeSpeechWithElevenLabs(
       skipped: true,
       latencyMs: Date.now() - started,
       error: aborted
-        ? 'ElevenLabs TTS timed out.'
+        ? 'Grok TTS timed out.'
         : err instanceof Error
           ? err.message
-          : 'ElevenLabs TTS failed.',
+          : 'Grok TTS failed.',
     };
   } finally {
     clearTimeout(timer);

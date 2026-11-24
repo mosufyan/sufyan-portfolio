@@ -99,6 +99,8 @@ import {
   bumpBotQuestion,
   bumpLiveRequest,
   bumpLlmCall,
+  bumpVoiceRealtimeSession,
+  bumpVoiceTurn,
   closeChatSession,
   createChatSession,
   ensureChatCacheHydrated,
@@ -117,6 +119,7 @@ import {
   checkChatLimitAsync,
   consumeChatLimitAsync,
   getChatUsageTotals,
+  planVoiceRealtimeSessionMinutes,
   type ChatLimitPolicy,
 } from './server/chatLimits.ts';
 import {
@@ -127,6 +130,10 @@ import {
 import { parseMultipartAudio, VOICE_AUDIO_MAX_BYTES } from './server/multipartAudio.ts';
 import { isVoiceSttConfigured } from './server/voiceStt.ts';
 import { isVoiceTtsConfigured } from './server/voiceTts.ts';
+import {
+  isVoiceRealtimeConfigured,
+  mintGrokRealtimeClientSecret,
+} from './server/voiceRealtime.ts';
 import { runVoiceTurn } from './server/voiceTurn.ts';
 import { buildDynamicSocialSvg, SHARE_CARD_TRACKS, type ShareTrackId } from './src/utils/ogShare.ts';
 import {
@@ -221,12 +228,18 @@ interface RuntimeOwnerPolicy {
   enableLiveChat: boolean;
   enableChatLlm: boolean;
   enableVoiceAgent: boolean;
+  enableVoiceRealtime: boolean;
   chatMaxQuestionsPerVisitor: number;
   chatMaxLlmPerVisitor: number;
   chatMaxLiveSessionsPerVisitor: number;
   chatMaxVoiceTurnsPerVisitor: number;
+  chatMaxVoiceRealtimeSessionsPerVisitor: number;
+  chatMaxVoiceRealtimeMinutesPerVisitor: number;
   chatRateWindowHours: number;
   chatLlmModel: string;
+  voiceSttModel: string;
+  voiceTtsVoiceId: string;
+  voiceRealtimeModel: string;
   chatShowSuggestions: boolean;
   chatOfferLiveAgent: boolean;
   alertEmailEnabled: boolean;
@@ -247,6 +260,8 @@ function chatLimitPolicyFromRuntime(policy: RuntimeOwnerPolicy): ChatLimitPolicy
     maxLlmPerVisitor: policy.chatMaxLlmPerVisitor,
     maxLiveSessionsPerVisitor: policy.chatMaxLiveSessionsPerVisitor,
     maxVoiceTurnsPerVisitor: policy.chatMaxVoiceTurnsPerVisitor,
+    maxVoiceRealtimeSessionsPerVisitor: policy.chatMaxVoiceRealtimeSessionsPerVisitor,
+    maxVoiceRealtimeMinutesPerVisitor: policy.chatMaxVoiceRealtimeMinutesPerVisitor,
     rateWindowHours: policy.chatRateWindowHours,
   };
 }
@@ -378,12 +393,20 @@ function loadInitialOwnerPolicy(): RuntimeOwnerPolicy {
     enableLiveChat: DEFAULT_PORTFOLIO_SETTINGS.enableLiveChat,
     enableChatLlm: DEFAULT_PORTFOLIO_SETTINGS.enableChatLlm,
     enableVoiceAgent: DEFAULT_PORTFOLIO_SETTINGS.enableVoiceAgent,
+    enableVoiceRealtime: DEFAULT_PORTFOLIO_SETTINGS.enableVoiceRealtime,
     chatMaxQuestionsPerVisitor: DEFAULT_PORTFOLIO_SETTINGS.chatMaxQuestionsPerVisitor,
     chatMaxLlmPerVisitor: DEFAULT_PORTFOLIO_SETTINGS.chatMaxLlmPerVisitor,
     chatMaxLiveSessionsPerVisitor: DEFAULT_PORTFOLIO_SETTINGS.chatMaxLiveSessionsPerVisitor,
     chatMaxVoiceTurnsPerVisitor: DEFAULT_PORTFOLIO_SETTINGS.chatMaxVoiceTurnsPerVisitor,
+    chatMaxVoiceRealtimeSessionsPerVisitor:
+      DEFAULT_PORTFOLIO_SETTINGS.chatMaxVoiceRealtimeSessionsPerVisitor,
+    chatMaxVoiceRealtimeMinutesPerVisitor:
+      DEFAULT_PORTFOLIO_SETTINGS.chatMaxVoiceRealtimeMinutesPerVisitor,
     chatRateWindowHours: DEFAULT_PORTFOLIO_SETTINGS.chatRateWindowHours,
     chatLlmModel: DEFAULT_PORTFOLIO_SETTINGS.chatLlmModel,
+    voiceSttModel: DEFAULT_PORTFOLIO_SETTINGS.voiceSttModel,
+    voiceTtsVoiceId: DEFAULT_PORTFOLIO_SETTINGS.voiceTtsVoiceId,
+    voiceRealtimeModel: DEFAULT_PORTFOLIO_SETTINGS.voiceRealtimeModel,
     chatShowSuggestions: DEFAULT_PORTFOLIO_SETTINGS.chatShowSuggestions,
     chatOfferLiveAgent: DEFAULT_PORTFOLIO_SETTINGS.chatOfferLiveAgent,
     alertEmailEnabled: DEFAULT_PORTFOLIO_SETTINGS.alertEmailEnabled,
@@ -443,6 +466,10 @@ function loadInitialOwnerPolicy(): RuntimeOwnerPolicy {
         typeof parsed.enableVoiceAgent === 'boolean'
           ? parsed.enableVoiceAgent
           : defaults.enableVoiceAgent,
+      enableVoiceRealtime:
+        typeof parsed.enableVoiceRealtime === 'boolean'
+          ? parsed.enableVoiceRealtime
+          : defaults.enableVoiceRealtime,
       chatMaxQuestionsPerVisitor: clampPolicyInt(
         parsed.chatMaxQuestionsPerVisitor,
         defaults.chatMaxQuestionsPerVisitor,
@@ -467,6 +494,18 @@ function loadInitialOwnerPolicy(): RuntimeOwnerPolicy {
         0,
         50
       ),
+      chatMaxVoiceRealtimeSessionsPerVisitor: clampPolicyInt(
+        parsed.chatMaxVoiceRealtimeSessionsPerVisitor,
+        defaults.chatMaxVoiceRealtimeSessionsPerVisitor,
+        0,
+        20
+      ),
+      chatMaxVoiceRealtimeMinutesPerVisitor: clampPolicyInt(
+        parsed.chatMaxVoiceRealtimeMinutesPerVisitor,
+        defaults.chatMaxVoiceRealtimeMinutesPerVisitor,
+        0,
+        120
+      ),
       chatRateWindowHours: clampPolicyInt(
         parsed.chatRateWindowHours,
         defaults.chatRateWindowHours,
@@ -477,6 +516,18 @@ function loadInitialOwnerPolicy(): RuntimeOwnerPolicy {
         typeof parsed.chatLlmModel === 'string'
           ? parsed.chatLlmModel.slice(0, 64)
           : defaults.chatLlmModel,
+      voiceSttModel:
+        typeof parsed.voiceSttModel === 'string'
+          ? parsed.voiceSttModel.replace(/[^a-zA-Z0-9._-]/g, '').slice(0, 64)
+          : defaults.voiceSttModel,
+      voiceTtsVoiceId:
+        typeof parsed.voiceTtsVoiceId === 'string'
+          ? parsed.voiceTtsVoiceId.replace(/[^a-zA-Z0-9._-]/g, '').slice(0, 64)
+          : defaults.voiceTtsVoiceId,
+      voiceRealtimeModel:
+        typeof parsed.voiceRealtimeModel === 'string'
+          ? parsed.voiceRealtimeModel.replace(/[^a-zA-Z0-9._-]/g, '').slice(0, 64)
+          : defaults.voiceRealtimeModel,
       chatShowSuggestions:
         typeof parsed.chatShowSuggestions === 'boolean'
           ? parsed.chatShowSuggestions
@@ -2474,12 +2525,18 @@ async function startServer() {
         enableLiveChat?: unknown;
         enableChatLlm?: unknown;
         enableVoiceAgent?: unknown;
+        enableVoiceRealtime?: unknown;
         chatMaxQuestionsPerVisitor?: unknown;
         chatMaxLlmPerVisitor?: unknown;
         chatMaxLiveSessionsPerVisitor?: unknown;
         chatMaxVoiceTurnsPerVisitor?: unknown;
+        chatMaxVoiceRealtimeSessionsPerVisitor?: unknown;
+        chatMaxVoiceRealtimeMinutesPerVisitor?: unknown;
         chatRateWindowHours?: unknown;
         chatLlmModel?: unknown;
+        voiceSttModel?: unknown;
+        voiceTtsVoiceId?: unknown;
+        voiceRealtimeModel?: unknown;
         chatShowSuggestions?: unknown;
         chatOfferLiveAgent?: unknown;
         alertEmailEnabled?: unknown;
@@ -2579,6 +2636,11 @@ async function startServer() {
           : typeof raw.enableVoiceAgent === 'boolean'
             ? raw.enableVoiceAgent
             : runtimeOwnerPolicy.enableVoiceAgent,
+        enableVoiceRealtime: incidentMode
+          ? false
+          : typeof raw.enableVoiceRealtime === 'boolean'
+            ? raw.enableVoiceRealtime
+            : runtimeOwnerPolicy.enableVoiceRealtime,
         chatMaxQuestionsPerVisitor: clampPolicyInt(
           raw.chatMaxQuestionsPerVisitor,
           runtimeOwnerPolicy.chatMaxQuestionsPerVisitor,
@@ -2603,6 +2665,18 @@ async function startServer() {
           0,
           50
         ),
+        chatMaxVoiceRealtimeSessionsPerVisitor: clampPolicyInt(
+          raw.chatMaxVoiceRealtimeSessionsPerVisitor,
+          runtimeOwnerPolicy.chatMaxVoiceRealtimeSessionsPerVisitor,
+          0,
+          20
+        ),
+        chatMaxVoiceRealtimeMinutesPerVisitor: clampPolicyInt(
+          raw.chatMaxVoiceRealtimeMinutesPerVisitor,
+          runtimeOwnerPolicy.chatMaxVoiceRealtimeMinutesPerVisitor,
+          0,
+          120
+        ),
         chatRateWindowHours: clampPolicyInt(
           raw.chatRateWindowHours,
           runtimeOwnerPolicy.chatRateWindowHours,
@@ -2613,6 +2687,18 @@ async function startServer() {
           typeof raw.chatLlmModel === 'string'
             ? raw.chatLlmModel.slice(0, 64)
             : runtimeOwnerPolicy.chatLlmModel,
+        voiceSttModel:
+          typeof raw.voiceSttModel === 'string'
+            ? raw.voiceSttModel.replace(/[^a-zA-Z0-9._-]/g, '').slice(0, 64)
+            : runtimeOwnerPolicy.voiceSttModel,
+        voiceTtsVoiceId:
+          typeof raw.voiceTtsVoiceId === 'string'
+            ? raw.voiceTtsVoiceId.replace(/[^a-zA-Z0-9._-]/g, '').slice(0, 64)
+            : runtimeOwnerPolicy.voiceTtsVoiceId,
+        voiceRealtimeModel:
+          typeof raw.voiceRealtimeModel === 'string'
+            ? raw.voiceRealtimeModel.replace(/[^a-zA-Z0-9._-]/g, '').slice(0, 64)
+            : runtimeOwnerPolicy.voiceRealtimeModel,
         chatShowSuggestions:
           typeof raw.chatShowSuggestions === 'boolean'
             ? raw.chatShowSuggestions
@@ -2993,6 +3079,66 @@ async function startServer() {
             'Too many verification codes sent to this email. Please check your inbox or wait a few minutes.',
         })
       ) {
+        return;
+      }
+
+      if (!otpRequiredFor('contact')) {
+        const messageId = `MSG-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+        const geoSummary =
+          [ipIntel.city, ipIntel.region, ipIntel.country].filter(Boolean).join(', ') || 'Unknown';
+        const telemetryNote = `Ref: ${messageId} · OTP bypassed by owner · IP: ${ipIntel.ipAddress} · Geo: ${geoSummary} · ${
+          risk.isVpnSuspected ? `VPN/Proxy Flagged (${risk.riskLevel})` : 'Clean Network'
+        }`;
+        const result = await sendContactEmail({
+          name: cleanName,
+          email: cleanEmail,
+          phone: normalizedContactPhone,
+          subject: cleanSubject,
+          message: cleanMessage,
+          theme: cleanTheme,
+          messageId,
+          telemetryNote,
+        });
+        const contactSummary = {
+          messageId,
+          senderName: cleanName.slice(0, 120),
+          senderEmail: cleanEmail.slice(0, 254),
+          senderPhone: normalizedContactPhone.slice(0, 40),
+          subject: cleanSubject.slice(0, 200),
+          message: cleanMessage.slice(0, 5000),
+          theme: cleanTheme,
+          ipAddress: ipIntel.ipAddress.slice(0, 64),
+          country: ipIntel.country.slice(0, 80),
+          region: ipIntel.region.slice(0, 80),
+          city: ipIntel.city.slice(0, 80),
+          isp: ipIntel.isp.slice(0, 120),
+          asn: ipIntel.asn.slice(0, 64),
+          timezone: ipIntel.timezone.slice(0, 64),
+          clientTimezone: clientTimezone.slice(0, 64),
+          isVpnSuspected: risk.isVpnSuspected,
+          riskLevel: risk.riskLevel,
+          riskReasons: risk.riskReasons.join(', ').slice(0, 240),
+          referrer: referrer.slice(0, 200),
+          userAgent: userAgent.slice(0, 220),
+        };
+        const telemetryPersistedByServer = await tryPersistContactSummary(contactSummary);
+        void emitOwnerAlert({
+          eventType: 'new_inquiry',
+          title: `New inquiry from ${cleanName}`,
+          detail: `${cleanEmail}${cleanSubject ? ` · ${cleanSubject}` : ''} · risk ${risk.riskLevel}${
+            risk.isVpnSuspected ? ' · VPN/proxy suspected' : ''
+          }`,
+          dedupeKey: `inquiry:${messageId}`,
+          theme: cleanTheme,
+        });
+        res.status(200).json({
+          ok: true,
+          status: 'sent',
+          provider: result.provider,
+          message: `Email transmitted directly to ${DESTINATION_EMAIL}.`,
+          contactSummary,
+          telemetryPersistedByServer,
+        });
         return;
       }
 
@@ -3768,8 +3914,11 @@ async function startServer() {
       (!otpRequiredFor('chat') || isDirectEmailTransportConfigured());
     const voiceSttConfigured = isVoiceSttConfigured();
     const voiceTtsConfigured = isVoiceTtsConfigured();
+    const voiceRealtimeConfigured = isVoiceRealtimeConfigured();
     const voiceEnabled =
       chatEnabled && runtimeOwnerPolicy.enableVoiceAgent && voiceSttConfigured;
+    const voiceRealtimeEnabled =
+      chatEnabled && runtimeOwnerPolicy.enableVoiceRealtime && voiceRealtimeConfigured;
     res.status(200).json({
       ok: true,
       enabled: chatEnabled,
@@ -3779,8 +3928,10 @@ async function startServer() {
       llmConfigured: isGrokLlmConfigured() && runtimeOwnerPolicy.enableChatLlm,
       vectorConfigured: isPortfolioVectorConfigured(),
       voiceAgentAvailable: voiceEnabled,
+      voiceRealtimeAvailable: voiceRealtimeEnabled,
       voiceSttConfigured,
       voiceTtsConfigured,
+      voiceRealtimeConfigured,
       limits: {
         maxQuestionsPerVisitor: runtimeOwnerPolicy.chatMaxQuestionsPerVisitor,
         maxLlmPerVisitor: runtimeOwnerPolicy.chatMaxLlmPerVisitor,
@@ -4028,6 +4179,7 @@ async function startServer() {
       }
 
       bumpBotQuestion();
+      bumpVoiceTurn();
       bumpMetric('chatQuestions');
 
       const wantLlm =
@@ -4050,6 +4202,12 @@ async function startServer() {
         chatLlmModel: runtimeOwnerPolicy.chatLlmModel,
         offerLiveAgent: runtimeOwnerPolicy.chatOfferLiveAgent,
         enableCloudTts: isVoiceTtsConfigured(),
+        stt: runtimeOwnerPolicy.voiceSttModel
+          ? { modelId: runtimeOwnerPolicy.voiceSttModel }
+          : undefined,
+        tts: runtimeOwnerPolicy.voiceTtsVoiceId
+          ? { voiceId: runtimeOwnerPolicy.voiceTtsVoiceId }
+          : undefined,
       });
 
       if (!turn.ok || !turn.answer || !turn.transcript) {
@@ -4101,6 +4259,209 @@ async function startServer() {
       });
     } catch {
       res.status(500).json({ error: 'Unable to process voice turn right now. Please try again.' });
+    }
+  });
+
+  /** Mint short-lived Grok Voice 3.0 client secret for browser speech-to-speech. */
+  app.post('/api/chat/voice/realtime-session', async (req: Request, res: Response) => {
+    try {
+      if (!req.is('application/json')) {
+        res.status(415).json({ error: 'Content-Type must be application/json.' });
+        return;
+      }
+      if (rejectDisallowedOrigin(req, res)) return;
+      if (
+        !runtimeOwnerPolicy.enablePortfolioChat ||
+        !runtimeOwnerPolicy.enableVoiceRealtime ||
+        runtimeOwnerPolicy.incidentMode ||
+        !isVoiceRealtimeConfigured()
+      ) {
+        res.status(503).json({ error: 'Live speech-to-speech is temporarily unavailable.' });
+        return;
+      }
+
+      const clientIp = extractClientIp(req);
+      if (
+        await enforceRateLimit(res, 'chat', `voice-rt:${clientIp}`, {
+          maxRequests: 20,
+          error: 'Too many live voice sessions from this connection. Please wait a few minutes.',
+        })
+      ) {
+        return;
+      }
+
+      const raw = (req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {}) as {
+        visitorId?: unknown;
+        sessionId?: unknown;
+        receipt?: unknown;
+      };
+      const visitorId = typeof raw.visitorId === 'string' ? raw.visitorId.trim().slice(0, 80) : '';
+      const sessionId = typeof raw.sessionId === 'string' ? raw.sessionId.trim() : '';
+      const receipt = extractChatReceipt(req, raw.receipt);
+
+      let sessionEmail = '';
+      if (sessionId && receipt) {
+        const auth = verifyChatSessionReceipt(receipt, sessionId);
+        if (!auth.ok) {
+          res.status(401).json(chatSessionAuthError(auth));
+          return;
+        }
+        const session = await getChatSessionAsync(sessionId);
+        if (!session || session.visitorEmail !== auth.email || session.status === 'closed') {
+          res.status(404).json({ error: 'Chat session not found or closed.' });
+          return;
+        }
+        sessionEmail = auth.email;
+      } else if (sessionId) {
+        res.status(401).json({ error: 'Chat session receipt required.', code: 'SESSION_EXPIRED' });
+        return;
+      }
+
+      const visitorKey = buildVisitorKey({
+        ipAddress: clientIp,
+        email: sessionEmail || undefined,
+        visitorId: visitorId || undefined,
+      });
+      const limitPolicy = chatLimitPolicyFromRuntime(runtimeOwnerPolicy);
+
+      const minutesCheck = await checkChatLimitAsync(
+        visitorKey,
+        'voiceRealtimeMinute',
+        limitPolicy
+      );
+      const sessionMinutes = planVoiceRealtimeSessionMinutes(
+        minutesCheck.remaining,
+        limitPolicy
+      );
+      if (!minutesCheck.allowed || sessionMinutes < 1) {
+        res.status(429).json({
+          error:
+            minutesCheck.reason ||
+            'Per-visitor live speech-to-speech minutes limit reached for this window.',
+          remaining: { voiceRealtimeMinutes: minutesCheck.remaining },
+          resetAtMs: minutesCheck.resetAtMs,
+        });
+        return;
+      }
+
+      const sessionLimit = await consumeChatLimitAsync(
+        visitorKey,
+        'voiceRealtimeSession',
+        limitPolicy
+      );
+      if (!sessionLimit.allowed) {
+        res.status(429).json({
+          error: sessionLimit.reason,
+          remaining: { voiceRealtimeSessions: sessionLimit.remaining },
+          resetAtMs: sessionLimit.resetAtMs,
+        });
+        return;
+      }
+
+      const minutesLimit = await consumeChatLimitAsync(
+        visitorKey,
+        'voiceRealtimeMinute',
+        limitPolicy,
+        Date.now(),
+        sessionMinutes
+      );
+      if (!minutesLimit.allowed) {
+        res.status(429).json({
+          error: minutesLimit.reason,
+          remaining: { voiceRealtimeMinutes: minutesLimit.remaining },
+          resetAtMs: minutesLimit.resetAtMs,
+        });
+        return;
+      }
+
+      const minted = await mintGrokRealtimeClientSecret({
+        model: runtimeOwnerPolicy.voiceRealtimeModel || undefined,
+        voice: runtimeOwnerPolicy.voiceTtsVoiceId || undefined,
+        expiresSeconds: sessionMinutes * 60,
+      });
+      if (!minted.ok || !minted.token) {
+        res.status(502).json({ error: minted.error || 'Unable to start live voice session.' });
+        return;
+      }
+
+      bumpVoiceRealtimeSession(sessionMinutes);
+
+      res.status(200).json({
+        ok: true,
+        token: minted.token,
+        expiresAt: minted.expiresAt,
+        expiresInSeconds: sessionMinutes * 60,
+        sessionMinutes,
+        model: minted.model,
+        voice: minted.voice,
+        instructions: minted.instructions,
+        tools: minted.tools,
+        wsUrl: minted.wsUrl,
+        remaining: {
+          voiceRealtimeSessions: sessionLimit.remaining,
+          voiceRealtimeMinutes: minutesLimit.remaining,
+        },
+      });
+    } catch {
+      res.status(500).json({ error: 'Unable to start live voice session right now.' });
+    }
+  });
+
+  /** Tool callback for Grok Voice 3.0 portfolio_answer function calls. */
+  app.post('/api/chat/voice/realtime-tool', async (req: Request, res: Response) => {
+    try {
+      if (!req.is('application/json')) {
+        res.status(415).json({ error: 'Content-Type must be application/json.' });
+        return;
+      }
+      if (rejectDisallowedOrigin(req, res)) return;
+      if (
+        !runtimeOwnerPolicy.enablePortfolioChat ||
+        !runtimeOwnerPolicy.enableVoiceRealtime ||
+        runtimeOwnerPolicy.incidentMode
+      ) {
+        res.status(503).json({ error: 'Live speech-to-speech is temporarily unavailable.' });
+        return;
+      }
+
+      const raw = (req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {}) as {
+        question?: unknown;
+        sessionId?: unknown;
+        receipt?: unknown;
+      };
+      const question = typeof raw.question === 'string' ? raw.question.trim().slice(0, 500) : '';
+      if (question.length < 2) {
+        res.status(400).json({ error: 'question is required.' });
+        return;
+      }
+
+      const sessionId = typeof raw.sessionId === 'string' ? raw.sessionId.trim() : '';
+      const receipt = extractChatReceipt(req, raw.receipt);
+      if (sessionId && receipt) {
+        const auth = verifyChatSessionReceipt(receipt, sessionId);
+        if (!auth.ok) {
+          res.status(401).json(chatSessionAuthError(auth));
+          return;
+        }
+        const session = await getChatSessionAsync(sessionId);
+        if (!session || session.visitorEmail !== auth.email || session.status === 'closed') {
+          res.status(404).json({ error: 'Chat session not found or closed.' });
+          return;
+        }
+      } else if (sessionId) {
+        res.status(401).json({ error: 'Chat session receipt required.', code: 'SESSION_EXPIRED' });
+        return;
+      }
+
+      const answer = await answerPortfolioQuestionSmart(question);
+      res.status(200).json({
+        ok: true,
+        answer: answer.answer,
+        sources: answer.sources,
+        confidence: answer.confidence,
+      });
+    } catch {
+      res.status(500).json({ error: 'Unable to resolve portfolio tool call.' });
     }
   });
 

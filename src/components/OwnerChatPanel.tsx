@@ -22,6 +22,14 @@ type ChatStats = {
   openSessions: number;
   ownerOnline: boolean;
   ownerPresenceAtMs: number;
+  voiceTurns?: number;
+  voiceRealtimeSessions?: number;
+  voiceRealtimeMinutes?: number;
+  usage?: {
+    voiceTurns?: number;
+    voiceRealtimeSessions?: number;
+    voiceRealtimeMinutes?: number;
+  };
 };
 
 const EMPTY_STATS: ChatStats = {
@@ -31,6 +39,9 @@ const EMPTY_STATS: ChatStats = {
   openSessions: 0,
   ownerOnline: false,
   ownerPresenceAtMs: 0,
+  voiceTurns: 0,
+  voiceRealtimeSessions: 0,
+  voiceRealtimeMinutes: 0,
 };
 
 export default function OwnerChatPanel({ isLight }: { isLight: boolean }) {
@@ -173,6 +184,19 @@ export default function OwnerChatPanel({ isLight }: { isLight: boolean }) {
             { label: 'Live requests', value: stats.liveRequests },
             { label: 'Live sessions', value: stats.liveSessions },
             { label: 'Open now', value: stats.openSessions },
+            { label: 'PTT turns (all-time)', value: stats.voiceTurns ?? 0 },
+            {
+              label: 'S2S sessions (all-time)',
+              value: stats.voiceRealtimeSessions ?? 0,
+            },
+            {
+              label: 'S2S minutes granted',
+              value: stats.voiceRealtimeMinutes ?? 0,
+            },
+            {
+              label: 'PTT / S2S (window)',
+              value: `${stats.usage?.voiceTurns ?? 0} / ${stats.usage?.voiceRealtimeSessions ?? 0}`,
+            },
           ].map((item) => (
             <div key={item.label} className={`rounded-lg border px-2.5 py-2 ${isLight ? 'border-slate-200' : 'border-slate-800'}`}>
               <div className={`text-[10px] font-mono uppercase ${muted}`}>{item.label}</div>
