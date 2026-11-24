@@ -12,6 +12,13 @@ import { createRequire } from 'module';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import {
+  OWNER_METRICS_CHAT_DOC,
+  OWNER_METRICS_COLLECTION,
+  OWNER_METRICS_SITE_DOC,
+  sanitizeSiteTelemetry,
+  type SiteTelemetryState,
+} from './ownerDurableState.ts';
 
 type FirestoreLike = {
   collection: (name: string) => {
@@ -51,6 +58,7 @@ type AdminFirestoreModule = {
   getFirestore: (app?: AdminApp, databaseId?: string) => FirestoreLike;
   FieldValue: {
     serverTimestamp: () => unknown;
+    increment: (n: number) => unknown;
   };
 };
 
@@ -180,6 +188,75 @@ export async function adminGetContactMessage(
   } catch (error) {
     console.error('Admin contact_messages read failed:', error);
     return null;
+  }
+}
+
+export async function adminLoadSiteTelemetry(): Promise<SiteTelemetryState | null> {
+  if (!tryInitAdmin() || !firestore) return null;
+  try {
+    const snap = await firestore.collection(OWNER_METRICS_COLLECTION).doc(OWNER_METRICS_SITE_DOC).get();
+    if (!snap.exists) return null;
+    return sanitizeSiteTelemetry(snap.data() || {});
+  } catch (error) {
+    console.error('Admin owner_metrics/site read failed:', error);
+    return null;
+  }
+}
+
+/** Full replace of site telemetry counters (merge-safe via caller taking max first). */
+export async function adminSaveSiteTelemetry(state: SiteTelemetryState): Promise<boolean> {
+  if (!tryInitAdmin() || !firestore || !firestoreModule) return false;
+  try {
+    const clean = sanitizeSiteTelemetry(state);
+    await firestore.collection(OWNER_METRICS_COLLECTION).doc(OWNER_METRICS_SITE_DOC).set(
+      {
+        pageviews: clean.pageviews,
+        ogShares: clean.ogShares,
+        ogByTrack: clean.ogByTrack,
+        updatedAtIso: clean.updatedAtIso,
+        updatedAt: firestoreModule.FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+    return true;
+  } catch (error) {
+    console.error('Admin owner_metrics/site write failed:', error);
+    return false;
+  }
+}
+
+export async function adminLoadChatCacheSnapshot(): Promise<Record<string, unknown> | null> {
+  if (!tryInitAdmin() || !firestore) return null;
+  try {
+    const snap = await firestore.collection(OWNER_METRICS_COLLECTION).doc(OWNER_METRICS_CHAT_DOC).get();
+    if (!snap.exists) return null;
+    const data = snap.data();
+    return data && typeof data === 'object' ? data : null;
+  } catch (error) {
+    console.error('Admin owner_metrics/chat_cache read failed:', error);
+    return null;
+  }
+}
+
+/** Persist owner chat sessions + lifetime counters (Admin SDK; survives Cloud Run redeploys). */
+export async function adminSaveChatCacheSnapshot(
+  payload: Record<string, unknown>
+): Promise<boolean> {
+  if (!tryInitAdmin() || !firestore || !firestoreModule) return false;
+  try {
+    // Strip undefined; Firestore rejects undefined field values.
+    const body = JSON.parse(JSON.stringify(payload)) as Record<string, unknown>;
+    await firestore.collection(OWNER_METRICS_COLLECTION).doc(OWNER_METRICS_CHAT_DOC).set(
+      {
+        ...body,
+        updatedAt: firestoreModule.FieldValue.serverTimestamp(),
+      },
+      { merge: false }
+    );
+    return true;
+  } catch (error) {
+    console.error('Admin owner_metrics/chat_cache write failed:', error);
+    return false;
   }
 }
 

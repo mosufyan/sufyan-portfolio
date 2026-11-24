@@ -1,5 +1,6 @@
 /**
- * Chat session store with disk cache + optional Redis write-through for multi-replica.
+ * Chat session store with disk + Redis + Firestore durability.
+ * Cloud Run disk is ephemeral; Redis is the hot cache; Firestore is the durable backup.
  */
 import crypto from 'crypto';
 import fs from 'fs';
@@ -14,12 +15,20 @@ import {
   redisGetJson,
   redisSetJson,
 } from './distributedStore.ts';
+import {
+  adminLoadChatCacheSnapshot,
+  adminSaveChatCacheSnapshot,
+  isFirebaseAdminConfigured,
+} from './firebaseAdmin.ts';
 import { VERIFIED_SESSION_TTL_MS } from './sessionPolicy.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CACHE_PATH = path.join(__dirname, '..', '.owner-chat-cache.json');
-/** Durable Redis snapshot so Cloud Run redeploys do not wipe the owner chat console. */
+/** Hot Redis snapshot (no TTL) — survives replica hops when Upstash is configured. */
 const CHAT_CACHE_REDIS_KEY = 'owner:chat-cache';
+/** Cap Firestore payload size (1 MiB doc limit). */
+const FIRESTORE_MAX_SESSIONS = 100;
+const FIRESTORE_MAX_MESSAGES = 40;
 
 export type ChatMessageRole = 'visitor' | 'owner' | 'system' | 'bot';
 
@@ -155,6 +164,18 @@ function buildCachePayload(): ChatCacheFile {
   };
 }
 
+/** Smaller snapshot for Firestore 1 MiB doc limit. */
+function buildFirestoreCachePayload(): ChatCacheFile {
+  const full = buildCachePayload();
+  return {
+    ...full,
+    sessions: full.sessions.slice(0, FIRESTORE_MAX_SESSIONS).map((s) => ({
+      ...s,
+      messages: s.messages.slice(-FIRESTORE_MAX_MESSAGES),
+    })),
+  };
+}
+
 function loadCache(): void {
   try {
     if (!fs.existsSync(CACHE_PATH)) return;
@@ -166,18 +187,61 @@ function loadCache(): void {
 }
 
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
-let redisHydratePromise: Promise<boolean> | null = null;
-let didBootHydrate = false;
+let hydratePromise: Promise<boolean> | null = null;
+let didDurableHydrate = false;
+
+async function mergeRemoteChatIntoMemory(): Promise<void> {
+  if (isDistributedStoreEnabled()) {
+    const remote = await redisGetJson<Partial<ChatCacheFile>>(CHAT_CACHE_REDIS_KEY);
+    if (!remote.error && remote.value) {
+      applyCachePayload(remote.value, { merge: true });
+    }
+  }
+  if (isFirebaseAdminConfigured()) {
+    const fromFs = await adminLoadChatCacheSnapshot();
+    if (fromFs) {
+      applyCachePayload(fromFs as Partial<ChatCacheFile>, { merge: true });
+    }
+  }
+}
 
 function persistCacheNow(): void {
-  try {
-    const payload = buildCachePayload();
-    fs.writeFileSync(CACHE_PATH, JSON.stringify(payload), 'utf8');
-    if (isDistributedStoreEnabled()) {
-      void redisSetJson(CHAT_CACHE_REDIS_KEY, payload);
+  void (async () => {
+    try {
+      await mergeRemoteChatIntoMemory();
+      const payload = buildCachePayload();
+      fs.writeFileSync(CACHE_PATH, JSON.stringify(payload), 'utf8');
+      if (isDistributedStoreEnabled()) {
+        await redisSetJson(CHAT_CACHE_REDIS_KEY, payload);
+      }
+      if (isFirebaseAdminConfigured()) {
+        await adminSaveChatCacheSnapshot(
+          buildFirestoreCachePayload() as unknown as Record<string, unknown>
+        );
+      }
+    } catch {
+      try {
+        fs.writeFileSync(CACHE_PATH, JSON.stringify(buildCachePayload()), 'utf8');
+      } catch {
+        /* ignore */
+      }
     }
+  })();
+}
+
+async function persistCacheDurable(): Promise<void> {
+  await mergeRemoteChatIntoMemory();
+  const payload = buildCachePayload();
+  try {
+    fs.writeFileSync(CACHE_PATH, JSON.stringify(payload), 'utf8');
   } catch {
-    /* non-fatal */
+    /* ignore disk */
+  }
+  if (isDistributedStoreEnabled()) {
+    await redisSetJson(CHAT_CACHE_REDIS_KEY, payload);
+  }
+  if (isFirebaseAdminConfigured()) {
+    await adminSaveChatCacheSnapshot(buildFirestoreCachePayload() as unknown as Record<string, unknown>);
   }
 }
 
@@ -198,36 +262,56 @@ export function flushChatCacheSync(): void {
   persistCacheNow();
 }
 
+/** Await Redis + Firestore write (preferred on create/close/reply). */
+export async function flushChatCacheDurable(): Promise<void> {
+  if (flushTimer) {
+    clearTimeout(flushTimer);
+    flushTimer = null;
+  }
+  await persistCacheDurable();
+}
+
 loadCache();
 
 /**
- * Rehydrate sessions/stats from Redis when this replica has an empty local map
- * (typical after Cloud Run scale-from-zero / new revision). Safe to call often.
+ * Rehydrate sessions/stats from Redis, then Firestore (Cloud Run cold start / new revision).
+ * Safe to call often; no-ops after a successful durable hydrate unless local map is empty.
  */
 export async function ensureChatCacheHydrated(): Promise<boolean> {
-  if (!isDistributedStoreEnabled()) return didBootHydrate;
-  if (didBootHydrate) return sessions.size > 0;
-  if (!redisHydratePromise) {
-    redisHydratePromise = (async () => {
+  if (didDurableHydrate && sessions.size > 0) return true;
+  if (!isDistributedStoreEnabled() && !isFirebaseAdminConfigured()) {
+    didDurableHydrate = true;
+    return sessions.size > 0;
+  }
+  if (!hydratePromise) {
+    hydratePromise = (async () => {
       try {
-        const remote = await redisGetJson<Partial<ChatCacheFile>>(CHAT_CACHE_REDIS_KEY);
-        if (remote.error || !remote.value) {
-          didBootHydrate = true;
-          return sessions.size > 0;
+        if (isDistributedStoreEnabled()) {
+          const remote = await redisGetJson<Partial<ChatCacheFile>>(CHAT_CACHE_REDIS_KEY);
+          if (!remote.error && remote.value) {
+            applyCachePayload(remote.value, { merge: true });
+          }
         }
-        applyCachePayload(remote.value, { merge: true });
-        didBootHydrate = true;
+        // Firestore is the durable backup when Redis was empty or never written.
+        if (isFirebaseAdminConfigured()) {
+          const fromFs = await adminLoadChatCacheSnapshot();
+          if (fromFs) {
+            applyCachePayload(fromFs as Partial<ChatCacheFile>, { merge: true });
+          }
+        }
+        didDurableHydrate = true;
+        // Warm disk + Redis from the merged durable state.
         persistCacheNow();
-        return sessions.size > 0;
+        return sessions.size > 0 || botQuestions > 0 || liveSessions > 0;
       } catch {
-        didBootHydrate = true;
+        didDurableHydrate = true;
         return sessions.size > 0;
       } finally {
-        redisHydratePromise = null;
+        hydratePromise = null;
       }
     })();
   }
-  return redisHydratePromise;
+  return hydratePromise;
 }
 
 const CHAT_SESSION_TTL_MS = VERIFIED_SESSION_TTL_MS;
