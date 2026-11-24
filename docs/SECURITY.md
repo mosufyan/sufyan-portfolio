@@ -4,11 +4,11 @@ This portfolio combines a public showcase with hardened lead-capture APIs (`/api
 
 ## Controls in place
 
-- **Security headers**: Strict CSP, HSTS (HTTPS), `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy`, COOP (`same-origin-allow-popups`), `X-Frame-Options` / `frame-ancestors`, and `X-Robots-Tag: noindex, nofollow, noarchive` on API routes.
+- **Security headers**: Strict CSP, HSTS (HTTPS), `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy`, COOP (`same-origin-allow-popups`), `X-Frame-Options` / `frame-ancestors`, and `X-Robots-Tag: noindex, nofollow, noarchive` on API routes. Production `script-src` uses a sha256 hash for the theme-boot inline script (no `'unsafe-inline'`). Styles default to compatible `style-src 'unsafe-inline'`; set `CSP_STRICT_STYLES=true` to enforce `style-src-elem`/`style-src-attr` split (attrs still allowed). `Content-Security-Policy-Report-Only` always reports a stricter style policy to `/api/csp-report` so you can measure impact before flipping the flag.
 - **Validation & sanitization**: Field length caps, strict email syntax + DNS MX check, E.164 phone validation, CR/LF/control header stripping, `escapeHtml()` across HTML emails and dynamic OG tags, and validated `Host` allowlisting in `resolveSafeBaseUrl`.
 - **Mandatory Contact OTP & Adaptive CV OTP**: 6-digit single-use HMAC-signed challenges verified before dispatch or export (`10m` TTL, capped attempts).
 - **Dual Rate Limiting + shared OTP/sessions**: Shared Upstash Redis counters when `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` are set (rate limits, owner policy, OTP challenges, chat quotas/sessions); otherwise in-memory per-IP buckets (`15 / 15 min` on contact & CV access; `40 / 15 min` on repeat events) plus per-email OTP buckets (`5 / 15 min`) with `Retry-After` headers.
-- **Anti-Bot & Anti-Crawler Layers**: Honeypot fields, Cloudflare Turnstile on both Contact and CV gate forms, `Sec-Fetch-Site: cross-site` rejection, `Origin`/`Referer` allowlisting, `robots.txt` + `<meta name="robots" content="noai, noimageai, noarchive" />`, and User-Agent filtering blocking AI dataset scrapers and vulnerability scanners (`GPTBot`, `ClaudeBot`, `CCBot`, `Bytespider`, `PerplexityBot`, `Scrapy`, `sqlmap`, `nikto`, etc.).
+- **Anti-Bot & Anti-Crawler Layers**: Honeypot fields, Cloudflare Turnstile on Contact / CV / chat forms, `Sec-Fetch-Site: cross-site` rejection, `Origin`/`Referer` allowlisting, `robots.txt` + `<meta name="robots" content="noai, noimageai, noarchive" />`, and User-Agent filtering that always blocks AI dataset scrapers (`GPTBot`, `ClaudeBot`, `CCBot`, `Bytespider`, `AI2Bot`, `PetalBot`, …) plus scanners (`sqlmap`, `nikto`, …). On sensitive `POST` mutations, headless browsers and agent frameworks (`Playwright`, `Puppeteer`, `browser-use`, `curl`, `python-requests`, …) are also rejected. Live readiness is exposed as `botProtection` on `/api/status` and `/api/health` (including whether the request arrived via Cloudflare edge headers).
 - **Production builds**: Vite `build.sourcemap` is disabled so public JS bundles do not ship original TypeScript sources.
 - **Firebase Auth & Firestore Security Rules**: Default-deny catch-all, PII collection isolation (`cv_downloads`, `contact_messages`, `admin_audit_logs`, `access_rules`, `admins`), strict field/type/length/timestamp validation, and zero-read owner list rules.
 - **Optional App Check**: Client initializes Firebase App Check (reCAPTCHA Enterprise) when `recaptchaSiteKey` / `VITE_RECAPTCHA_SITE_KEY` is set.
@@ -21,7 +21,8 @@ This portfolio combines a public showcase with hardened lead-capture APIs (`/api
 | Threat | Coverage |
 |--------|----------|
 | Spam / mail-bombing | Per-IP & per-email OTP rate limits + Turnstile + Honeypot |
-| Automated AI scraping / scanner probes | `robots.txt` + `X-Robots-Tag` + UA middleware (pair with Edge WAF for headless browser farms) |
+| Automated AI scraping / scanner probes | `robots.txt` + `X-Robots-Tag` + expanded UA middleware (pair with Cloudflare Bot Fight / Block AI Bots for headless farms) |
+| Agentic browser form abuse | Turnstile + honeypot + POST-only script/agent UA block + Redis rate limits |
 | XSS / HTML injection in inbound mail or OG cards | Strong (`escapeHtml` + validated `Host` origin) |
 | Email header injection | Strong (`sanitizeHeaderValue` / `sanitizeDisplayName`) |
 | Cross-site API forgery | Strong (`Origin`/`Referer` allowlist + `Sec-Fetch-Site: cross-site` block) |
@@ -95,6 +96,20 @@ Full Cloudflare / Cloud Run / Firebase / Resend checklists, upgrade paths, and *
 - **Live agent** requires email OTP (same mail transport as contact/CV). Sessions use in-process memory + `.owner-chat-cache.json` with optional Redis write-through for multi-replica; owner console `#owner/chat` replies in near-real-time while presence heartbeats mark you online.
 - Rate-limited under the `chat` bucket; allow/block rules still apply to live-chat emails.
 - **Owner alert router** — classify events (live chat, risk CV, inquiry, chat limits, etc.) as `urgent` / `warning` / `digest` / `off` in Owner Profile; urgent/warning email immediately when enabled; digest-class items flush with “Email digest now”.
+
+### Agent / AI bot hardening (owner actions)
+
+**In-repo (done):** expanded UA denylist, honeypot + Turnstile on forms, PII Firestore creates denied, `botProtection` signals on `/api/status`.
+
+**You still need to flip these in dashboards (cannot be done from this repo alone):**
+
+1. Cloudflare → DNS: confirm **Proxied** (orange cloud) for apex + `www`.
+2. Cloudflare → Security → Bots → **Bot Fight Mode On**; enable **Block AI Bots** if shown.
+3. Cloudflare → SSL/TLS → **Full (strict)** + Always Use HTTPS.
+4. Cloud Run → set `TRUST_PROXY=1`, `TURNSTILE_*`, `SESSION_SECRET`, optional Upstash Redis + `FIREBASE_SERVICE_ACCOUNT_JSON`.
+5. Firebase → App Check (reCAPTCHA Enterprise) → set `VITE_RECAPTCHA_SITE_KEY` → rebuild → enforce App Check for Firestore when metrics look healthy.
+
+After deploy, open Security Architecture on the site (or `GET /api/status`) and confirm `cloudflareEdge`, `turnstile`, and `redis` pills are green when those pieces are live.
 
 ### Quick env checklist
 

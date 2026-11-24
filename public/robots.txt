@@ -84,6 +84,33 @@ Disallow: /
 User-agent: Timpibot
 Disallow: /
 
+User-agent: AI2Bot
+Disallow: /
+
+User-agent: PetalBot
+Disallow: /
+
+User-agent: DataForSeoBot
+Disallow: /
+
+User-agent: DuckAssistBot
+Disallow: /
+
+User-agent: Webzio
+Disallow: /
+
+User-agent: Magpie-Crawler
+Disallow: /
+
+User-agent: ICC-Crawler
+Disallow: /
+
+User-agent: VelenPublicWebCrawler
+Disallow: /
+
+User-agent: TurnitinBot
+Disallow: /
+
 # Default rule for all other agents: disallow API endpoints
 User-agent: *
 Allow: /

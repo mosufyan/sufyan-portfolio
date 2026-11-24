@@ -177,7 +177,19 @@ export default function RecognitionRadar({
   onOpenCitationsView,
   onJumpToEndorsements,
 }: RecognitionRadarProps) {
-  const { isLight } = useTheme();
+  const { isLight, accent: siteAccent } = useTheme();
+  const isAmber = siteAccent === 'amber';
+  const brandFill = isAmber ? (isLight ? '#b45309' : '#f59e0b') : isLight ? '#0369a1' : '#38bdf8';
+  const brandSoft = isAmber ? (isLight ? '#fffbeb' : '#3b2a14') : isLight ? '#f0f9ff' : '#0d121f';
+  const brandStroke = isAmber ? (isLight ? '#fcd34d' : '#92400e') : isLight ? '#7dd3fc' : '#1e293b';
+  const polygonFill = isAmber
+    ? isLight
+      ? 'rgba(217, 119, 6, 0.16)'
+      : 'rgba(245, 158, 11, 0.16)'
+    : isLight
+      ? 'rgba(14, 165, 233, 0.16)'
+      : 'rgba(34, 211, 238, 0.16)';
+  const polygonStroke = isAmber ? (isLight ? '#d97706' : '#fbbf24') : isLight ? '#0284c7' : '#22d3ee';
   const shouldReduceMotion = useReducedMotion();
 
   const pillars = useMemo<RecognitionPillar[]>(() => {
@@ -326,19 +338,21 @@ export default function RecognitionRadar({
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.45, ease: EASE_OUT_EXPO }}
               style={{ transformOrigin: `${cx}px ${cy}px` }}
-              fill={
-                isLight
-                  ? 'rgba(14, 165, 233, 0.16)'
-                  : 'rgba(34, 211, 238, 0.16)'
-              }
-              stroke={isLight ? '#0284c7' : '#22d3ee'}
+              fill={polygonFill}
+              stroke={polygonStroke}
               strokeWidth="2.2"
             />
 
             {/* Interactive Pillar Nodes */}
             {vertices.map((v) => {
               const isSelected = v.pillar.id === selectedPillarId;
-              const accent = isLight ? v.pillar.accentLight : v.pillar.accentDark;
+              // Keep multi-color pillars, but remap cyan/sky brand nodes to site amber.
+              const rawPillarAccent = isLight ? v.pillar.accentLight : v.pillar.accentDark;
+              const pillarAccent =
+                isAmber &&
+                /^(#22d3ee|#38bdf8|#0284c7|#0369a1|#0ea5e9|#0891b2)$/i.test(rawPillarAccent)
+                  ? brandFill
+                  : rawPillarAccent;
               return (
                 <g
                   key={v.pillar.id}
@@ -362,7 +376,7 @@ export default function RecognitionRadar({
                       cy={v.y}
                       r="12"
                       fill="none"
-                      stroke={accent}
+                      stroke={pillarAccent}
                       strokeWidth="1.5"
                       strokeOpacity="0.65"
                     />
@@ -371,7 +385,7 @@ export default function RecognitionRadar({
                     cx={v.x}
                     cy={v.y}
                     r={isSelected ? 7.5 : 5.5}
-                    fill={accent}
+                    fill={pillarAccent}
                     stroke={isLight ? '#ffffff' : '#07090e'}
                     strokeWidth="2"
                   />
@@ -383,7 +397,9 @@ export default function RecognitionRadar({
                     fill={
                       isSelected
                         ? isLight
-                          ? '#0c4a6e'
+                          ? isAmber
+                            ? '#78350f'
+                            : '#0c4a6e'
                           : '#ffffff'
                         : isLight
                           ? '#334155'
@@ -397,7 +413,7 @@ export default function RecognitionRadar({
                     y={v.labelY + 11}
                     textAnchor="middle"
                     className="font-mono text-[10px] tabular-nums"
-                    fill={isLight ? '#0369a1' : '#38bdf8'}
+                    fill={brandFill}
                   >
                     {v.pillar.awards.length}a · {v.pillar.recommendations.length}q
                   </text>
@@ -410,8 +426,8 @@ export default function RecognitionRadar({
               cx={cx}
               cy={cy}
               r="27"
-              fill={isLight ? '#f0f9ff' : '#0d121f'}
-              stroke={isLight ? '#7dd3fc' : '#1e293b'}
+              fill={brandSoft}
+              stroke={brandStroke}
               strokeWidth="1.5"
             />
             <text
@@ -419,7 +435,7 @@ export default function RecognitionRadar({
               y={cy + 1}
               textAnchor="middle"
               className="font-display text-[14px] font-extrabold tabular-nums"
-              fill={isLight ? '#0369a1' : '#38bdf8'}
+              fill={brandFill}
             >
               {totalProofs}x
             </text>

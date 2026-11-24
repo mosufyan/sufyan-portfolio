@@ -243,9 +243,21 @@ jobs:
             --quiet
 
       - name: Post-deploy smoke
+        env:
+          PROJECT: ${{ vars.GCP_PROJECT || 'mohammed-sufyan-portfolio' }}
+          REGION: ${{ vars.GCP_REGION || 'us-central1' }}
+          SERVICE: ${{ vars.CLOUD_RUN_SERVICE || 'mohammed-sufyan-portfolio' }}
         run: |
           set -euo pipefail
-          BASE_URL="https://www.mohammedsufyan.com"
+          # Hit Cloud Run directly. Public www is behind Cloudflare Bot Fight and returns
+          # 403 challenge pages to GitHub Actions curl (deploy itself is fine).
+          BASE_URL="$(gcloud run services describe "$SERVICE" \
+            --project="$PROJECT" \
+            --region="$REGION" \
+            --format='value(status.url)')"
+          : "${BASE_URL:?Cloud Run service URL missing}"
+          export BASE_URL
+          echo "Smoke base URL: $BASE_URL"
           sleep 10
 
           curl -sS --fail "$BASE_URL/api/uptime" | tee /tmp/uptime.json
@@ -258,11 +270,12 @@ jobs:
           HTML="$(curl -sS --fail "$BASE_URL/")"
           printf '%s' "$HTML" > /tmp/index.html
           python3 - <<'PY'
-          import pathlib, re, urllib.request
+          import os, pathlib, re, urllib.request
           html = pathlib.Path("/tmp/index.html").read_text()
           m = re.search(r'src="(/assets/[^"]+\.js)"', html)
           assert m, "main JS asset missing from index HTML"
-          js = urllib.request.urlopen("https://www.mohammedsufyan.com" + m.group(1), timeout=60).read().decode()
+          base = os.environ["BASE_URL"].rstrip("/")
+          js = urllib.request.urlopen(base + m.group(1), timeout=60).read().decode()
           if not re.search(r'apiKey:(?:`AIza|"AIza)', js):
               raise SystemExit("Production bundle is missing an inlined Firebase apiKey (AIza…)")
           print("OK: Firebase apiKey present in SPA bundle")

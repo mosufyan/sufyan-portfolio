@@ -303,7 +303,7 @@ export default function App() {
     <MotionConfig reducedMotion="user">
       <div className="min-h-screen print:min-h-0">
         {/* Portfolio chrome follows site theme; ResumeModal stays outside so CV export keeps its own dark/light toggle */}
-        <div className="site-theme min-h-screen min-w-0 w-full overflow-x-clip bg-[#06080d] text-slate-200 selection:bg-cyan-500/30 selection:text-cyan-200 transition-colors duration-300">
+        <div className="site-theme min-h-screen min-w-0 w-full overflow-x-clip bg-[#06080d] text-slate-200 transition-colors duration-300">
           <div className={resumeOpen ? 'print:hidden' : ''}>
             <div className="sticky top-0 z-40 print:hidden">
               <Navbar
@@ -413,63 +413,66 @@ export default function App() {
           )}
         </div>
 
-        {/* Outside site-theme so light remapping cannot wash out dark chrome */}
-        <CredentialModal
-          certification={selectedCert}
-          onClose={() => setSelectedCert(null)}
-        />
-
-        {features.enableAnnouncements && (
-          <AnnouncementsModal
-            isOpen={announcementsOpen}
-            onClose={() => setAnnouncementsOpen(false)}
-            onOpenOwnerConsole={handleEnterOwnerConsole}
+        {/* Outside site-theme so light remapping cannot wash out dark chrome.
+            site-overlay still receives accent remaps (amber/cyan) site-wide. */}
+        <div className="site-overlay">
+          <CredentialModal
+            certification={selectedCert}
+            onClose={() => setSelectedCert(null)}
           />
-        )}
 
-        {features.enableCommandPalette && (
-          <CommandPalette
-            isOpen={commandPaletteOpen}
-            onClose={() => setCommandPaletteOpen(false)}
-            onSelectSkill={skillSelect}
-            onSelectCertification={(cert) => setSelectedCert(cert)}
-            onFocusCompany={handleFocusCompany}
-            onOpenResume={openResume}
-            onOpenAnnouncements={openAnnouncements}
-            onOpenDigitalCard={openDigitalCard}
-            onOpenTerminal={openTerminal}
-            onOpenOwnerConsole={handleEnterOwnerConsole}
-          />
-        )}
+          {features.enableAnnouncements && (
+            <AnnouncementsModal
+              isOpen={announcementsOpen}
+              onClose={() => setAnnouncementsOpen(false)}
+              onOpenOwnerConsole={handleEnterOwnerConsole}
+            />
+          )}
 
-        {features.enableTerminal && (
-          <EngineeringTerminal
-            isOpen={terminalOpen}
-            onClose={() => setTerminalOpen(false)}
-            onOpenResume={openResume}
-            onOpenDigitalCard={openDigitalCard}
-          />
-        )}
+          {features.enableCommandPalette && (
+            <CommandPalette
+              isOpen={commandPaletteOpen}
+              onClose={() => setCommandPaletteOpen(false)}
+              onSelectSkill={skillSelect}
+              onSelectCertification={(cert) => setSelectedCert(cert)}
+              onFocusCompany={handleFocusCompany}
+              onOpenResume={openResume}
+              onOpenAnnouncements={openAnnouncements}
+              onOpenDigitalCard={openDigitalCard}
+              onOpenTerminal={openTerminal}
+              onOpenOwnerConsole={handleEnterOwnerConsole}
+            />
+          )}
 
-        {features.enableDigitalCard && (
-          <DigitalCardModal
-            isOpen={digitalCardOpen}
-            onClose={() => setDigitalCardOpen(false)}
-          />
-        )}
+          {features.enableTerminal && (
+            <EngineeringTerminal
+              isOpen={terminalOpen}
+              onClose={() => setTerminalOpen(false)}
+              onOpenResume={openResume}
+              onOpenDigitalCard={openDigitalCard}
+            />
+          )}
 
-        {features.enableResumeStudio && (
-          <ResumeModal
-            isOpen={resumeOpen}
-            initialShareConfig={initialCvShare}
-            onClose={() => {
-              setResumeOpen(false);
-              clearCvShareQueryFromBrowser();
-            }}
-          />
-        )}
+          {features.enableDigitalCard && (
+            <DigitalCardModal
+              isOpen={digitalCardOpen}
+              onClose={() => setDigitalCardOpen(false)}
+            />
+          )}
 
-        <SecurityArchitectureModal open={securityOpen} onClose={closeSecurity} />
+          {features.enableResumeStudio && (
+            <ResumeModal
+              isOpen={resumeOpen}
+              initialShareConfig={initialCvShare}
+              onClose={() => {
+                setResumeOpen(false);
+                clearCvShareQueryFromBrowser();
+              }}
+            />
+          )}
+
+          <SecurityArchitectureModal open={securityOpen} onClose={closeSecurity} />
+        </div>
       </div>
     </MotionConfig>
   );

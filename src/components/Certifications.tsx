@@ -31,7 +31,8 @@ export default function Certifications({
   onSelectCertification,
   readingMode = 'deep',
 }: CertificationsProps) {
-  const { theme, isLight } = useTheme();
+  const { theme, isLight, accent } = useTheme();
+  const isAmber = accent === 'amber';
   const [activeTab, setActiveTab] = useState<'all' | 'ai' | 'cloud' | 'data'>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'radar'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
@@ -298,7 +299,15 @@ export default function Certifications({
         {featuredCerts.length > 0 && (
           <div className="mb-10 print:hidden">
             <div className="flex items-center justify-between gap-3 mb-3">
-              <div className="text-[11px] font-mono uppercase tracking-wider text-cyan-400">
+              <div
+                className={`text-[11px] font-mono uppercase tracking-wider ${
+                  isAmber
+                    ? isLight
+                      ? 'text-amber-800'
+                      : 'text-amber-400'
+                    : 'text-cyan-400'
+                }`}
+              >
                 Featured Credentials
               </div>
               <div className="text-[10px] font-mono text-slate-500">
@@ -316,15 +325,25 @@ export default function Certifications({
                   transition={{ duration: 0.35, delay: idx * 0.04, ease: EASE_OUT_EXPO }}
                   whileHover={{ y: -3 }}
                   onClick={() => onSelectCertification(cert)}
-                  className={`w-full rounded-xl border p-3.5 text-left transition-colors ${
+                  className={`featured-cred-card w-full rounded-xl border p-3.5 text-left transition-colors ${
                     isLight
-                      ? 'border-slate-200 bg-white hover:border-sky-400 shadow-sm'
-                      : 'border-slate-800 bg-[#0d121f]/80 hover:border-cyan-500/40'
+                      ? 'border-slate-200 bg-white shadow-sm'
+                      : 'border-slate-800 bg-[#0d121f]/80'
                   }`}
                 >
                   <div className="flex items-center gap-2 mb-2">
                     <IssuerMark issuer={cert.issuer} size="sm" theme={theme} />
-                    <span className={`text-[10px] font-mono uppercase truncate ${isLight ? 'text-sky-700' : 'text-cyan-400'}`}>
+                    <span
+                      className={`text-[10px] font-mono uppercase truncate ${
+                        isAmber
+                          ? isLight
+                            ? 'text-amber-800'
+                            : 'text-amber-400'
+                          : isLight
+                            ? 'text-sky-700'
+                            : 'text-cyan-400'
+                      }`}
+                    >
                       {cert.issuer}
                     </span>
                   </div>

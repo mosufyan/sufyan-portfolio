@@ -25,7 +25,7 @@ import { useTheme } from '../theme/ThemeProvider';
 import { useFirebase } from '../contexts/FirebaseContext';
 import { OWNER_EMAIL } from '../utils/announcementValidation';
 import { EASE_OUT_EXPO } from './MotionPrimitives';
-import ThemeSymbol from './ThemeSymbol';
+import ThemeAppearanceMenu from './ThemeAppearanceMenu';
 import { toUserFacingError } from '../utils/userFacingError';
 
 const CONSTELLATION_DOTS = 14;
@@ -92,7 +92,7 @@ export default function Navbar({
   const [themeWash, setThemeWash] = useState<'light' | 'dark' | null>(null);
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
-  const { isLight, toggleTheme } = useTheme();
+  const { isLight } = useTheme();
   const {
     user,
     authReady,
@@ -114,13 +114,11 @@ export default function Navbar({
     restDelta: 0.001,
   });
 
-  const handleThemeToggle = () => {
-    const next = isLight ? 'dark' : 'light';
+  const handleThemeModeChange = (next: 'light' | 'dark') => {
     if (!shouldReduceMotion) {
       setThemeWash(next);
       window.setTimeout(() => setThemeWash(null), 520);
     }
-    toggleTheme();
   };
 
   const handleOwnerLogin = async () => {
@@ -323,27 +321,7 @@ export default function Navbar({
         </nav>
 
         <div className="ml-auto flex items-center gap-1.5 sm:gap-2 shrink-0 min-w-0 xl:pl-3 xl:border-l xl:border-slate-800/70">
-          <button
-            type="button"
-            onClick={handleThemeToggle}
-            className={`hidden sm:inline-flex items-center justify-center gap-1.5 h-9 px-2.5 rounded-lg border text-xs font-medium transition-colors whitespace-nowrap shrink-0 overflow-hidden ${
-              isLight
-                ? 'border-amber-400/70 bg-amber-50 text-amber-800 hover:bg-amber-100'
-                : 'border-slate-700/90 bg-slate-900/70 text-slate-300 hover:text-cyan-300 hover:border-cyan-500/40'
-            }`}
-            title={isLight ? 'Switch to Dark Theme' : 'Switch to Light Theme'}
-            aria-label={isLight ? 'Switch to dark theme' : 'Switch to light theme'}
-          >
-            <ThemeSymbol
-              isLight={isLight}
-              boxClassName="h-3.5 w-3.5"
-              iconClassName="w-3.5 h-3.5"
-              sunColorClass="text-amber-600"
-              moonColorClass="text-cyan-400"
-              keyPrefix="nav-desktop"
-            />
-            <span className="hidden 2xl:inline">{isLight ? 'Light' : 'Dark'}</span>
-          </button>
+          <ThemeAppearanceMenu onThemeModeChange={handleThemeModeChange} />
 
           {features.enableCommandPalette && (
             <button
@@ -462,25 +440,7 @@ export default function Navbar({
 
           {/* Phone / tablet / laptop-below-xl controls */}
           <div className="flex xl:hidden items-center gap-1.5 sm:gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={handleThemeToggle}
-              className={`sm:hidden inline-flex items-center justify-center h-9 w-9 rounded-lg border transition-colors overflow-hidden ${
-                isLight
-                  ? 'border-amber-400/70 bg-amber-50 text-amber-700'
-                  : 'border-slate-700/90 bg-slate-900/70 text-slate-300 hover:text-cyan-300 hover:border-cyan-500/40'
-              }`}
-              aria-label={isLight ? 'Switch to dark theme' : 'Switch to light theme'}
-            >
-              <ThemeSymbol
-                isLight={isLight}
-                boxClassName="h-4 w-4"
-                iconClassName="w-4 h-4"
-                sunColorClass="text-amber-600"
-                moonColorClass="text-cyan-400"
-                keyPrefix="nav-mobile"
-              />
-            </button>
+            <ThemeAppearanceMenu compact onThemeModeChange={handleThemeModeChange} />
             {features.enableCommandPalette && (
               <button
                 type="button"

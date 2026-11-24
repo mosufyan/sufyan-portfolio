@@ -148,7 +148,15 @@ export default function Hero({
   readingMode = 'deep',
   onChangeReadingMode,
 }: HeroProps) {
-  const { isLight } = useTheme();
+  const { isLight, accent } = useTheme();
+  const heroGridDot =
+    accent === 'amber'
+      ? isLight
+        ? 'rgba(180, 83, 9, 0.18)'
+        : 'rgba(245, 158, 11, 0.16)'
+      : isLight
+        ? 'rgba(2, 132, 199, 0.18)'
+        : 'rgba(56, 189, 248, 0.16)';
   const [copied, setCopied] = useState(false);
   const [shared, setShared] = useState(false);
   const [marqueePaused, setMarqueePaused] = useState(false);
@@ -231,8 +239,7 @@ export default function Hero({
         aria-hidden="true"
         className="absolute inset-0 z-0 pointer-events-none opacity-45 print:hidden"
         style={{
-          backgroundImage:
-            'radial-gradient(rgba(56, 189, 248, 0.16) 1px, transparent 1px)',
+          backgroundImage: `radial-gradient(${heroGridDot} 1px, transparent 1px)`,
           backgroundSize: '28px 28px',
           maskImage: 'radial-gradient(ellipse 80% 70% at 50% 35%, black 20%, transparent 100%)',
           WebkitMaskImage:
@@ -277,14 +284,14 @@ export default function Hero({
                 text="Mohammed"
                 active={heroUnlocked}
                 delay={0.08}
-                className="bg-gradient-to-r from-[#38bdf8] via-cyan-300 to-sky-400 bg-clip-text text-transparent [-webkit-text-fill-color:transparent]"
+                className="bg-gradient-to-r from-cyan-400 via-cyan-300 to-sky-400 bg-clip-text text-transparent [-webkit-text-fill-color:transparent]"
               />{' '}
               <br className="hidden lg:inline" />
               <StaggerLetters
                 text="Sufyan"
                 active={heroUnlocked}
                 delay={0.08 + 'Mohammed'.length * 0.045}
-                className="bg-gradient-to-r from-[#38bdf8] via-cyan-300 to-sky-400 bg-clip-text text-transparent [-webkit-text-fill-color:transparent]"
+                className="bg-gradient-to-r from-cyan-400 via-cyan-300 to-sky-400 bg-clip-text text-transparent [-webkit-text-fill-color:transparent]"
               />
             </span>
           </h1>
@@ -331,7 +338,7 @@ export default function Hero({
                 whileHover={{ y: -2, scale: 1.01 }}
                 whileTap={{ scale: 0.98 }}
                 href="#experience"
-                className="inline-flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 rounded-lg bg-[#38bdf8] hover:bg-sky-300 text-slate-950 font-semibold text-xs sm:text-sm transition-colors shadow-md shadow-sky-500/20 max-w-full"
+                className="inline-flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-semibold text-xs sm:text-sm transition-colors shadow-md shadow-cyan-500/20 max-w-full"
               >
                 <MonitorSmartphone className="w-4 h-4 shrink-0" />
                 <span className="sm:hidden">View Experience</span>
@@ -606,7 +613,7 @@ export default function Hero({
                   className="absolute inset-0 opacity-25 pointer-events-none"
                   style={{
                     backgroundImage:
-                      'radial-gradient(rgba(56, 189, 248, 0.35) 1px, transparent 1px)',
+                      'radial-gradient(var(--accent-dot, rgba(56, 189, 248, 0.35)) 1px, transparent 1px)',
                     backgroundSize: '14px 14px',
                   }}
                 />

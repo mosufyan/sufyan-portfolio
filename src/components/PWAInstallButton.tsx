@@ -94,7 +94,7 @@ export default function PWAInstallButton() {
   const [gateAction, setGateAction] = useState<AccessGateAction | null>(null);
   const [gateReverifyMessage, setGateReverifyMessage] = useState<string | null>(null);
   const guideAlignClass = useModalPlacement(showManualGuide);
-  const { isLight } = useTheme();
+  const { isLight, accent } = useTheme();
   const { recordCvDownloadLog, effectivePortfolioSettings } = useFirebase();
 
   if (
@@ -122,6 +122,7 @@ export default function PWAInstallButton() {
         action: 'install',
         formatLabel: 'Portfolio PWA',
         theme: isLight ? 'light' : 'dark',
+        accent,
         onPersistLog: recordCvDownloadLog,
       });
       if (track.status === 'expired') {
@@ -163,7 +164,7 @@ export default function PWAInstallButton() {
   const guide = (
     <div
       onClick={() => setShowManualGuide(false)}
-      className={`fixed inset-0 z-[70] flex ${guideAlignClass} justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-5 pt-[max(0.75rem,env(safe-area-inset-top))] sm:pt-6 pb-[max(0.75rem,env(safe-area-inset-bottom))] overflow-y-auto print:hidden`}
+      className={`site-overlay fixed inset-0 z-[70] flex ${guideAlignClass} justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-5 pt-[max(0.75rem,env(safe-area-inset-top))] sm:pt-6 pb-[max(0.75rem,env(safe-area-inset-bottom))] overflow-y-auto print:hidden`}
     >
       <div
         onClick={(e) => e.stopPropagation()}

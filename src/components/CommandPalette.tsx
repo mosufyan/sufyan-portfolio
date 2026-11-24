@@ -447,7 +447,7 @@ export default function CommandPalette({
           exit={{ opacity: 0 }}
           transition={{ duration: 0.16 }}
           onClick={onClose}
-          className={`fixed inset-0 z-50 flex ${alignClass} justify-center backdrop-blur-sm px-2.5 sm:px-5 pt-[max(0.75rem,env(safe-area-inset-top))] sm:pt-6 pb-[max(0.75rem,env(safe-area-inset-bottom))] overflow-y-auto print:hidden ${backdrop}`}
+          className={`site-overlay fixed inset-0 z-50 flex ${alignClass} justify-center backdrop-blur-sm px-2.5 sm:px-5 pt-[max(0.75rem,env(safe-area-inset-top))] sm:pt-6 pb-[max(0.75rem,env(safe-area-inset-bottom))] overflow-y-auto print:hidden ${backdrop}`}
           role="dialog"
           aria-modal="true"
           aria-label="Quick command palette"

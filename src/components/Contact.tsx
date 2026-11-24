@@ -94,7 +94,7 @@ function formatSanJoseTime(): string {
 }
 
 export default function Contact({ onOpenDigitalCard }: ContactProps) {
-  const { theme, isLight } = useTheme();
+  const { theme, accent, isLight } = useTheme();
   const { recordContactMessageLog, portfolioSettings, effectivePortfolioSettings } = useFirebase();
   const shouldReduceMotion = useReducedMotion();
   const [formData, setFormData] = useState({
@@ -305,6 +305,7 @@ export default function Contact({ onOpenDigitalCard }: ContactProps) {
           message: formData.message.trim(),
           website: formData.website,
           theme,
+          accent,
           turnstileToken,
           ...clientContext,
         }),

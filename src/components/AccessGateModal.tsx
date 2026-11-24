@@ -203,6 +203,7 @@ export async function trackSubsequentCvEvent(params: {
   action: AccessGateAction;
   formatLabel: string;
   theme: 'dark' | 'light';
+  accent?: 'cyan' | 'amber';
   onPersistLog?: (summary: CvTrackingSummary) => Promise<void>;
 }): Promise<TrackCvEventResult> {
   const receipt = getSessionReceipt(params.action);
@@ -219,6 +220,7 @@ export async function trackSubsequentCvEvent(params: {
         action: params.action,
         formatLabel: params.formatLabel,
         theme: params.theme,
+        accent: params.accent ?? 'cyan',
         ...context,
       }),
     });
@@ -263,7 +265,7 @@ export default function AccessGateModal({
   onClose,
   onVerified,
 }: AccessGateModalProps) {
-  const { isLight: siteIsLight } = useTheme();
+  const { isLight: siteIsLight, accent: siteAccent } = useTheme();
   const isLight = isLightProp ?? siteIsLight;
   const alignClass = useModalPlacement(action !== null);
   const { recordCvDownloadLog, effectivePortfolioSettings } = useFirebase();
@@ -462,6 +464,7 @@ export default function AccessGateModal({
           formatLabel,
           website: form.website,
           theme: isLight ? 'light' : 'dark',
+          accent: siteAccent,
           turnstileToken,
           ...clientContext,
         }),
@@ -598,7 +601,7 @@ export default function AccessGateModal({
           exit={{ opacity: 0 }}
           transition={{ duration: 0.18 }}
           onClick={close}
-          className={`fixed inset-0 z-[60] flex ${alignClass} justify-center p-2.5 sm:p-5 pt-[max(0.75rem,env(safe-area-inset-top))] sm:pt-6 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur-sm overflow-y-auto print:hidden ${
+          className={`site-overlay fixed inset-0 z-[60] flex ${alignClass} justify-center p-2.5 sm:p-5 pt-[max(0.75rem,env(safe-area-inset-top))] sm:pt-6 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur-sm overflow-y-auto print:hidden ${
             isLight ? 'bg-slate-900/45' : 'bg-black/80'
           }`}
         >

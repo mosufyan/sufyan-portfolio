@@ -133,27 +133,61 @@ export function shouldAllowPreviewIframe(
   return isAiStudioPreviewHost(options.host);
 }
 
+/**
+ * Progressive style CSP tighten. Default off — keep React/Motion `style={}` working.
+ * When true: drop blanket style-src 'unsafe-inline', allow only style-src-attr 'unsafe-inline'
+ * (style elements must come from 'self' / Google Fonts). Flip off instantly if anything breaks.
+ */
+export function isCspStrictStylesEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  const flag = (env.CSP_STRICT_STYLES || '').toLowerCase();
+  return flag === '1' || flag === 'true' || flag === 'yes';
+}
+
+/** Theme boot script in index.html — keep hash in sync if that inline block changes. */
+export const THEME_BOOT_SCRIPT_HASH = "'sha256-O4CQilOGOhTnEIrcmOBIAfQx9jpXZpXwqN224L11mJs='";
+
+function buildStyleDirectives(mode: 'compatible' | 'strict' | 'report'): string[] {
+  if (mode === 'compatible') {
+    // Safe default: React / Motion / CSS-in-JS may use inline styles or <style> tags.
+    return ["style-src 'self' 'unsafe-inline' https://fonts.googleapis.com"];
+  }
+  if (mode === 'strict') {
+    // Enforce: no inline <style> elements; React style attributes still allowed.
+    return [
+      "style-src 'self' https://fonts.googleapis.com",
+      "style-src-elem 'self' https://fonts.googleapis.com",
+      "style-src-attr 'unsafe-inline'",
+    ];
+  }
+  // Report-only: measure both element and attribute violations without breaking users.
+  return [
+    "style-src 'self' https://fonts.googleapis.com",
+    "style-src-elem 'self' https://fonts.googleapis.com",
+    "style-src-attr 'none'",
+  ];
+}
+
 /** Build Content-Security-Policy matching production static assets + Google Fonts + Firebase. */
 export function buildContentSecurityPolicy(
   isDev: boolean,
-  options: { allowPreviewIframe?: boolean } = {}
+  options: { allowPreviewIframe?: boolean } = {},
+  env: NodeJS.ProcessEnv = process.env
 ): string {
   const frameAncestors = options.allowPreviewIframe
     ? "frame-ancestors 'self' https://aistudio.google.com https://*.google.com https://*.googleusercontent.com"
     : "frame-ancestors 'none'";
 
-  // Theme boot script in index.html — keep hash in sync if that inline block changes.
   // IMPORTANT: do NOT combine a script hash with 'unsafe-inline' in Chrome.
   // When a hash/nonce is present, browsers ignore 'unsafe-inline', which blocks
   // Vite's React Refresh / PWA inline scripts and leaves localhost blank.
-  const themeBootScriptHash = "'sha256-CgJhvzskzf709G6UFOCppYV+yn4GzdLGTM7wjEj6gdU='";
+  const styleMode = isCspStrictStylesEnabled(env) ? 'strict' : 'compatible';
 
   return [
     "default-src 'self'",
     isDev
       ? `script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com https://www.gstatic.com https://www.google.com https://www.gstatic.com/recaptcha/ https://www.recaptcha.net https://challenges.cloudflare.com`
-      : `script-src 'self' ${themeBootScriptHash} https://apis.google.com https://www.gstatic.com https://www.google.com https://www.gstatic.com/recaptcha/ https://www.recaptcha.net https://challenges.cloudflare.com`,
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      : `script-src 'self' ${THEME_BOOT_SCRIPT_HASH} https://apis.google.com https://www.gstatic.com https://www.google.com https://www.gstatic.com/recaptcha/ https://www.recaptcha.net https://challenges.cloudflare.com`,
+    ...buildStyleDirectives(styleMode),
     "img-src 'self' data: blob: https://*.googleusercontent.com https://www.gstatic.com https://www.recaptcha.net",
     // Push-to-talk Grok TTS plays as data:/blob: audio in the chat widget.
     "media-src 'self' data: blob:",
@@ -172,13 +206,26 @@ export function buildContentSecurityPolicy(
   ].join('; ');
 }
 
-/** Stricter report-only policy (no unsafe-inline / unsafe-eval) for migration telemetry. */
+/**
+ * Stricter report-only policy for migration telemetry.
+ * Scripts: no unsafe-inline/eval (prod keeps the theme-boot hash).
+ * Styles: style-src-elem/attr split with attr 'none' so /api/csp-report shows real impact
+ * before flipping CSP_STRICT_STYLES on the enforcing header.
+ */
 export function buildContentSecurityPolicyReportOnly(
   isDev: boolean,
-  options: { allowPreviewIframe?: boolean } = {}
+  options: { allowPreviewIframe?: boolean } = {},
+  env: NodeJS.ProcessEnv = process.env
 ): string {
-  const enforced = buildContentSecurityPolicy(isDev, options);
-  return enforced
+  // Build from a non-strict baseline so we control style directives explicitly,
+  // then strip script unsafe-inline/eval for telemetry.
+  const baselineEnv = { ...env, CSP_STRICT_STYLES: 'false' };
+  const enforced = buildContentSecurityPolicy(isDev, options, baselineEnv);
+  const withoutCompatibleStyles = enforced.replace(
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    buildStyleDirectives('report').join('; ')
+  );
+  return withoutCompatibleStyles
     .replace(" 'unsafe-inline'", '')
     .replace(" 'unsafe-eval'", '');
 }
@@ -300,11 +347,17 @@ export async function verifyTurnstileToken(
   }
 }
 
+/** AI dataset scrapers, agent crawlers, SEO bots, and vulnerability scanners — always blocked. */
 const BLOCKED_CRAWLER_AND_SCANNER_UA_REGEX =
-  /\b(gptbot|chatgpt-user|oai-searchbot|google-extended|ccbot|claudebot|claude-web|anthropic-ai|bytespider|perplexitybot|applebot-extended|amazonbot|meta-externalagent|facebookbot|diffbot|cohere-ai|omgilibot|omgili|youbot|imagesiftbot|timpibot|scrapy|sqlmap|nikto|gobuster|dirbuster|masscan|nuclei|semrushbot|ahrefsbot|mj12bot|dotbot)\b/i;
+  /\b(gptbot|chatgpt-user|oai-searchbot|google-extended|ccbot|claudebot|claude-web|anthropic-ai|bytespider|perplexitybot|applebot-extended|amazonbot|meta-externalagent|facebookbot|diffbot|cohere-ai|omgilibot|omgili|youbot|imagesiftbot|timpibot|ai2bot|petalbot|dataforseobot|webzio|webz\.io|seekr|duckassistbot|icc-crawler|velenpublicwebcrawler|magpie-crawler|turnitinbot|whisper|scrapy|sqlmap|nikto|gobuster|dirbuster|masscan|nuclei|semrushbot|ahrefsbot|mj12bot|dotbot)\b/i;
 
+/**
+ * Headless browsers, HTTP libraries, and agentic automation frameworks.
+ * Only enforced on sensitive POST mutations (contact / CV / chat) so legitimate
+ * link-preview unfurlers and search crawlers are not collateral damage.
+ */
 const BLOCKED_POST_SCRIPT_UA_REGEX =
-  /\b(headlesschrome|phantomjs|python-urllib|python-requests|go-http-client|java\/|httpclient|aiohttp|httpx)\b/i;
+  /\b(headlesschrome|phantomjs|selenium|puppeteer|playwright|browser-use|crawl4ai|langchain|python-urllib|python-requests|go-http-client|java\/|httpclient|aiohttp|httpx|axios\/|node-fetch|undici|got\/|curl\/|wget|libwww|okhttp|postmanruntime|insomnia|httpie)\b/i;
 
 /** Reject blatant AI scrapers, vulnerability scanners, and automated form-submission scripts. */
 export function isBlockedBotUserAgent(
@@ -319,6 +372,18 @@ export function isBlockedBotUserAgent(
   if (BLOCKED_CRAWLER_AND_SCANNER_UA_REGEX.test(clean)) return true;
   if (isPostMutation && BLOCKED_POST_SCRIPT_UA_REGEX.test(clean)) return true;
   return false;
+}
+
+/** Detect Cloudflare edge proxy from request headers (no secrets). */
+export function isCloudflareEdgeProxied(headers: {
+  'cf-ray'?: string | string[];
+  'cf-connecting-ip'?: string | string[];
+}): boolean {
+  const ray = headers['cf-ray'];
+  const ip = headers['cf-connecting-ip'];
+  const hasRay = typeof ray === 'string' ? ray.trim().length > 0 : Array.isArray(ray) && ray.length > 0;
+  const hasIp = typeof ip === 'string' ? ip.trim().length > 0 : Array.isArray(ip) && ip.length > 0;
+  return hasRay || hasIp;
 }
 
 /** Reject browser requests explicitly marked as cross-site via Fetch Metadata. */

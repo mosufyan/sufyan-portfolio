@@ -63,9 +63,11 @@ flowchart TB
 | Always Use HTTPS | **On** | Force TLS |
 | Minimum TLS | **1.2** | Drop legacy TLS |
 | Bot Fight Mode | **On** (Free) | Challenge simple bots / hosting ASNs |
+| Block AI Bots | **On** (when offered) | Edge deny for known AI crawlers (pairs with app UA middleware) |
 | Security Level | **Medium** (raise to High under attack) | Challenge suspicious clients |
 | Turnstile | Create **Managed** widget for `www` + apex | Contact, CV gate, live chat |
 | `TRUST_PROXY` on Cloud Run | **`1`** (or hop count to CF) | Correct client IP for rate limits |
+| Verify edge | `GET /api/status` → `controls.cloudflareEdge: true` | Confirms CF-Ray / CF-Connecting-IP reach Express |
 
 ### Recommended WAF (Free → Pro)
 
@@ -159,6 +161,7 @@ FIREBASE_SERVICE_ACCOUNT_JSON='{"type":"service_account",...}'
 
 ALLOW_FORMSUBMIT_FALLBACK=false
 FORCE_CV_OTP=false   # or true for always-on CV OTP
+# CSP_STRICT_STYLES=false  # set true only after /api/csp-report is quiet for style-src-elem/attr
 ```
 
 Public readiness (no secrets): `GET /api/status` and `GET /api/health` (includes `goldPath` checklist). Disclosure: `/.well-known/security.txt` and `#security` Architecture map.

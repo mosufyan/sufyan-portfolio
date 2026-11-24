@@ -1,12 +1,14 @@
 /**
- * Inline-email palettes matched to the site dark / light themes.
+ * Inline-email palettes matched to the site dark / light themes + cyan / amber accents.
  * Colors are hex literals because most email clients ignore external CSS.
  */
 
 export type EmailTheme = 'dark' | 'light';
+export type EmailAccent = 'cyan' | 'amber';
 
 export interface EmailPalette {
   theme: EmailTheme;
+  accentId: EmailAccent;
   pageBg: string;
   cardBg: string;
   headerBg: string;
@@ -29,8 +31,8 @@ export interface EmailPalette {
   accentAlt: string;
 }
 
-const DARK_PALETTE: EmailPalette = {
-  theme: 'dark',
+const BASE_DARK = {
+  theme: 'dark' as const,
   pageBg: '#06080d',
   cardBg: '#0d121f',
   headerBg: '#080b13',
@@ -41,20 +43,14 @@ const DARK_PALETTE: EmailPalette = {
   textStrong: '#ffffff',
   textMuted: '#94a3b8',
   textSoft: '#64748b',
-  accent: '#38bdf8',
-  accentDeep: '#06b6d4',
-  accentSoftBg: '#083344',
-  accentSoftBorder: '#0891b2',
   badgeSuccessBg: '#064e3b',
   badgeSuccessBorder: '#10b981',
   badgeSuccessText: '#6ee7b7',
-  ctaBg: '#38bdf8',
-  ctaText: '#020617',
   accentAlt: '#34d399',
 };
 
-const LIGHT_PALETTE: EmailPalette = {
-  theme: 'light',
+const BASE_LIGHT = {
+  theme: 'light' as const,
   pageBg: '#f8fafc',
   cardBg: '#ffffff',
   headerBg: '#f1f5f9',
@@ -65,16 +61,61 @@ const LIGHT_PALETTE: EmailPalette = {
   textStrong: '#0f172a',
   textMuted: '#64748b',
   textSoft: '#94a3b8',
-  accent: '#0284c7',
-  accentDeep: '#0369a1',
-  accentSoftBg: '#e0f2fe',
-  accentSoftBorder: '#7dd3fc',
   badgeSuccessBg: '#ecfdf5',
   badgeSuccessBorder: '#6ee7b7',
   badgeSuccessText: '#047857',
-  ctaBg: '#0284c7',
-  ctaText: '#ffffff',
   accentAlt: '#059669',
+};
+
+const ACCENT_TONES: Record<
+  EmailAccent,
+  {
+    dark: Pick<
+      EmailPalette,
+      'accent' | 'accentDeep' | 'accentSoftBg' | 'accentSoftBorder' | 'ctaBg' | 'ctaText'
+    >;
+    light: Pick<
+      EmailPalette,
+      'accent' | 'accentDeep' | 'accentSoftBg' | 'accentSoftBorder' | 'ctaBg' | 'ctaText'
+    >;
+  }
+> = {
+  cyan: {
+    dark: {
+      accent: '#38bdf8',
+      accentDeep: '#06b6d4',
+      accentSoftBg: '#083344',
+      accentSoftBorder: '#0891b2',
+      ctaBg: '#38bdf8',
+      ctaText: '#020617',
+    },
+    light: {
+      accent: '#0284c7',
+      accentDeep: '#0369a1',
+      accentSoftBg: '#e0f2fe',
+      accentSoftBorder: '#7dd3fc',
+      ctaBg: '#0284c7',
+      ctaText: '#ffffff',
+    },
+  },
+  amber: {
+    dark: {
+      accent: '#f59e0b',
+      accentDeep: '#d97706',
+      accentSoftBg: '#3b2a14',
+      accentSoftBorder: '#b45309',
+      ctaBg: '#f59e0b',
+      ctaText: '#0f172a',
+    },
+    light: {
+      accent: '#b45309',
+      accentDeep: '#92400e',
+      accentSoftBg: '#fffbeb',
+      accentSoftBorder: '#fcd34d',
+      ctaBg: '#d97706',
+      ctaText: '#fffbeb',
+    },
+  },
 };
 
 /** Accept only explicit client themes; default to dark (site default). */
@@ -84,6 +125,22 @@ export function parseEmailTheme(value: unknown): EmailTheme {
   return normalized === 'light' ? 'light' : 'dark';
 }
 
-export function getEmailPalette(theme: EmailTheme): EmailPalette {
-  return theme === 'light' ? LIGHT_PALETTE : DARK_PALETTE;
+/** Accept only explicit client accents; default to cyan (site default). */
+export function parseEmailAccent(value: unknown): EmailAccent {
+  if (typeof value !== 'string') return 'cyan';
+  const normalized = value.trim().toLowerCase();
+  return normalized === 'amber' ? 'amber' : 'cyan';
+}
+
+export function getEmailPalette(
+  theme: EmailTheme,
+  accent: EmailAccent = 'cyan'
+): EmailPalette {
+  const tones = ACCENT_TONES[accent][theme];
+  const base = theme === 'light' ? BASE_LIGHT : BASE_DARK;
+  return {
+    ...base,
+    accentId: accent,
+    ...tones,
+  };
 }

@@ -331,12 +331,15 @@ export default function ResumeModal({
   onClose,
   initialShareConfig,
 }: ResumeModalProps) {
-  const { theme: siteTheme } = useTheme();
+  const { theme: siteTheme, accent: siteAccent } = useTheme();
   const alignClass = useModalPlacement(isOpen);
   const modalScrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const measureRef = useRef<HTMLDivElement>(null);
   const preserveSharedThemeRef = useRef<boolean>(Boolean(initialShareConfig?.shouldOpen && initialShareConfig?.theme));
+  const preserveSharedAccentRef = useRef<boolean>(
+    Boolean(initialShareConfig?.shouldOpen && initialShareConfig?.accent)
+  );
 
   const [preset, setPreset] = useState<PresetMode>(() => resolveInitialConfig(initialShareConfig).preset);
   const [config, setConfig] = useState<ExportConfig>(() => resolveInitialConfig(initialShareConfig).config);
@@ -349,7 +352,10 @@ export default function ResumeModal({
     () => (initialShareConfig?.shouldOpen && initialShareConfig.density ? initialShareConfig.density : 'executive')
   );
   const [cvAccent, setCvAccent] = useState<CvAccentId>(
-    () => (initialShareConfig?.shouldOpen && initialShareConfig.accent ? initialShareConfig.accent : 'cyan')
+    () =>
+      initialShareConfig?.shouldOpen && initialShareConfig.accent
+        ? initialShareConfig.accent
+        : siteAccent
   );
   const [showCustomize, setShowCustomize] = useState(false);
   const [controlsOpen, setControlsOpen] = useState(true);
@@ -396,6 +402,13 @@ export default function ResumeModal({
       } else {
         setCvTheme(siteTheme);
       }
+      if (preserveSharedAccentRef.current) {
+        preserveSharedAccentRef.current = false;
+      } else {
+        // Keep default cyan/amber CV packs aligned with the site Appearance accent.
+        // Custom CV accents (cobalt, copper, …) stay until the visitor picks cyan/amber again.
+        setCvAccent((prev) => (prev === 'cyan' || prev === 'amber' ? siteAccent : prev));
+      }
     } else {
       setPendingAction(null);
       setGateReverifyMessage(null);
@@ -403,7 +416,7 @@ export default function ResumeModal({
       setControlsOpen(true);
       setIsBodyScrolled(false);
     }
-  }, [isOpen, siteTheme]);
+  }, [isOpen, siteTheme, siteAccent]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -926,6 +939,7 @@ export default function ResumeModal({
         action: 'pdf',
         formatLabel: getFormatLabel(),
         theme: isLight ? 'light' : 'dark',
+        accent: siteAccent,
         onPersistLog: recordCvDownloadLog,
       });
       if (track.status === 'expired') {
@@ -1343,6 +1357,7 @@ export default function ResumeModal({
           action: 'print',
           formatLabel: getFormatLabel(),
           theme: isLight ? 'light' : 'dark',
+          accent: siteAccent,
           onPersistLog: recordCvDownloadLog,
         });
         if (track.status === 'expired') {
@@ -1370,6 +1385,7 @@ export default function ResumeModal({
           action: 'ats',
           formatLabel: getFormatLabel(),
           theme: isLight ? 'light' : 'dark',
+          accent: siteAccent,
           onPersistLog: recordCvDownloadLog,
         });
         if (track.status === 'expired') {
@@ -1402,6 +1418,14 @@ export default function ResumeModal({
   };
 
   const skillRows = chunkArray(TECHNICAL_DISCIPLINES, 2);
+
+  /**
+   * SVG polygon/hub fills use inline hex and ignore CSS amber remaps.
+   * When the CV accent is still the cyan/amber brand pack, follow site Appearance
+   * so Cloud & AI Radar / Impact strips match Amber/Cyan dark+light.
+   */
+  const infographicAccent: CvAccentId =
+    cvAccent === 'cyan' || cvAccent === 'amber' ? siteAccent : cvAccent;
 
   const accentTokens = (() => {
     switch (cvAccent) {
@@ -1746,7 +1770,7 @@ export default function ResumeModal({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.2 }}
-          className={`fixed inset-0 z-50 flex ${alignClass} justify-center p-2 sm:p-4 pt-[max(0.75rem,env(safe-area-inset-top))] sm:pt-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] bg-black/85 backdrop-blur-md overflow-y-auto print:static print:inset-auto print:block print:p-0 print:overflow-visible print-no-blur print-reset-motion ${
+          className={`site-overlay fixed inset-0 z-50 flex ${alignClass} justify-center p-2 sm:p-4 pt-[max(0.75rem,env(safe-area-inset-top))] sm:pt-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] bg-black/85 backdrop-blur-md overflow-y-auto print:static print:inset-auto print:block print:p-0 print:overflow-visible print-no-blur print-reset-motion ${
             isLight ? 'print:bg-white' : 'print:bg-[#06080d]'
           }`}
           onClick={onClose}
@@ -2480,7 +2504,9 @@ export default function ResumeModal({
                   ))}
                 </div>
 
-                {showInfographics && <CvTrajectoryAndCloudStrip isLight={isLight} accent={cvAccent} />}
+                {showInfographics && (
+                  <CvTrajectoryAndCloudStrip isLight={isLight} accent={infographicAccent} />
+                )}
               </div>
             </section>
                 );
@@ -3003,7 +3029,7 @@ export default function ResumeModal({
 
               {showInfographics && (
                 <div className="mb-7">
-                  <CvImpactProofStrip isLight={isLight} accent={cvAccent} />
+                  <CvImpactProofStrip isLight={isLight} accent={infographicAccent} />
                 </div>
               )}
 
@@ -3331,7 +3357,7 @@ export default function ResumeModal({
                   </div>
                 </div>
 
-                <CvVerificationQrBadge isLight={isLight} accent={cvAccent} />
+                <CvVerificationQrBadge isLight={isLight} accent={infographicAccent} />
               </div>
             </section>
           )}
