@@ -29,7 +29,8 @@ flowchart TB
 
   subgraph Data["Persistence"]
     FS[(Firestore)]
-    Redis[(Upstash Redis<br/>limits · policy · OTP · chat)]
+    Redis[(Upstash Redis<br/>limits · policy · OTP · hot cache)]
+    FSMetrics[(Firestore owner_metrics<br/>site + chat_cache)]
     Disk[(.owner-chat-cache.json<br/>local fallback)]
   end
 
@@ -62,6 +63,7 @@ flowchart TB
   ChatAPI --> Eleven
   ChatAPI --> Disk
   ChatAPI --> Redis
+  ChatAPI --> FSMetrics
   Contact --> OTP
   Contact --> Mail
   Contact --> FS
@@ -70,6 +72,7 @@ flowchart TB
   CV --> FS
   OwnerAPI --> Mail
   OwnerAPI --> Redis
+  OwnerAPI --> FSMetrics
   GH --> Edge
 ```
 
@@ -218,7 +221,9 @@ Composite index: `announcements` — `status` ASC + `createdAt` DESC (`firestore
 | `.github/workflows/ci.yml` | Separate PR checks (SemVer, typecheck, tests, coverage, CSP, bundle size, rules, SAST, Docker/Trivy); `main`: deploy Cloud Run — see [CI.md](./CI.md) |
 | `scripts/wire-chat-llm-secrets.sh` | Upsert Grok/Vector secrets → Secret Manager + Cloud Run |
 | `scripts/setup-github-actions-deploy.sh` | One-time WIF + deploy SA for GitHub → Cloud Run |
-| `server/chatSessions.ts` | Live session store + disk cache + Redis write-through |
+| `server/chatSessions.ts` | Live session store + disk + Redis hot cache + Firestore `owner_metrics/chat_cache` |
+| `server/ownerDurableState.ts` | Merge/sanitize helpers for durable pageviews / OG / chat snapshots |
+| `owner_metrics/*` (Firestore) | Durable `site` (pageviews/OG) + `chat_cache` (sessions/counters); Admin SDK write, owner read |
 | `server/chatReceipt.ts` | Header-based session receipt extraction |
 | `server/ownerNotify.ts` | Urgent / warning / digest router |
 | `server/firebaseAdmin.ts` | Admin SDK PII writes + inquiry reply binding |

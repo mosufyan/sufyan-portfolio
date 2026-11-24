@@ -149,3 +149,13 @@ One-time GCP WIF setup: `./scripts/setup-github-actions-deploy.sh`.
 - [SECURITY.md](./SECURITY.md) — threat model & CSP notes
 - [SECURITY_CONFIGURATION.md](./SECURITY_CONFIGURATION.md) — env / ops checklists
 - [EXTERNAL_TOOLS_AND_COSTS.md](./EXTERNAL_TOOLS_AND_COSTS.md) — Actions cost context
+
+## Owner metrics durability (ops note)
+
+Cloud Run disk is ephemeral. Lifetime pageviews/OG and chat sessions/counters now persist via:
+
+1. **Firestore** `owner_metrics/site` + `owner_metrics/chat_cache` (Admin SDK; survives redeploys)
+2. **Upstash Redis** hot cache (`owner:site-telemetry`, `owner:chat-cache`)
+3. Local JSON only as a warm cache on the current container
+
+Requires `FIREBASE_SERVICE_ACCOUNT_JSON` (or ADC) on Cloud Run so `serverTelemetryWrites` / Admin path is live. Confirm `/api/health` shows `distributedStore: "redis"` and `serverTelemetryWrites: true`.
