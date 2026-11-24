@@ -114,6 +114,14 @@ describe('CSP / headers', () => {
     expect(csp).toContain("'sha256-O4CQilOGOhTnEIrcmOBIAfQx9jpXZpXwqN224L11mJs='");
   });
 
+  it('allows Grok live S2S WebSocket in production connect-src', () => {
+    const csp = buildContentSecurityPolicy(false);
+    // Browser opens wss://api.x.ai/v1/realtime with an ephemeral client secret.
+    // Dev CSP allows broad ws:/wss:; prod must allow this host explicitly.
+    expect(csp).toMatch(/connect-src[^;]*wss:\/\/api\.x\.ai/);
+    expect(csp).not.toMatch(/connect-src[^;]*\bws:/);
+  });
+
   it('applies core security headers', () => {
     const headers: Record<string, string> = {};
     applySecurityHeaders((k, v) => {
