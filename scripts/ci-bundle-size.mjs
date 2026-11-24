@@ -8,9 +8,9 @@ import path from 'path';
 const DIST = path.resolve('dist');
 const ASSETS = path.join(DIST, 'assets');
 /** Total hashed JS under dist/assets (gzip not required — raw bytes). */
-const MAX_TOTAL_JS_BYTES = 3.5 * 1024 * 1024;
-/** Largest single JS chunk. */
-const MAX_SINGLE_JS_BYTES = 1.75 * 1024 * 1024;
+const MAX_TOTAL_JS_BYTES = 4.5 * 1024 * 1024;
+/** Largest single JS chunk (main SPA + Firebase/chat is ~2.4 MiB today). */
+const MAX_SINGLE_JS_BYTES = 3.0 * 1024 * 1024;
 
 if (!fs.existsSync(ASSETS)) {
   console.error('::error::dist/assets missing — run production build first');

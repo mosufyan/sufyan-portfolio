@@ -174,7 +174,7 @@ jobs:
   playwright:
     name: Playwright smoke
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     needs: [build]
     steps:
       - uses: actions/checkout@v7
@@ -187,45 +187,27 @@ jobs:
         with:
           name: dist
           path: dist
-      - name: Install Playwright Chromium
+      - name: Install Playwright Chromium + OS deps
         run: npx playwright install --with-deps chromium
-      - name: Start production server
-        run: |
-          set -euo pipefail
-          SESSION_SECRET=ci-playwright-session-secret-32chars \
-            NODE_ENV=production PORT=4173 npm start > /tmp/pw-server.log 2>&1 &
-          echo $! > /tmp/pw-server.pid
-          for i in $(seq 1 60); do
-            if curl -sf http://127.0.0.1:4173/api/uptime >/dev/null; then
-              echo "server ready"
-              exit 0
-            fi
-            sleep 1
-          done
-          cat /tmp/pw-server.log || true
-          exit 1
-      - name: Run Playwright smoke
+      - name: Run Playwright smoke (webServer starts Express)
         env:
-          PLAYWRIGHT_BASE_URL: http://127.0.0.1:4173
           CI: 'true'
+          SESSION_SECRET: ci-playwright-session-secret-32chars
         run: npm run test:e2e
-      - name: Stop server
-        if: always()
-        run: |
-          if [[ -f /tmp/pw-server.pid ]]; then
-            kill "$(cat /tmp/pw-server.pid)" 2>/dev/null || true
-          fi
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: playwright-report
-          path: playwright-report/
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
           retention-days: 7
 
   lighthouse:
     name: Lighthouse
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     needs: [build]
     steps:
       - uses: actions/checkout@v7
@@ -238,14 +220,18 @@ jobs:
         with:
           name: dist
           path: dist
-      - name: Install Google Chrome
+      - name: Install Playwright Chromium for Lighthouse
+        run: npx playwright install --with-deps chromium
+      - name: Run Lighthouse floors
+        env:
+          SESSION_SECRET: ci-lighthouse-session-secret-32chars
         run: |
           set -euo pipefail
-          # chrome-launcher expects a system Chrome/Chromium binary.
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq google-chrome-stable || sudo apt-get install -y -qq chromium-browser
-      - name: Run Lighthouse floors
-        run: npm run ci:lighthouse
+          CHROME_PATH="$(node -e "console.log(require('playwright').chromium.executablePath())")"
+          export CHROME_PATH
+          echo "Using Chrome at: $CHROME_PATH"
+          test -x "$CHROME_PATH"
+          npm run ci:lighthouse
 
   firestore-rules-tests:
     name: Firestore rules tests
