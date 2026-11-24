@@ -325,10 +325,9 @@ npm run security:audit
 npm run build
 npm run ci:csp-smoke        # needs dist/
 npm run ci:bundle-size
-npm run test:e2e            # Playwright; needs dist/ or starts server
 ```
 
-CI/CD: open a PR to `main` — each gate is a **separate** GitHub check (SemVer, typecheck, tests, coverage, CSP, Playwright, Lighthouse, rules, SAST, Docker/Trivy). Merge to deploy Cloud Run automatically. Full table: [ARCHITECTURE.md](./ARCHITECTURE.md#cicd).
+CI/CD: open a PR to `main` — each gate is a **separate** GitHub check (SemVer, typecheck, tests, coverage, CSP, bundle size, rules, SAST, Docker/Trivy). Merge to deploy Cloud Run automatically. Full table: [CI.md](./CI.md).
 
 ---
 

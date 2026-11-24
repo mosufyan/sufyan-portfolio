@@ -82,7 +82,7 @@ flowchart TB
 | 11 | **Grok (xAI) API** | Optional chat answer enrichment over retrieved context | Optional | Pay-as-you-go / prepaid credits |
 | 12 | **Groq Whisper** | Optional voice-agent speech-to-text (`GROQ_API_KEY`) | Optional (voice) | Yes (Free plan rate limits) |
 | 13 | **ElevenLabs TTS** | Optional cloud voice replies (`ELEVENLABS_API_KEY`); browser TTS fallback | Optional (voice) | Yes (Free ~10k credits/mo) |
-| 14 | **GitHub Actions** | Separate PR checks (SemVer, typecheck, tests, coverage, CSP, Playwright, Lighthouse, rules, SAST, Docker/Trivy) + deploy on `main` | Yes | Yes (public repos generous) |
+| 14 | **GitHub Actions** | Separate PR checks (SemVer, typecheck, tests, coverage, CSP, bundle size, rules, SAST, Docker/Trivy) + deploy on `main` — [CI.md](./CI.md) | Yes | Yes (public repos generous) |
 | 15 | **Artifact Registry / Cloud Build** | Used by `gcloud run deploy --source .` from Actions | Yes (with CD) | Small free/low cost |
 | 16 | **Google Domains / Registrar** | Domain registration (DNS may point at Cloudflare) | Domain ownership | At-cost renewal (not “free”) |
 | 17 | **FormSubmit** | Legacy fallback only — **disabled by default** | No (`ALLOW_FORMSUBMIT_FALLBACK=false`) | N/A — keep off |
@@ -133,7 +133,7 @@ flowchart LR
 | Chat RAG | `UPSTASH_VECTOR_REST_*` → Vector retrieve; keyword fallback |
 | Chat LLM | `GROK_API_KEY` + owner toggle `enableChatLlm` (default model `grok-4.3`) |
 | Voice agent | `GROQ_API_KEY` (STT) + optional `ELEVENLABS_*` (TTS) + owner `enableVoiceAgent` |
-| CI/CD | Separate checks: SemVer, typecheck, Vitest, coverage, CSP smoke, Playwright, Lighthouse, Firestore rules tests, audit, SAST, Docker/Trivy; `main`: Cloud Run deploy (WIF) |
+| CI/CD | Separate checks: SemVer, typecheck, Vitest, coverage, CSP smoke, bundle size, Firestore rules tests, audit, SAST, Docker/Trivy; `main`: Cloud Run deploy (WIF) — [CI.md](./CI.md) |
 
 ---
 
@@ -303,8 +303,6 @@ flowchart LR
 | Production build | Uploads `dist` for downstream smokes |
 | CSP headers smoke | Asserts prod CSP includes `wss://api.x.ai` + core headers |
 | Bundle size | JS asset budgets |
-| Playwright smoke | Chromium against Express |
-| Lighthouse | a11y / best-practices / SEO / perf floors |
 | Firestore rules tests | Java + Firebase emulator |
 | Gitleaks / Bandit / Semgrep / CodeQL | Secret + SAST |
 | Docker build → Trivy | Image artifact then CRITICAL/HIGH scan |

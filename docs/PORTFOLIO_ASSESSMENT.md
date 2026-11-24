@@ -63,7 +63,7 @@ quadrantChart
 - Dual voice: PTT + Live S2S; amber accent hover-only remaps; maintenance banner stacking  
 - `/api/uptime` probe for external monitors  
 - Case notes on the Security Architecture page  
-- **CI split into separate checks:** SemVer, typecheck, unit/coverage, audit, build, CSP, bundle size, Playwright, Lighthouse, Firestore rules lint + emulator tests, Gitleaks, Bandit, Semgrep, CodeQL, Docker, Trivy  
+- **CI split into separate checks:** SemVer, typecheck, unit/coverage, audit, build, CSP, bundle size, Firestore rules lint + emulator tests, Gitleaks, Bandit, Semgrep, CodeQL, Docker, Trivy — [CI.md](./CI.md)
 
 ---
 

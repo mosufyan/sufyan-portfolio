@@ -215,7 +215,7 @@ Composite index: `announcements` — `status` ASC + `createdAt` DESC (`firestore
 | `server/chatKnowledge.ts` | Curated knowledge chunks + keyword ranking + concise answers |
 | `server/portfolioVector.ts` | Upstash Vector RAG (embed/sync/query) + keyword hybrid fallback |
 | `server/grokLlm.ts` | Optional Grok (xAI) chat-completions enrichment |
-| `.github/workflows/ci.yml` | Separate PR checks (SemVer, typecheck, tests, coverage, CSP, Playwright, Lighthouse, rules, SAST, Docker/Trivy); `main`: deploy Cloud Run |
+| `.github/workflows/ci.yml` | Separate PR checks (SemVer, typecheck, tests, coverage, CSP, bundle size, rules, SAST, Docker/Trivy); `main`: deploy Cloud Run — see [CI.md](./CI.md) |
 | `scripts/wire-chat-llm-secrets.sh` | Upsert Grok/Vector secrets → Secret Manager + Cloud Run |
 | `scripts/setup-github-actions-deploy.sh` | One-time WIF + deploy SA for GitHub → Cloud Run |
 | `server/chatSessions.ts` | Live session store + disk cache + Redis write-through |
@@ -268,24 +268,23 @@ mindmap
 | `src/utils/*.test.ts` | Governance, announcements, CV/ATS, phone, skills, tracking, routing |
 | `src/theme/*.test.ts` | Theme/accent packs (including amber hover-remap regression) |
 | `firestore.rules.test.ts` | Firestore rules unit tests (emulator via `npm run test:rules`) |
-| `e2e/smoke.spec.ts` | Playwright smoke (home, appearance menu, `/api/uptime`) |
 
 | Script | Purpose |
 |--------|---------|
 | `npm test` | Unit tests (Vitest) |
 | `npm run test:coverage` | Coverage + thresholds (`server/`, `src/utils/`, `src/theme/`) |
 | `npm run test:rules` | Firestore rules tests under Firebase emulator |
-| `npm run test:e2e` | Playwright smoke |
 | `npm run lint` | TypeScript (`tsc --noEmit`) |
 | `npm run lint:rules` | Firestore rules ESLint |
 | `npm run security:audit` | Production dependency audit |
 | `npm run ci:csp-smoke` | Start prod server; assert CSP / security headers |
 | `npm run ci:bundle-size` | JS asset size budgets |
-| `npm run ci:lighthouse` | Lighthouse floors (a11y / best-practices / SEO / perf) |
 
 ---
 
 ## CI/CD
+
+Full per-check documentation: **[CI.md](./CI.md)**.
 
 Each item below is a **separate GitHub Actions check** (`.github/workflows/ci.yml`):
 
@@ -300,8 +299,6 @@ Each item below is a **separate GitHub Actions check** (`.github/workflows/ci.ym
 | **Production build** | PR + `main` | Vite build → `dist` artifact |
 | **CSP headers smoke** | PR + `main` | Live prod CSP must include `wss://api.x.ai`, `media-src`, core headers |
 | **Bundle size** | PR + `main` | JS asset budgets |
-| **Playwright smoke** | PR + `main` | Chromium smoke against Express |
-| **Lighthouse** | PR + `main` | Score floors on local prod URL |
 | **Firestore rules tests** | PR + `main` | Emulator + `@firebase/rules-unit-testing` |
 | **Gitleaks** | PR + `main` | Secret scan (working tree) |
 | **Bandit** | PR + `main` | Python SAST (if any `.py`) |

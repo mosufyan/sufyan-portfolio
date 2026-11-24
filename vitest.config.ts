@@ -7,7 +7,6 @@ export default defineConfig({
       '**/node_modules/**',
       '**/dist/**',
       '**/dev-dist/**',
-      '**/e2e/**',
       '**/firestore.rules.test.ts',
     ],
     coverage: {
