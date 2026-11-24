@@ -7,6 +7,13 @@ coverage/
 *.log
 .env*
 !.env.example
+playwright-report/
+test-results/
+blob-report/
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
 # Written by scripts/write-vite-public-env.mjs — never commit real client keys.
 src/vitePublicEnv.generated.ts
 .owner-policy-cache.json

@@ -192,9 +192,11 @@ export function buildContentSecurityPolicy(
     // Push-to-talk Grok TTS plays as data:/blob: audio in the chat widget.
     "media-src 'self' data: blob:",
     "font-src 'self' data: https://fonts.gstatic.com",
+    // Live S2S opens a browser WebSocket to Grok (wss://api.x.ai). Dev allows
+    // broad ws:/wss: for Vite HMR; production allows only the realtime host.
     isDev
       ? "connect-src 'self' ws: wss: https://challenges.cloudflare.com https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firebaseappcheck.googleapis.com https://content-firebaseappcheck.googleapis.com https://www.googleapis.com https://accounts.google.com https://www.recaptcha.net"
-      : "connect-src 'self' https://challenges.cloudflare.com https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firebaseappcheck.googleapis.com https://content-firebaseappcheck.googleapis.com https://www.googleapis.com https://accounts.google.com https://www.recaptcha.net",
+      : "connect-src 'self' wss://api.x.ai https://challenges.cloudflare.com https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firebaseappcheck.googleapis.com https://content-firebaseappcheck.googleapis.com https://www.googleapis.com https://accounts.google.com https://www.recaptcha.net",
     "frame-src 'self' https://challenges.cloudflare.com https://*.firebaseapp.com https://accounts.google.com https://www.google.com https://www.recaptcha.net https://recaptcha.google.com",
     "worker-src 'self' blob:",
     "manifest-src 'self'",

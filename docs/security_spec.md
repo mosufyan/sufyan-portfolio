@@ -1,5 +1,7 @@
 # Firestore Security Specification — Announcements & Admin RBAC
 
+Automated coverage: `firestore.rules.test.ts` via `npm run test:rules` (Firebase emulator; CI job **Firestore rules tests**). Lint: `npm run lint:rules` (CI job **Firestore rules lint**).
+
 ## Phase 0: Data Invariants
 1. **Owner-Only Mutations**: Only the verified portfolio owner (`sufyan.net@gmail.com` with `email_verified == true` or a trusted UID record in `/admins/{uid}`) may create, update, or delete announcements.
 2. **Public Non-PII Read**: `/announcements` stores strictly public portfolio announcements (no emails, phones, or PII) and is readable by visitors without authentication.

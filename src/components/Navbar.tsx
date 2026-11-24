@@ -331,7 +331,7 @@ export default function Navbar({
               title="Quick Jump & Search (⌘K / Ctrl+K)"
               aria-label="Open quick navigation palette"
             >
-              <Search className="w-3.5 h-3.5 text-cyan-400" />
+              <Search className="w-3.5 h-3.5" />
               <span className="hidden 2xl:inline text-[11px] text-slate-400">⌘K</span>
             </button>
           )}
@@ -344,7 +344,7 @@ export default function Navbar({
               title="Open Interactive Terminal (sufyanctl)"
               aria-label="Open interactive portfolio terminal"
             >
-              <Terminal className="w-3.5 h-3.5 text-cyan-400" />
+              <Terminal className="w-3.5 h-3.5" />
               <span className="hidden 2xl:inline text-[11px] text-slate-400">CLI</span>
             </button>
           )}
@@ -408,9 +408,9 @@ export default function Navbar({
               title="Owner Console Sign In"
             >
               {authBusy ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin text-cyan-400" />
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
               ) : (
-                <Lock className="w-3.5 h-3.5 text-cyan-400" />
+                <Lock className="w-3.5 h-3.5" />
               )}
               <span>Owner</span>
             </button>
@@ -596,9 +596,9 @@ export default function Navbar({
                     className="md:hidden w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-md border border-slate-700 bg-slate-900/60 text-xs font-mono text-slate-200 disabled:opacity-60"
                   >
                     {authBusy ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin text-cyan-400" />
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
                     ) : (
-                      <Lock className="w-3.5 h-3.5 text-cyan-400" />
+                      <Lock className="w-3.5 h-3.5" />
                     )}
                     <span>Owner Console Login</span>
                   </button>
@@ -614,7 +614,7 @@ export default function Navbar({
                       }}
                       className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-md border border-slate-700 bg-slate-900/60 text-xs font-mono text-cyan-300"
                     >
-                      <Terminal className="w-3.5 h-3.5 text-cyan-400" />
+                      <Terminal className="w-3.5 h-3.5" />
                       Terminal (sufyanctl)
                     </button>
                   )}

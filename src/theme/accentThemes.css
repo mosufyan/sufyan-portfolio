@@ -31,16 +31,22 @@ html:not([data-accent='amber']) {
 
 /* ---------- Dark (and shared) text ---------- */
 
-/* Catch every cyan/sky text utility including opacity modifiers (/60, /80, …)
-   that individual class lists inevitably miss (e.g. Guiding Creed quote). */
-html[data-accent='amber'] :is(.site-theme, .site-overlay) [class*='text-cyan-'],
+/*
+  Resting cyan/sky text only. Do not use a substring match on "text-cyan-" —
+  that also matches hover:text-cyan-* / group-hover:text-cyan-* class names at
+  rest (nav links, contact channels, toolbar icons), painting everything amber.
+  Match resting tokens via ^ / " text-cyan-" so opacity variants (/80, /90) still remap.
+*/
+html[data-accent='amber'] :is(.site-theme, .site-overlay) [class^='text-cyan-'],
+html[data-accent='amber'] :is(.site-theme, .site-overlay) [class*=' text-cyan-'],
+html[data-accent='amber'] :is(.site-theme, .site-overlay) [class^='text-sky-'],
+html[data-accent='amber'] :is(.site-theme, .site-overlay) [class*=' text-sky-'],
+html[data-accent='amber'] :is(.site-theme, .site-overlay) .text-\[\#38bdf8\],
+/* Hover / group-hover only when actually hovered */
 html[data-accent='amber'] :is(.site-theme, .site-overlay) [class*='hover:text-cyan-']:hover,
 html[data-accent='amber'] :is(.site-theme, .site-overlay) [class*='group-hover:text-cyan-']:hover,
 html[data-accent='amber'] :is(.site-theme, .site-overlay) .group:hover [class*='group-hover:text-cyan-'],
-html[data-accent='amber'] :is(.site-theme, .site-overlay) [class*='text-sky-'],
 html[data-accent='amber'] :is(.site-theme, .site-overlay) [class*='hover:text-sky-']:hover,
-html[data-accent='amber'] :is(.site-theme, .site-overlay) .text-\[\#38bdf8\],
-/* Explicit Tailwind hover utilities (beat lightTheme !important hover remaps) */
 html[data-accent='amber'] :is(.site-theme, .site-overlay) .hover\:text-cyan-200:hover,
 html[data-accent='amber'] :is(.site-theme, .site-overlay) .hover\:text-cyan-300:hover,
 html[data-accent='amber'] :is(.site-theme, .site-overlay) .hover\:text-cyan-400:hover,
@@ -51,8 +57,9 @@ html[data-accent='amber'] :is(.site-theme, .site-overlay) .group-hover\:text-cya
 html[data-accent='amber'] :is(.site-theme, .site-overlay) .group:hover .group-hover\:text-cyan-100,
 html[data-accent='amber'] :is(.site-theme, .site-overlay) .group:hover .group-hover\:text-cyan-300,
 html[data-accent='amber'] :is(.site-theme, .site-overlay) .group:hover .group-hover\:text-cyan-400,
-/* Navbar chrome keeps dark cyan in lightTheme — force amber when accent is amber */
-html[data-accent='amber'] :is(.site-theme, .site-overlay) .navbar-chrome [class*='text-cyan-'],
+/* Navbar chrome keeps dark tokens in lightTheme — remap resting + hover correctly */
+html[data-accent='amber'] :is(.site-theme, .site-overlay) .navbar-chrome [class^='text-cyan-'],
+html[data-accent='amber'] :is(.site-theme, .site-overlay) .navbar-chrome [class*=' text-cyan-'],
 html[data-accent='amber'] :is(.site-theme, .site-overlay) .navbar-chrome .text-cyan-400,
 html[data-accent='amber'] :is(.site-theme, .site-overlay) .navbar-chrome .text-cyan-300,
 html[data-accent='amber'] :is(.site-theme, .site-overlay) .navbar-chrome .hover\:text-cyan-300:hover,
@@ -319,11 +326,13 @@ html[data-theme='light'][data-accent='amber'] .site-theme .skill-filter-banner .
   background-color: #fffbeb !important;
 }
 
-html[data-theme='light'][data-accent='amber'] .site-theme [class*='text-cyan-'],
+html[data-theme='light'][data-accent='amber'] .site-theme [class^='text-cyan-'],
+html[data-theme='light'][data-accent='amber'] .site-theme [class*=' text-cyan-'],
+html[data-theme='light'][data-accent='amber'] .site-theme [class^='text-sky-'],
+html[data-theme='light'][data-accent='amber'] .site-theme [class*=' text-sky-'],
 html[data-theme='light'][data-accent='amber'] .site-theme [class*='hover:text-cyan-']:hover,
 html[data-theme='light'][data-accent='amber'] .site-theme [class*='group-hover:text-cyan-']:hover,
 html[data-theme='light'][data-accent='amber'] .site-theme .group:hover [class*='group-hover:text-cyan-'],
-html[data-theme='light'][data-accent='amber'] .site-theme [class*='text-sky-'],
 html[data-theme='light'][data-accent='amber'] .site-theme [class*='hover:text-sky-']:hover,
 html[data-theme='light'][data-accent='amber'] .site-theme .text-\[\#38bdf8\],
 html[data-theme='light'][data-accent='amber'] .site-theme .hover\:text-cyan-200:hover,
@@ -333,12 +342,14 @@ html[data-theme='light'][data-accent='amber'] .site-theme .hover\:text-sky-700:h
 html[data-theme='light'][data-accent='amber'] .site-theme .group-hover\:text-cyan-300:hover,
 html[data-theme='light'][data-accent='amber'] .site-theme .group:hover .group-hover\:text-cyan-300,
 html[data-theme='light'][data-accent='amber'] .site-theme .featured-story-card .featured-story-eyebrow,
-html[data-theme='light'][data-accent='amber'] .site-theme .featured-story-card [class*='text-cyan-'] {
+html[data-theme='light'][data-accent='amber'] .site-theme .featured-story-card [class^='text-cyan-'],
+html[data-theme='light'][data-accent='amber'] .site-theme .featured-story-card [class*=' text-cyan-'] {
   color: #b45309 !important;
 }
 
-/* Navbar stays dark chrome in light mode — still follow amber accent on hover */
-html[data-theme='light'][data-accent='amber'] .site-theme .navbar-chrome [class*='text-cyan-'],
+/* Navbar stays dark chrome in light mode — amber only on resting cyan tokens + hover */
+html[data-theme='light'][data-accent='amber'] .site-theme .navbar-chrome [class^='text-cyan-'],
+html[data-theme='light'][data-accent='amber'] .site-theme .navbar-chrome [class*=' text-cyan-'],
 html[data-theme='light'][data-accent='amber'] .site-theme .navbar-chrome .text-cyan-400,
 html[data-theme='light'][data-accent='amber'] .site-theme .navbar-chrome .text-cyan-300,
 html[data-theme='light'][data-accent='amber'] .site-theme .navbar-chrome .hover\:text-cyan-300:hover,

@@ -9,10 +9,10 @@ Related: [SECURITY.md](./SECURITY.md) · [SECURITY_CONFIGURATION.md](./SECURITY_
 
 | Goal | Realistic target | Where you are today |
 |------|------------------|---------------------|
-| Security | Defense-in-depth, no known high-severity gold-path gaps | **~95/100** in code (Admin-only PII, split settings, HTTPS IP intel, CSP reporting) |
+| Security | Defense-in-depth, no known high-severity gold-path gaps | **~96/100** in code (Admin-only PII, split settings, HTTPS IP intel, CSP reporting + Live S2S `wss://api.x.ai`, CI CSP/rules/SAST gates) |
 | Observability | Product telemetry + SRE hooks | **~88/100** (request IDs, JSON logs, metrics, Sentry/Slack, `/api/uptime`, CSP reports) |
-| Product polish | Recruiter-ready + control map | **~92/100** |
-| **Overall** | World-class personal security portfolio | **~94/100** |
+| Product polish | Recruiter-ready + control map | **~93/100** (dual voice PTT/Live S2S, amber/cyan accents, maintenance banner stacking) |
+| **Overall** | World-class personal security portfolio | **~95/100** |
 
 **Why not 99?** Remaining points are *production proof*, not missing features:
 
@@ -44,11 +44,11 @@ quadrantChart
 
 | Dimension | Score | Rationale |
 |-----------|------:|-----------|
-| **Security** | **95** | Deny-by-default rules; Admin-only PII creates; public/private settings split; Redis OTP/sessions/quotas; fail-closed policy; HTTPS IP intel; CSP + report-only + report-uri |
+| **Security** | **96** | Deny-by-default rules; Admin-only PII creates; public/private settings split; Redis OTP/sessions/quotas; fail-closed policy; HTTPS IP intel; CSP + Live S2S `wss://api.x.ai`; CI CSP smoke + rules emulator + SAST/Trivy |
 | **Observability** | **88** | Structured logs, request IDs, metrics, client errors, CSP reports, `/api/status` + `/api/uptime`, Sentry/Slack hooks |
-| **Feature polish** | **92** | Owner console, chat, Security Architecture + case notes, feature switches |
+| **Feature polish** | **93** | Owner console, dual voice (PTT + Live S2S), theme accents, Security Architecture + case notes |
 | **Hiring narrative** | **93** | Live control map + gold-path health is interview-grade |
-| **Overall** | **94** | Ops checklist below unlocks ~96–97 |
+| **Overall** | **95** | Ops checklist below unlocks ~96–97 |
 
 ---
 
@@ -59,8 +59,11 @@ quadrantChart
 - IP intel **HTTPS-only** (ipwho.is → ipapi.co)  
 - CSP **`report-uri`** + **Report-Only** (no `unsafe-inline` scripts; style elem/attr telemetry) for migration  
 - Optional **`CSP_STRICT_STYLES`** kill-switch for enforcing `style-src-elem` / `style-src-attr` split  
+- Production CSP **`wss://api.x.ai`** for Live S2S + CI **CSP headers smoke**  
+- Dual voice: PTT + Live S2S; amber accent hover-only remaps; maintenance banner stacking  
 - `/api/uptime` probe for external monitors  
 - Case notes on the Security Architecture page  
+- **CI split into separate checks:** SemVer, typecheck, unit/coverage, audit, build, CSP, bundle size, Firestore rules lint + emulator tests, Gitleaks, Bandit, Semgrep, CodeQL, Docker, Trivy — [CI.md](./CI.md)
 
 ---
 
@@ -73,15 +76,16 @@ quadrantChart
 | `STRICT_PROD_HARDENING=true` | Health/uptime return 503 if gold path incomplete |
 | External uptime | Point Better Stack / UptimeRobot at `https://www.mohammedsufyan.com/api/uptime` |
 | Deploy rules + indexes | `firestore.rules` + `firestore.indexes.json` |
-| CI/CD | PRs green + merge-to-`main` auto-deploys Cloud Run (WIF) |
+| CI/CD | All separate PR checks green + merge-to-`main` auto-deploys Cloud Run (WIF) — see [ARCHITECTURE.md](./ARCHITECTURE.md#cicd) |
 
 ---
 
-## Path from 94 → mid-90s
+## Path from 95 → mid-90s
 
 1. Deploy rules; confirm Admin writes appear in Owner Console after a test OTP.  
 2. Enable App Check Enforcement.  
 3. Set observability secrets; confirm Slack on a test live-chat alert.  
 4. Attach an uptime check for 7–30 days.  
+5. Confirm Live Call on production after CSP deploy (`wss://api.x.ai`).  
 
 Then you can honestly say **~96–97 production gold path** — still not a magical 99, and that honesty is the engineering signal.

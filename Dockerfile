@@ -3,7 +3,7 @@
 FROM node:22-bookworm-slim@sha256:e9f565d32859f0cbfb52125eafe8be39390f24dac302dc3cdf566e8ba3ab21ee AS build
 WORKDIR /app
 
-COPY package.json package-lock.json ./
+COPY package.json package-lock.json .npmrc ./
 RUN npm ci
 
 COPY . .
@@ -28,9 +28,10 @@ ENV PORT=8080
 # husky is a devDependency; skip prepare so production npm ci does not fail
 ENV HUSKY=0
 
-COPY package.json package-lock.json ./
+COPY package.json package-lock.json .npmrc ./
 # Install app deps, then remove the base image's npm/corepack toolchain so Trivy
 # (and the runtime) are not blocked by CVEs in unused package-manager packages.
+# .npmrc (legacy-peer-deps) must be present — npm ci validates the full lockfile.
 RUN npm ci --omit=dev \
   && npm cache clean --force \
   && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
