@@ -264,9 +264,13 @@ service cloud.firestore {
           'enableScrollHud', 'enableSiteTelemetry',
           'incidentMode', 'incidentMessage', 'notifyOnNewInquiry',
           'enablePortfolioChat', 'enableLiveChat', 'enableChatLlm', 'enableVoiceAgent',
+          'enableVoiceRealtime',
           'chatMaxQuestionsPerVisitor', 'chatMaxLlmPerVisitor', 'chatMaxLiveSessionsPerVisitor',
           'chatMaxVoiceTurnsPerVisitor',
-          'chatRateWindowHours', 'chatLlmModel', 'chatShowSuggestions', 'chatOfferLiveAgent',
+          'chatMaxVoiceRealtimeSessionsPerVisitor', 'chatMaxVoiceRealtimeMinutesPerVisitor',
+          'chatRateWindowHours', 'chatLlmModel',
+          'voiceSttModel', 'voiceTtsVoiceId', 'voiceRealtimeModel',
+          'chatShowSuggestions', 'chatOfferLiveAgent',
           'alertEmailEnabled', 'alertEmailUrgent', 'alertEmailWarning', 'alertEmailDigest',
           'alertClassNewInquiry', 'alertClassLiveChat', 'alertClassRiskDownload',
           'alertClassUnusualTraffic', 'alertClassChatLimit', 'alertClassOverdueCrm',
@@ -282,9 +286,13 @@ service cloud.firestore {
           'enableScrollHud', 'enableSiteTelemetry',
           'incidentMode', 'incidentMessage', 'notifyOnNewInquiry',
           'enablePortfolioChat', 'enableLiveChat', 'enableChatLlm', 'enableVoiceAgent',
+          'enableVoiceRealtime',
           'chatMaxQuestionsPerVisitor', 'chatMaxLlmPerVisitor', 'chatMaxLiveSessionsPerVisitor',
           'chatMaxVoiceTurnsPerVisitor',
-          'chatRateWindowHours', 'chatLlmModel', 'chatShowSuggestions', 'chatOfferLiveAgent',
+          'chatMaxVoiceRealtimeSessionsPerVisitor', 'chatMaxVoiceRealtimeMinutesPerVisitor',
+          'chatRateWindowHours', 'chatLlmModel',
+          'voiceSttModel', 'voiceTtsVoiceId', 'voiceRealtimeModel',
+          'chatShowSuggestions', 'chatOfferLiveAgent',
           'alertEmailEnabled', 'alertEmailUrgent', 'alertEmailWarning', 'alertEmailDigest',
           'alertClassNewInquiry', 'alertClassLiveChat', 'alertClassRiskDownload',
           'alertClassUnusualTraffic', 'alertClassChatLimit', 'alertClassOverdueCrm',
@@ -321,6 +329,7 @@ service cloud.firestore {
         && data.enableLiveChat is bool
         && data.enableChatLlm is bool
         && data.enableVoiceAgent is bool
+        && data.enableVoiceRealtime is bool
         && isWholeNumber(data.chatMaxQuestionsPerVisitor)
         && data.chatMaxQuestionsPerVisitor >= 1
         && data.chatMaxQuestionsPerVisitor <= 200
@@ -333,11 +342,23 @@ service cloud.firestore {
         && isWholeNumber(data.chatMaxVoiceTurnsPerVisitor)
         && data.chatMaxVoiceTurnsPerVisitor >= 0
         && data.chatMaxVoiceTurnsPerVisitor <= 50
+        && isWholeNumber(data.chatMaxVoiceRealtimeSessionsPerVisitor)
+        && data.chatMaxVoiceRealtimeSessionsPerVisitor >= 0
+        && data.chatMaxVoiceRealtimeSessionsPerVisitor <= 20
+        && isWholeNumber(data.chatMaxVoiceRealtimeMinutesPerVisitor)
+        && data.chatMaxVoiceRealtimeMinutesPerVisitor >= 0
+        && data.chatMaxVoiceRealtimeMinutesPerVisitor <= 120
         && isWholeNumber(data.chatRateWindowHours)
         && data.chatRateWindowHours >= 1
         && data.chatRateWindowHours <= 168
         && data.chatLlmModel is string
         && data.chatLlmModel.size() <= 64
+        && data.voiceSttModel is string
+        && data.voiceSttModel.size() <= 64
+        && data.voiceTtsVoiceId is string
+        && data.voiceTtsVoiceId.size() <= 64
+        && data.voiceRealtimeModel is string
+        && data.voiceRealtimeModel.size() <= 64
         && data.chatShowSuggestions is bool
         && data.chatOfferLiveAgent is bool
         && data.alertEmailEnabled is bool

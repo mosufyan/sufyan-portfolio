@@ -54,6 +54,12 @@ interface ChatCacheFile {
   liveSessions: number;
   llmCalls: number;
   llmFallbacks: number;
+  /** Lifetime push-to-talk turns (server process / cache). */
+  voiceTurns: number;
+  /** Lifetime live S2S sessions started. */
+  voiceRealtimeSessions: number;
+  /** Lifetime prepaid live S2S minutes granted. */
+  voiceRealtimeMinutes: number;
   usages?: Array<{
     visitorKey: string;
     windowStartedAtMs: number;
@@ -61,6 +67,8 @@ interface ChatCacheFile {
     llmCalls: number;
     liveSessions: number;
     voiceTurns: number;
+    voiceRealtimeSessions?: number;
+    voiceRealtimeMinutes?: number;
   }>;
 }
 
@@ -74,6 +82,9 @@ let liveRequests = 0;
 let liveSessions = 0;
 let llmCalls = 0;
 let llmFallbacks = 0;
+let voiceTurns = 0;
+let voiceRealtimeSessions = 0;
+let voiceRealtimeMinutes = 0;
 const sessions = new Map<string, ChatSession>();
 
 function loadCache(): void {
@@ -86,6 +97,9 @@ function loadCache(): void {
     liveSessions = Number(parsed.liveSessions) || 0;
     llmCalls = Number(parsed.llmCalls) || 0;
     llmFallbacks = Number(parsed.llmFallbacks) || 0;
+    voiceTurns = Number(parsed.voiceTurns) || 0;
+    voiceRealtimeSessions = Number(parsed.voiceRealtimeSessions) || 0;
+    voiceRealtimeMinutes = Number(parsed.voiceRealtimeMinutes) || 0;
     if (Array.isArray(parsed.sessions)) {
       for (const s of parsed.sessions.slice(-MAX_SESSIONS)) {
         if (!s?.sessionId) continue;
@@ -105,6 +119,8 @@ function loadCache(): void {
         parsed.usages.map((row) => ({
           ...row,
           voiceTurns: Number(row.voiceTurns) || 0,
+          voiceRealtimeSessions: Number(row.voiceRealtimeSessions) || 0,
+          voiceRealtimeMinutes: Number(row.voiceRealtimeMinutes) || 0,
         }))
       );
     }
@@ -130,6 +146,9 @@ function scheduleFlush(): void {
         liveSessions,
         llmCalls,
         llmFallbacks,
+        voiceTurns,
+        voiceRealtimeSessions,
+        voiceRealtimeMinutes,
         usages: exportChatUsageSnapshot(),
       };
       fs.writeFileSync(CACHE_PATH, JSON.stringify(payload), 'utf8');
@@ -154,6 +173,17 @@ function mirrorSession(session: ChatSession): void {
 
 export function bumpBotQuestion(): void {
   botQuestions += 1;
+  scheduleFlush();
+}
+
+export function bumpVoiceTurn(): void {
+  voiceTurns += 1;
+  scheduleFlush();
+}
+
+export function bumpVoiceRealtimeSession(minutesGranted = 0): void {
+  voiceRealtimeSessions += 1;
+  voiceRealtimeMinutes += Math.max(0, Math.floor(minutesGranted));
   scheduleFlush();
 }
 
@@ -191,6 +221,9 @@ export function getChatStats() {
     liveSessions,
     llmCalls,
     llmFallbacks,
+    voiceTurns,
+    voiceRealtimeSessions,
+    voiceRealtimeMinutes,
     openSessions: open.length,
     queuedSessions: open.filter((s) => s.status === 'queued').length,
     activeSessions: open.filter((s) => s.status === 'active').length,

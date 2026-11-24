@@ -13,6 +13,8 @@ import {
   TECHNICAL_DISCIPLINES,
   WORK_EXPERIENCE,
 } from '../src/data/portfolioData.ts';
+import { answerConversationalUtterance } from './chatConversational.ts';
+import { composePortfolioAnswer } from './portfolioAnswers.ts';
 
 export interface KnowledgeChunk {
   id: string;
@@ -33,6 +35,8 @@ export interface ChatAnswer {
   retrievalContext?: string;
   /** How the answer was retrieved. */
   retrieval?: 'keyword' | 'vector' | 'hybrid';
+  /** True when answer was synthesized from portfolio data (skip raw chunk dumps / needless Grok). */
+  composed?: boolean;
 }
 
 /** Common question words that match inside longer copy (e.g. "he" inside "the") and poison ranking. */
@@ -331,25 +335,18 @@ function buildKnowledgeBase(): KnowledgeChunk[] {
   }
 
   for (const cat of CERTIFICATION_CATEGORIES) {
-    const detail = cat.certs
-      .map((c) => {
-        const parts = [
-          c.title,
-          c.issuer ? `(${c.issuer}` : '',
-          c.issueDate ? `, ${c.issueDate}` : '',
-          c.issuer ? ')' : '',
-          c.skills?.length ? ` — skills: ${c.skills.join(', ')}` : '',
-          c.credentialUrl ? ` — credential: ${c.credentialUrl}` : '',
-        ];
-        return parts.join('');
-      })
+    const titles = cat.certs
+      .map((c) =>
+        [c.title, c.issuer ? `(${c.issuer}` : '', c.issueDate ? `, ${c.issueDate}` : '', c.issuer ? ')' : '']
+          .join('')
+      )
       .join('; ');
     chunks.push({
       id: `cert-${cat.id}`,
       topic: `Certifications — ${cat.name}`,
-      text: `${cat.name}: ${detail}`.slice(0, 10000),
+      text: `${cat.name} — ${cat.certs.length} credentials: ${titles}.`.slice(0, 10000),
       keywords: tokenize(
-        `${cat.name} ${cat.certs.map((c) => `${c.title} ${c.issuer} ${(c.skills || []).join(' ')}`).join(' ')} certification certifications certificate certificates cert certs certified license accredited credential credentials aws azure gcp hold holds`
+        `${cat.name} ${cat.certs.map((c) => `${c.title} ${c.issuer} ${(c.skills || []).join(' ')}`).join(' ')} certification certifications certificate certificates cert certs certified license accredited credential credentials aws azure gcp hold holds how many count total`
       ),
     });
   }
@@ -655,10 +652,12 @@ function scoreChunk(
     ) {
       score += 8;
     }
-    // "before Cisco" / prior roles → prefer HCL/TCS, not the current Cisco shell.
-    if (/before cisco|prior to cisco|previous (to cisco|role|employer)/i.test(questionLower)) {
-      if (/cisco/.test(chunk.id)) score -= 12;
-      if (/hcl|tata/.test(chunk.id)) score += 10;
+    // "before Cisco" / prior employers → prefer HCL + TCS company overviews over Cisco roles.
+    if (isPriorEmployerQuestion(questionLower)) {
+      if (/cisco-systems/.test(chunk.id)) score -= 20;
+      if (/hcl|tata/.test(chunk.id)) {
+        score += /-role-/.test(chunk.id) ? 8 : 16;
+      }
     }
   }
 
@@ -835,8 +834,73 @@ export function buildChatAnswerFromChunks(
   };
 }
 
+/** Prior-employer asks (before Cisco as employer — not “Cisco account” work at HCL). */
+export function isPriorEmployerQuestion(questionLower: string): boolean {
+  return /before cisco|prior to cisco|previous (to cisco|employer)|what did (he|mohammed|sufyan) do before\b/i.test(
+    questionLower
+  );
+}
+
+/**
+ * Chronological career answer for “before Cisco”: HCL + TCS company overviews.
+ * Avoids ranking only the latest HCL-on-Cisco-account role (which confuses LLM enrichment).
+ */
+export function composeBeforeCiscoAnswer(questionRaw: string): ChatAnswer | null {
+  const question = questionRaw.trim().slice(0, 500);
+  if (!isPriorEmployerQuestion(question.toLowerCase())) return null;
+
+  const hclCompany = KNOWLEDGE.find((c) => c.id === 'exp-hcl-america-inc-hcltech');
+  const tcsCompany = KNOWLEDGE.find((c) => c.id === 'exp-tata-consultancy-services');
+  const hclRole = KNOWLEDGE.find((c) => c.id === 'exp-hcl-america-inc-hcltech-role-1');
+  const tcsRole = KNOWLEDGE.find((c) => c.id === 'exp-tata-consultancy-services-role-1');
+  if (!hclCompany || !tcsCompany) return null;
+
+  const usedChunks = [hclCompany, tcsCompany, hclRole, tcsRole].filter(
+    Boolean
+  ) as KnowledgeChunk[];
+
+  const answer = [
+    'Before joining Cisco Systems Inc. as a Software Engineer (Aug 2026–Present), Mohammed spent about 7 years at HCL America Inc./HCLTech (Sep 2019–Aug 2026) and about 5 years 9 months at Tata Consultancy Services (Dec 2013–Aug 2019).',
+    'At HCL he progressed from Technical Lead to Technical Manager/Architect, building cloud security, compliance, and vulnerability-orchestration platforms (often delivered on Cisco accounts).',
+    'At TCS he grew from Assistant System Engineer Trainee to IT Analyst, including a London onshore client engagement and enterprise solution delivery.',
+  ].join(' ');
+
+  return {
+    answer,
+    confidence: 0.95,
+    sources: usedChunks.map((c) => c.topic),
+    suggestions: SUGGESTIONS.filter(
+      (s) => !promptsOverlap(question, s)
+    ).slice(0, 4),
+    followUps: followUpsForChunks(usedChunks, question, 'experience'),
+    offerLiveAgent: false,
+    retrievalContext: usedChunks
+      .map((chunk) => `${chunk.topic}: ${chunk.text}`)
+      .join('\n\n')
+      .slice(0, 8000),
+    retrieval: 'keyword',
+    composed: true,
+  };
+}
+
 export function answerPortfolioQuestion(questionRaw: string): ChatAnswer {
   const question = questionRaw.trim().slice(0, 500);
+  const social = answerConversationalUtterance(question);
+  if (social) return social;
+  const prior = composeBeforeCiscoAnswer(question);
+  if (prior) return prior;
+
+  // Structured answers for certs, awards, skills, education, contact, experience, etc.
+  const structured = composePortfolioAnswer(question, KNOWLEDGE);
+  if (structured) {
+    return {
+      ...structured,
+      suggestions: structured.suggestions.length
+        ? structured.suggestions
+        : SUGGESTIONS.filter((s) => !promptsOverlap(question, s)).slice(0, 4),
+    };
+  }
+
   const questionLower = question.toLowerCase();
   const tokens = tokenizeQuery(question);
   const intent = detectIntent(questionLower);

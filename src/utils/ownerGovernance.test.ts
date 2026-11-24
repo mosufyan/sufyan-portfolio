@@ -5,6 +5,7 @@ import {
   getEffectivePortfolioSettings,
   sanitizeAdminAuditPayload,
   sanitizePortfolioSettings,
+  summarizePortfolioSettingsChanges,
   toPublicPortfolioSettings,
   validateAccessRuleDraft,
   validateAdminDelegateDraft,
@@ -70,6 +71,7 @@ describe('ownerGovernance utilities', () => {
     expect(effective.enableLiveChat).toBe(false);
     expect(effective.enableChatLlm).toBe(false);
     expect(effective.enableVoiceAgent).toBe(false);
+    expect(effective.enableVoiceRealtime).toBe(false);
     expect(effective.enableAnnouncements).toBe(false);
     expect(effective.enableResumeStudio).toBe(false);
     expect(effective.enableDigitalCard).toBe(false);
@@ -118,10 +120,42 @@ describe('ownerGovernance utilities', () => {
     const sanitized = sanitizePortfolioSettings({});
     expect(sanitized.chatMaxQuestionsPerVisitor).toBe(10);
     expect(sanitized.chatMaxVoiceTurnsPerVisitor).toBe(8);
+    expect(sanitized.chatMaxVoiceRealtimeSessionsPerVisitor).toBe(2);
+    expect(sanitized.chatMaxVoiceRealtimeMinutesPerVisitor).toBe(5);
     expect(sanitized.enablePortfolioChat).toBe(true);
     expect(sanitized.enableLiveChat).toBe(true);
     expect(sanitized.enableChatLlm).toBe(false);
     expect(sanitized.enableVoiceAgent).toBe(false);
+    expect(sanitized.enableVoiceRealtime).toBe(false);
+    expect(sanitized.voiceSttModel).toBe('');
+    expect(sanitized.voiceTtsVoiceId).toBe('');
+    expect(sanitized.voiceRealtimeModel).toBe('');
+  });
+
+  it('sanitizes voice model and voice id fields', () => {
+    const sanitized = sanitizePortfolioSettings({
+      voiceSttModel: ' grok-voice-transcribe-2.0! ',
+      voiceTtsVoiceId: 'eve<script>',
+      voiceRealtimeModel: 'grok-voice-3.0',
+    });
+    expect(sanitized.voiceSttModel).toBe('grok-voice-transcribe-2.0');
+    expect(sanitized.voiceTtsVoiceId).toBe('evescript');
+    expect(sanitized.voiceRealtimeModel).toBe('grok-voice-3.0');
+  });
+
+  it('summarizes portfolio setting diffs for save toasts', () => {
+    const before = sanitizePortfolioSettings({});
+    const after = sanitizePortfolioSettings({
+      ...before,
+      enableVoiceAgent: true,
+      enableVoiceRealtime: true,
+      voiceTtsVoiceId: 'eve',
+    });
+    const summary = summarizePortfolioSettingsChanges(before, after);
+    expect(summary).toMatch(/Enabled push-to-talk voice/i);
+    expect(summary).toMatch(/Enabled live speech-to-speech/i);
+    expect(summary).toMatch(/TTS voice → eve/);
+    expect(summarizePortfolioSettingsChanges(before, before)).toMatch(/No setting changes/i);
   });
 
   it('defaults OTP require toggles on and migrates strictOtpForAll into requireOtpForCv', () => {

@@ -1,16 +1,37 @@
 /**
  * Push-to-talk voice turn orchestration:
- * STT (Groq) → portfolio RAG/Grok answer → optional TTS (ElevenLabs).
+ * STT (Grok) → portfolio RAG/Grok answer → optional TTS (Grok).
  */
 import type { ChatAnswer } from './chatKnowledge.ts';
-import { enrichAnswerWithGrokLlm } from './grokLlm.ts';
+import { enrichAnswerWithGrokLlm, shouldSkipGrokEnrichment } from './grokLlm.ts';
 import { answerPortfolioQuestionSmart } from './portfolioVector.ts';
-import { isVoiceSttConfigured, transcribeAudioWithGroq, type VoiceSttOptions } from './voiceStt.ts';
+import {
+  isVoiceSttConfigured,
+  resolveGrokApiKey,
+  transcribeAudioWithGrok,
+  type VoiceSttOptions,
+} from './voiceStt.ts';
 import {
   isVoiceTtsConfigured,
-  synthesizeSpeechWithElevenLabs,
+  synthesizeSpeechWithGrok,
   type VoiceTtsOptions,
 } from './voiceTts.ts';
+
+/** Prefer shorter spoken replies — TTS + comprehension degrade on long paragraphs. */
+function makeVoiceFriendlyAnswer(answer: ChatAnswer): ChatAnswer {
+  const text = answer.answer.replace(/\s+/g, ' ').trim();
+  if (text.length <= 420) return answer;
+  const sentences = text.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [text];
+  let out = '';
+  for (const sentence of sentences) {
+    const next = `${out}${sentence}`.trim();
+    if (out && next.length > 420) break;
+    out = next;
+    if (out.length >= 320) break;
+  }
+  if (!out) out = `${text.slice(0, 419).trimEnd()}…`;
+  return { ...answer, answer: out };
+}
 
 export interface VoiceTurnAnswerOptions {
   question: string;
@@ -47,7 +68,7 @@ export interface VoiceTurnFullResult {
   llmUsed?: boolean;
   audioBase64?: string;
   audioMimeType?: string;
-  ttsProvider?: 'elevenlabs' | 'none';
+  ttsProvider?: 'grok' | 'none';
   error?: string;
   sttLatencyMs?: number;
   ttsLatencyMs?: number;
@@ -61,7 +82,12 @@ export async function answerVoiceQuestion(
   let provider: 'grok' | 'grounded' = 'grounded';
   let llmUsed = false;
 
-  if (options.enableLlm && options.grokApiKey.trim()) {
+  // Same skip rules as text chat — avoid slow/hedging Grok when grounding is already strong.
+  if (
+    options.enableLlm &&
+    options.grokApiKey.trim() &&
+    !shouldSkipGrokEnrichment(question, answer)
+  ) {
     const enriched = await enrichAnswerWithGrokLlm(question, {
       apiKey: options.grokApiKey,
       modelId: options.chatLlmModel,
@@ -83,17 +109,18 @@ export async function answerVoiceQuestion(
     answer = { ...answer, offerLiveAgent: false };
   }
 
+  answer = makeVoiceFriendlyAnswer(answer);
   return { answer, provider, llmUsed };
 }
 
 export async function runVoiceTurn(
   options: VoiceTurnFullOptions
 ): Promise<VoiceTurnFullResult> {
-  if (!isVoiceSttConfigured(options.stt?.apiKey ?? process.env.GROQ_API_KEY)) {
+  if (!isVoiceSttConfigured(options.stt?.apiKey ?? resolveGrokApiKey())) {
     return { ok: false, error: 'Voice agent speech recognition is not configured.' };
   }
 
-  const stt = await transcribeAudioWithGroq(options.audio, {
+  const stt = await transcribeAudioWithGrok(options.audio, {
     ...options.stt,
     mimeType: options.mimeType,
     filename: options.filename,
@@ -126,19 +153,19 @@ export async function runVoiceTurn(
 
   let audioBase64: string | undefined;
   let audioMimeType: string | undefined;
-  let ttsProvider: 'elevenlabs' | 'none' = 'none';
+  let ttsProvider: 'grok' | 'none' = 'none';
   let ttsLatencyMs: number | undefined;
 
   if (
     options.enableCloudTts &&
-    isVoiceTtsConfigured(options.tts?.apiKey ?? process.env.ELEVENLABS_API_KEY)
+    isVoiceTtsConfigured(options.tts?.apiKey ?? resolveGrokApiKey())
   ) {
-    const tts = await synthesizeSpeechWithElevenLabs(answered.answer.answer, options.tts);
+    const tts = await synthesizeSpeechWithGrok(answered.answer.answer, options.tts);
     ttsLatencyMs = tts.latencyMs;
     if (tts.ok && tts.audioBase64) {
       audioBase64 = tts.audioBase64;
       audioMimeType = tts.mimeType || 'audio/mpeg';
-      ttsProvider = 'elevenlabs';
+      ttsProvider = 'grok';
     }
   }
 

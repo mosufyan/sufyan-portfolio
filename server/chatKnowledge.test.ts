@@ -39,12 +39,24 @@ describe('chatKnowledge', () => {
 
     expect(security.answer.toLowerCase()).toMatch(/atlas|security|sto|zero trust|pipeline|databricks/);
     expect(security.answer).not.toMatch(/^Cisco Systems Inc\. · CURRENT ROLE/);
-    expect(before.answer.toLowerCase()).toMatch(/hcl|tata|tcs/);
-    expect(before.answer.toLowerCase()).not.toMatch(/aug 2026 — present/);
+    expect(before.answer.toLowerCase()).toMatch(/hcl/);
+    expect(before.answer.toLowerCase()).toMatch(/tata|tcs/);
+    expect(before.answer.toLowerCase()).not.toMatch(/covers only hcl|no details appear on any prior/i);
+    expect(before.answer.toLowerCase()).not.toMatch(/aug 2026 — present · 3 mos/);
+    expect(before.sources.join(' ').toLowerCase()).toMatch(/hcl/);
+    expect(before.sources.join(' ').toLowerCase()).toMatch(/tata|tcs/);
     expect(tcs.answer.toLowerCase()).toMatch(/tata|tcs|analyst|engineer|delivery|ilp|london/);
     expect(tcs.sources.join(' ').toLowerCase()).not.toMatch(/recommendation/);
     expect(role.answer).not.toEqual(before.answer);
     expect(security.answer).not.toEqual(tcs.answer);
+  });
+
+  it('composes a chronological before-Cisco career answer with follow-ups', () => {
+    const before = answerPortfolioQuestion('What did he do before Cisco?');
+    expect(before.confidence).toBeGreaterThanOrEqual(0.9);
+    expect(before.followUps.length).toBeGreaterThanOrEqual(2);
+    expect(before.followUps.join(' ').toLowerCase()).toMatch(/hcl|tcs|security|zero trust|cloud/);
+    expect(before.retrievalContext || '').toMatch(/HCL|Tata/i);
   });
 
   it('keeps Cisco follow-ups inclined to that answer, not the question just asked', () => {
@@ -80,8 +92,36 @@ describe('chatKnowledge', () => {
     expect(result.sources.some((s) => /certification/i.test(s))).toBe(true);
     expect(result.answer.toLowerCase()).not.toMatch(/tata consultancy|5 yrs 9 mos/);
     expect(result.sources.join(' ').toLowerCase()).not.toMatch(/tata consultancy/);
+    expect(result.answer).not.toMatch(/https?:\/\//i);
     expect(result.confidence).toBeGreaterThan(0.3);
     expect(result.followUps.length).toBeGreaterThan(0);
+    expect(result.composed).toBe(true);
+  });
+
+  it('answers certification count and brief-explain questions clearly', () => {
+    const count = answerPortfolioQuestion('How many certifications does he have?');
+    expect(count.answer).toMatch(/\b20\b/);
+    expect(count.answer.toLowerCase()).toMatch(/ai|cloud|devops/);
+    expect(count.answer).not.toMatch(/https?:\/\//i);
+
+    const brief = answerPortfolioQuestion('Can you explain briefly about his certifications?');
+    expect(brief.answer.toLowerCase()).toMatch(/20|certif/);
+    expect(brief.answer.toLowerCase()).toMatch(/aws|azure|databricks|cloud/);
+    expect(brief.answer).not.toMatch(/credential: https?/i);
+    expect(brief.composed).toBe(true);
+  });
+
+  it('answers awards, education, and career overview from portfolio data', () => {
+    const awards = answerPortfolioQuestion('How many awards has he received?');
+    expect(awards.answer).toMatch(/\b20\b/);
+    expect(awards.answer.toLowerCase()).toMatch(/award|cisco|hcl/);
+
+    const edu = answerPortfolioQuestion('What is his education background?');
+    expect(edu.answer.toLowerCase()).toMatch(/visvesvaraya|bachelor|computer science|9\.5/);
+
+    const career = answerPortfolioQuestion('Give me a brief overview of his experience');
+    expect(career.answer.toLowerCase()).toMatch(/cisco|hcl|tata|tcs/);
+    expect(career.composed).toBe(true);
   });
 
   it('answers contact / open-to questions', () => {

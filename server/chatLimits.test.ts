@@ -15,6 +15,8 @@ const policy: ChatLimitPolicy = {
   maxLlmPerVisitor: 5,
   maxLiveSessionsPerVisitor: 3,
   maxVoiceTurnsPerVisitor: 8,
+  maxVoiceRealtimeSessionsPerVisitor: 2,
+  maxVoiceRealtimeMinutesPerVisitor: 5,
   rateWindowHours: 24,
 };
 
@@ -65,6 +67,20 @@ describe('chatLimits', () => {
     expect(consumeChatLimit(key, 'voice', tight).allowed).toBe(true);
     expect(consumeChatLimit(key, 'voice', tight).allowed).toBe(false);
     expect(consumeChatLimit(key, 'voice', tight).reason).toMatch(/voice turns/i);
+  });
+
+  it('enforces live S2S session and minute caps separately from push-to-talk', () => {
+    const key = buildVisitorKey({ ipAddress: '203.0.113.91', email: 'rt@example.com' });
+    expect(consumeChatLimit(key, 'voiceRealtimeSession', policy).allowed).toBe(true);
+    expect(consumeChatLimit(key, 'voiceRealtimeSession', policy).allowed).toBe(true);
+    expect(consumeChatLimit(key, 'voiceRealtimeSession', policy).allowed).toBe(false);
+    expect(consumeChatLimit(key, 'voice', policy).allowed).toBe(true);
+
+    const minKey = buildVisitorKey({ ipAddress: '203.0.113.92', email: 'mins@example.com' });
+    expect(consumeChatLimit(minKey, 'voiceRealtimeMinute', policy, Date.now(), 3).remaining).toBe(2);
+    expect(consumeChatLimit(minKey, 'voiceRealtimeMinute', policy, Date.now(), 3).allowed).toBe(
+      false
+    );
   });
 
   it('resets after the rate window elapses', () => {

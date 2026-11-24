@@ -48,12 +48,18 @@ export interface RuntimeOwnerPolicyPayload {
   enableLiveChat: boolean;
   enableChatLlm: boolean;
   enableVoiceAgent: boolean;
+  enableVoiceRealtime: boolean;
   chatMaxQuestionsPerVisitor: number;
   chatMaxLlmPerVisitor: number;
   chatMaxLiveSessionsPerVisitor: number;
   chatMaxVoiceTurnsPerVisitor: number;
+  chatMaxVoiceRealtimeSessionsPerVisitor: number;
+  chatMaxVoiceRealtimeMinutesPerVisitor: number;
   chatRateWindowHours: number;
   chatLlmModel: string;
+  voiceSttModel: string;
+  voiceTtsVoiceId: string;
+  voiceRealtimeModel: string;
   chatShowSuggestions: boolean;
   chatOfferLiveAgent: boolean;
   alertEmailEnabled: boolean;
@@ -228,6 +234,10 @@ export async function loadDistributedOwnerPolicy(
         typeof raw.enableVoiceAgent === 'boolean'
           ? raw.enableVoiceAgent
           : fallback.enableVoiceAgent,
+      enableVoiceRealtime:
+        typeof raw.enableVoiceRealtime === 'boolean'
+          ? raw.enableVoiceRealtime
+          : fallback.enableVoiceRealtime,
       chatMaxQuestionsPerVisitor: clamp(
         raw.chatMaxQuestionsPerVisitor,
         fallback.chatMaxQuestionsPerVisitor,
@@ -247,9 +257,33 @@ export async function loadDistributedOwnerPolicy(
         0,
         50
       ),
+      chatMaxVoiceRealtimeSessionsPerVisitor: clamp(
+        raw.chatMaxVoiceRealtimeSessionsPerVisitor,
+        fallback.chatMaxVoiceRealtimeSessionsPerVisitor,
+        0,
+        20
+      ),
+      chatMaxVoiceRealtimeMinutesPerVisitor: clamp(
+        raw.chatMaxVoiceRealtimeMinutesPerVisitor,
+        fallback.chatMaxVoiceRealtimeMinutesPerVisitor,
+        0,
+        120
+      ),
       chatRateWindowHours: clamp(raw.chatRateWindowHours, fallback.chatRateWindowHours, 1, 168),
       chatLlmModel:
         typeof raw.chatLlmModel === 'string' ? raw.chatLlmModel.slice(0, 64) : fallback.chatLlmModel,
+      voiceSttModel:
+        typeof raw.voiceSttModel === 'string'
+          ? raw.voiceSttModel.replace(/[^a-zA-Z0-9._-]/g, '').slice(0, 64)
+          : fallback.voiceSttModel,
+      voiceTtsVoiceId:
+        typeof raw.voiceTtsVoiceId === 'string'
+          ? raw.voiceTtsVoiceId.replace(/[^a-zA-Z0-9._-]/g, '').slice(0, 64)
+          : fallback.voiceTtsVoiceId,
+      voiceRealtimeModel:
+        typeof raw.voiceRealtimeModel === 'string'
+          ? raw.voiceRealtimeModel.replace(/[^a-zA-Z0-9._-]/g, '').slice(0, 64)
+          : fallback.voiceRealtimeModel,
       chatShowSuggestions:
         typeof raw.chatShowSuggestions === 'boolean'
           ? raw.chatShowSuggestions
@@ -298,6 +332,7 @@ export async function loadDistributedOwnerPolicy(
       enableLiveChat: false,
       enableChatLlm: false,
       enableVoiceAgent: false,
+      enableVoiceRealtime: false,
       strictOtpForAll: true,
       requireOtpForChat: true,
       requireOtpForContact: true,
@@ -335,10 +370,12 @@ export interface ChatQuotaIncrResult {
 export async function incrDistributedChatQuota(
   visitorKey: string,
   kind: string,
-  windowMs: number
+  windowMs: number,
+  amount = 1
 ): Promise<ChatQuotaIncrResult> {
   const cleanKey = visitorKey.trim().slice(0, 64) || 'unknown';
   const cleanKind = kind.trim().slice(0, 32) || 'question';
+  const delta = Math.max(1, Math.min(120, Math.floor(amount)));
   const span = Math.max(1_000, windowMs);
   const now = Date.now();
   const bucket = Math.floor(now / span);
@@ -350,8 +387,9 @@ export async function incrDistributedChatQuota(
 
   const redisKey = `chatq:${cleanKind}:${cleanKey}:${bucket}`;
   try {
-    const count = await redis.incr(redisKey);
-    if (count === 1) {
+    const count =
+      delta === 1 ? await redis.incr(redisKey) : await redis.incrby(redisKey, delta);
+    if (count === delta) {
       await redis.pexpire(redisKey, span);
     }
     const ttlMs = await redis.pttl(redisKey);

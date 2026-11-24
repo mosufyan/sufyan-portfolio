@@ -121,6 +121,7 @@ describe('CSP / headers', () => {
     expect(headers['X-Frame-Options']).toBe('DENY');
     expect(headers['Strict-Transport-Security']).toContain('max-age=31536000');
     expect(headers['Content-Security-Policy']).toContain("default-src 'self'");
+    expect(headers['Content-Security-Policy']).toContain("media-src 'self' data: blob:");
     expect(headers['Content-Security-Policy']).toContain('report-uri /api/csp-report');
     expect(headers['Content-Security-Policy']).not.toMatch(/script-src[^;]*'unsafe-inline'/);
     expect(headers['Content-Security-Policy-Report-Only']).toContain("script-src 'self'");

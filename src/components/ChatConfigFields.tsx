@@ -35,6 +35,7 @@ export default function ChatConfigFields({
       | 'enableLiveChat'
       | 'enableChatLlm'
       | 'enableVoiceAgent'
+      | 'enableVoiceRealtime'
       | 'chatShowSuggestions'
       | 'chatOfferLiveAgent';
     icon: typeof Bot;
@@ -62,8 +63,14 @@ export default function ChatConfigFields({
     {
       key: 'enableVoiceAgent',
       icon: Mic,
-      title: 'Enable voice agent',
-      desc: 'Push-to-talk via Groq Whisper STT + optional ElevenLabs TTS (browser TTS fallback).',
+      title: 'Enable push-to-talk voice',
+      desc: 'Grok STT → portfolio answer → Grok TTS (browser speech fallback if TTS fails). Requires GROK_API_KEY.',
+    },
+    {
+      key: 'enableVoiceRealtime',
+      icon: Headphones,
+      title: 'Enable live speech-to-speech',
+      desc: 'Grok Voice 3.0 realtime conversation (~$0.08/min). Higher cost; keep off unless you want live voice.',
     },
     {
       key: 'chatShowSuggestions',
@@ -174,7 +181,7 @@ export default function ChatConfigFields({
         </div>
         <div>
           <label className={`block text-[10px] font-mono uppercase mb-1 ${mutedCls}`}>
-            Max voice turns / visitor (default{' '}
+            Max push-to-talk turns / visitor (default{' '}
             {DEFAULT_PORTFOLIO_SETTINGS.chatMaxVoiceTurnsPerVisitor})
           </label>
           <input
@@ -186,6 +193,44 @@ export default function ChatConfigFields({
               setDraft((prev) => ({
                 ...prev,
                 chatMaxVoiceTurnsPerVisitor: Number(e.target.value),
+              }))
+            }
+            className={`w-full rounded-lg border px-3 py-2 text-xs focus:outline-none ${inputCls}`}
+          />
+        </div>
+        <div>
+          <label className={`block text-[10px] font-mono uppercase mb-1 ${mutedCls}`}>
+            Max live S2S sessions / visitor (default{' '}
+            {DEFAULT_PORTFOLIO_SETTINGS.chatMaxVoiceRealtimeSessionsPerVisitor})
+          </label>
+          <input
+            type="number"
+            min={PORTFOLIO_SETTINGS_CONSTRAINTS.chatMaxVoiceRealtimeSessionsPerVisitorMin}
+            max={PORTFOLIO_SETTINGS_CONSTRAINTS.chatMaxVoiceRealtimeSessionsPerVisitorMax}
+            value={draft.chatMaxVoiceRealtimeSessionsPerVisitor ?? 2}
+            onChange={(e) =>
+              setDraft((prev) => ({
+                ...prev,
+                chatMaxVoiceRealtimeSessionsPerVisitor: Number(e.target.value),
+              }))
+            }
+            className={`w-full rounded-lg border px-3 py-2 text-xs focus:outline-none ${inputCls}`}
+          />
+        </div>
+        <div>
+          <label className={`block text-[10px] font-mono uppercase mb-1 ${mutedCls}`}>
+            Max live S2S minutes / visitor (default{' '}
+            {DEFAULT_PORTFOLIO_SETTINGS.chatMaxVoiceRealtimeMinutesPerVisitor})
+          </label>
+          <input
+            type="number"
+            min={PORTFOLIO_SETTINGS_CONSTRAINTS.chatMaxVoiceRealtimeMinutesPerVisitorMin}
+            max={PORTFOLIO_SETTINGS_CONSTRAINTS.chatMaxVoiceRealtimeMinutesPerVisitorMax}
+            value={draft.chatMaxVoiceRealtimeMinutesPerVisitor ?? 5}
+            onChange={(e) =>
+              setDraft((prev) => ({
+                ...prev,
+                chatMaxVoiceRealtimeMinutesPerVisitor: Number(e.target.value),
               }))
             }
             className={`w-full rounded-lg border px-3 py-2 text-xs focus:outline-none ${inputCls}`}
@@ -211,18 +256,61 @@ export default function ChatConfigFields({
         </div>
       </div>
 
-      <div>
-        <label className={`block text-[10px] font-mono uppercase mb-1 ${mutedCls}`}>
-          Grok model id (optional — empty uses grok-4.3)
-        </label>
-        <input
-          type="text"
-          maxLength={PORTFOLIO_SETTINGS_CONSTRAINTS.chatLlmModelMaxLength}
-          value={draft.chatLlmModel}
-          onChange={(e) => setDraft((prev) => ({ ...prev, chatLlmModel: e.target.value }))}
-          placeholder="e.g. grok-4.3"
-          className={`w-full rounded-lg border px-3 py-2 text-xs focus:outline-none ${inputCls}`}
-        />
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+        <div className="sm:col-span-2">
+          <label className={`block text-[10px] font-mono uppercase mb-1 ${mutedCls}`}>
+            Grok chat model id (optional — empty uses grok-4.3)
+          </label>
+          <input
+            type="text"
+            maxLength={PORTFOLIO_SETTINGS_CONSTRAINTS.chatLlmModelMaxLength}
+            value={draft.chatLlmModel}
+            onChange={(e) => setDraft((prev) => ({ ...prev, chatLlmModel: e.target.value }))}
+            placeholder="e.g. grok-4.3"
+            className={`w-full rounded-lg border px-3 py-2 text-xs focus:outline-none ${inputCls}`}
+          />
+        </div>
+        <div>
+          <label className={`block text-[10px] font-mono uppercase mb-1 ${mutedCls}`}>
+            Push-to-talk STT model
+          </label>
+          <input
+            type="text"
+            maxLength={PORTFOLIO_SETTINGS_CONSTRAINTS.voiceModelIdMaxLength}
+            value={draft.voiceSttModel || ''}
+            onChange={(e) => setDraft((prev) => ({ ...prev, voiceSttModel: e.target.value }))}
+            placeholder="empty → grok-voice-transcribe-2.0"
+            className={`w-full rounded-lg border px-3 py-2 text-xs focus:outline-none ${inputCls}`}
+          />
+        </div>
+        <div>
+          <label className={`block text-[10px] font-mono uppercase mb-1 ${mutedCls}`}>
+            TTS voice id
+          </label>
+          <input
+            type="text"
+            maxLength={PORTFOLIO_SETTINGS_CONSTRAINTS.voiceModelIdMaxLength}
+            value={draft.voiceTtsVoiceId || ''}
+            onChange={(e) => setDraft((prev) => ({ ...prev, voiceTtsVoiceId: e.target.value }))}
+            placeholder="empty → eve"
+            className={`w-full rounded-lg border px-3 py-2 text-xs focus:outline-none ${inputCls}`}
+          />
+        </div>
+        <div className="sm:col-span-2">
+          <label className={`block text-[10px] font-mono uppercase mb-1 ${mutedCls}`}>
+            Live speech-to-speech model
+          </label>
+          <input
+            type="text"
+            maxLength={PORTFOLIO_SETTINGS_CONSTRAINTS.voiceModelIdMaxLength}
+            value={draft.voiceRealtimeModel || ''}
+            onChange={(e) =>
+              setDraft((prev) => ({ ...prev, voiceRealtimeModel: e.target.value }))
+            }
+            placeholder="empty → grok-voice-3.0"
+            className={`w-full rounded-lg border px-3 py-2 text-xs focus:outline-none ${inputCls}`}
+          />
+        </div>
       </div>
     </div>
   );

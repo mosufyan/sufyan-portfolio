@@ -86,6 +86,7 @@ export const PORTFOLIO_SETTINGS_CONSTRAINTS = {
   uidMinLength: 1,
   uidMaxLength: 128,
   chatLlmModelMaxLength: 64,
+  voiceModelIdMaxLength: 64,
   chatMaxQuestionsPerVisitorMin: 1,
   chatMaxQuestionsPerVisitorMax: 200,
   chatMaxLlmPerVisitorMin: 0,
@@ -94,6 +95,10 @@ export const PORTFOLIO_SETTINGS_CONSTRAINTS = {
   chatMaxLiveSessionsPerVisitorMax: 50,
   chatMaxVoiceTurnsPerVisitorMin: 0,
   chatMaxVoiceTurnsPerVisitorMax: 50,
+  chatMaxVoiceRealtimeSessionsPerVisitorMin: 0,
+  chatMaxVoiceRealtimeSessionsPerVisitorMax: 20,
+  chatMaxVoiceRealtimeMinutesPerVisitorMin: 0,
+  chatMaxVoiceRealtimeMinutesPerVisitorMax: 120,
   chatRateWindowHoursMin: 1,
   chatRateWindowHoursMax: 168,
   chatLlmTimeoutMsMin: 3000,
@@ -147,20 +152,32 @@ export interface PortfolioSettings {
   enableLiveChat: boolean;
   /** Optional Grok (xAI) enrichment on top of grounded retrieval. */
   enableChatLlm: boolean;
-  /** Push-to-talk voice agent (Groq STT + optional ElevenLabs TTS). */
+  /** Push-to-talk voice agent (Grok STT → portfolio answer → Grok TTS). */
   enableVoiceAgent: boolean;
+  /** Live speech-to-speech via Grok Voice 3.0 (higher cost; owner toggle). */
+  enableVoiceRealtime: boolean;
   /** Max bot questions per visitor within the rate window (default 10). */
   chatMaxQuestionsPerVisitor: number;
   /** Max Grok LLM-enriched answers per visitor within the rate window. */
   chatMaxLlmPerVisitor: number;
   /** Max OTP live sessions per visitor email within the rate window. */
   chatMaxLiveSessionsPerVisitor: number;
-  /** Max voice agent turns per visitor within the rate window. */
+  /** Max push-to-talk voice turns per visitor within the rate window. */
   chatMaxVoiceTurnsPerVisitor: number;
+  /** Max live speech-to-speech session starts per visitor within the rate window. */
+  chatMaxVoiceRealtimeSessionsPerVisitor: number;
+  /** Max live speech-to-speech minutes per visitor within the rate window (~$0.08/min). */
+  chatMaxVoiceRealtimeMinutesPerVisitor: number;
   /** Sliding window length for per-visitor chat caps (hours). */
   chatRateWindowHours: number;
   /** Optional Cursor model id (empty = account default). */
   chatLlmModel: string;
+  /** Optional Grok STT model for push-to-talk (empty = server/env default). */
+  voiceSttModel: string;
+  /** Optional Grok TTS voice id for push-to-talk (empty = server/env default). */
+  voiceTtsVoiceId: string;
+  /** Optional Grok Voice realtime model for live S2S (empty = server/env default). */
+  voiceRealtimeModel: string;
   /** Show starter suggestion chips in the chat widget. */
   chatShowSuggestions: boolean;
   /** Offer live-agent handoff when bot confidence is low. */
@@ -213,12 +230,18 @@ export const DEFAULT_PORTFOLIO_SETTINGS: PortfolioSettings = {
   enableLiveChat: true,
   enableChatLlm: false,
   enableVoiceAgent: false,
+  enableVoiceRealtime: false,
   chatMaxQuestionsPerVisitor: 10,
   chatMaxLlmPerVisitor: 5,
   chatMaxLiveSessionsPerVisitor: 3,
   chatMaxVoiceTurnsPerVisitor: 8,
+  chatMaxVoiceRealtimeSessionsPerVisitor: 2,
+  chatMaxVoiceRealtimeMinutesPerVisitor: 5,
   chatRateWindowHours: 24,
   chatLlmModel: '',
+  voiceSttModel: '',
+  voiceTtsVoiceId: '',
+  voiceRealtimeModel: '',
   chatShowSuggestions: true,
   chatOfferLiveAgent: true,
   alertEmailEnabled: true,
@@ -297,6 +320,12 @@ export interface AccessRuleRecord {
 function clampString(value: unknown, maxLen: number): string {
   if (typeof value !== 'string') return '';
   return value.trim().slice(0, maxLen);
+}
+
+/** Model / voice ids: letters, digits, `.` `_` `-` only. */
+export function sanitizeVoiceModelId(value: unknown): string {
+  const raw = clampString(value, PORTFOLIO_SETTINGS_CONSTRAINTS.voiceModelIdMaxLength);
+  return raw.replace(/[^a-zA-Z0-9._-]/g, '');
 }
 
 function randomIdSuffix(length = 6): string {
@@ -485,6 +514,10 @@ export function sanitizePortfolioSettings(input: Partial<PortfolioSettings> | nu
       typeof input.enableVoiceAgent === 'boolean'
         ? input.enableVoiceAgent
         : DEFAULT_PORTFOLIO_SETTINGS.enableVoiceAgent,
+    enableVoiceRealtime:
+      typeof input.enableVoiceRealtime === 'boolean'
+        ? input.enableVoiceRealtime
+        : DEFAULT_PORTFOLIO_SETTINGS.enableVoiceRealtime,
     chatMaxQuestionsPerVisitor: clampInt(
       input.chatMaxQuestionsPerVisitor,
       DEFAULT_PORTFOLIO_SETTINGS.chatMaxQuestionsPerVisitor,
@@ -509,6 +542,18 @@ export function sanitizePortfolioSettings(input: Partial<PortfolioSettings> | nu
       PORTFOLIO_SETTINGS_CONSTRAINTS.chatMaxVoiceTurnsPerVisitorMin,
       PORTFOLIO_SETTINGS_CONSTRAINTS.chatMaxVoiceTurnsPerVisitorMax
     ),
+    chatMaxVoiceRealtimeSessionsPerVisitor: clampInt(
+      input.chatMaxVoiceRealtimeSessionsPerVisitor,
+      DEFAULT_PORTFOLIO_SETTINGS.chatMaxVoiceRealtimeSessionsPerVisitor,
+      PORTFOLIO_SETTINGS_CONSTRAINTS.chatMaxVoiceRealtimeSessionsPerVisitorMin,
+      PORTFOLIO_SETTINGS_CONSTRAINTS.chatMaxVoiceRealtimeSessionsPerVisitorMax
+    ),
+    chatMaxVoiceRealtimeMinutesPerVisitor: clampInt(
+      input.chatMaxVoiceRealtimeMinutesPerVisitor,
+      DEFAULT_PORTFOLIO_SETTINGS.chatMaxVoiceRealtimeMinutesPerVisitor,
+      PORTFOLIO_SETTINGS_CONSTRAINTS.chatMaxVoiceRealtimeMinutesPerVisitorMin,
+      PORTFOLIO_SETTINGS_CONSTRAINTS.chatMaxVoiceRealtimeMinutesPerVisitorMax
+    ),
     chatRateWindowHours: clampInt(
       input.chatRateWindowHours,
       DEFAULT_PORTFOLIO_SETTINGS.chatRateWindowHours,
@@ -518,6 +563,15 @@ export function sanitizePortfolioSettings(input: Partial<PortfolioSettings> | nu
     chatLlmModel: clampString(
       input.chatLlmModel ?? DEFAULT_PORTFOLIO_SETTINGS.chatLlmModel,
       PORTFOLIO_SETTINGS_CONSTRAINTS.chatLlmModelMaxLength
+    ),
+    voiceSttModel: sanitizeVoiceModelId(
+      input.voiceSttModel ?? DEFAULT_PORTFOLIO_SETTINGS.voiceSttModel
+    ),
+    voiceTtsVoiceId: sanitizeVoiceModelId(
+      input.voiceTtsVoiceId ?? DEFAULT_PORTFOLIO_SETTINGS.voiceTtsVoiceId
+    ),
+    voiceRealtimeModel: sanitizeVoiceModelId(
+      input.voiceRealtimeModel ?? DEFAULT_PORTFOLIO_SETTINGS.voiceRealtimeModel
     ),
     chatShowSuggestions:
       typeof input.chatShowSuggestions === 'boolean'
@@ -568,6 +622,98 @@ export function sanitizePortfolioSettings(input: Partial<PortfolioSettings> | nu
       DEFAULT_PORTFOLIO_SETTINGS.alertClassOverdueCrm
     ),
   };
+}
+
+const PORTFOLIO_SETTINGS_CHANGE_LABELS: Partial<Record<keyof PortfolioSettings, string>> = {
+  availabilityStatus: 'Availability',
+  availabilityText: 'Availability text',
+  maintenanceMode: 'Maintenance mode',
+  maintenanceMessage: 'Maintenance message',
+  enableContactForm: 'Contact form',
+  enableCvDownloads: 'CV downloads',
+  strictOtpForAll: 'Strict OTP (legacy)',
+  requireOtpForChat: 'OTP for chat',
+  requireOtpForContact: 'OTP for contact',
+  requireOtpForCv: 'OTP for CV',
+  showAnnouncementsBadge: 'Announcements badge',
+  enableAnnouncements: 'Announcements',
+  enableResumeStudio: 'Resume studio',
+  enableDigitalCard: 'Digital card',
+  enableCommandPalette: 'Command palette',
+  enableTerminal: 'Terminal',
+  enablePwaInstall: 'PWA install',
+  enableSkillFilter: 'Skill filter',
+  enableReadingModes: 'Reading modes',
+  enableScrollHud: 'Scroll HUD',
+  enableSiteTelemetry: 'Site telemetry',
+  incidentMode: 'Incident mode',
+  incidentMessage: 'Incident message',
+  notifyOnNewInquiry: 'New-inquiry alerts',
+  enablePortfolioChat: 'Portfolio chat',
+  enableLiveChat: 'Live chat',
+  enableChatLlm: 'Grok LLM enrichment',
+  enableVoiceAgent: 'Push-to-talk voice',
+  enableVoiceRealtime: 'Live speech-to-speech',
+  chatMaxQuestionsPerVisitor: 'Max questions / visitor',
+  chatMaxLlmPerVisitor: 'Max LLM answers / visitor',
+  chatMaxLiveSessionsPerVisitor: 'Max live sessions / visitor',
+  chatMaxVoiceTurnsPerVisitor: 'Max push-to-talk turns / visitor',
+  chatMaxVoiceRealtimeSessionsPerVisitor: 'Max live S2S sessions / visitor',
+  chatMaxVoiceRealtimeMinutesPerVisitor: 'Max live S2S minutes / visitor',
+  chatRateWindowHours: 'Rate window (hours)',
+  chatLlmModel: 'Chat Grok model',
+  voiceSttModel: 'Push-to-talk STT model',
+  voiceTtsVoiceId: 'TTS voice',
+  voiceRealtimeModel: 'Live S2S model',
+  chatShowSuggestions: 'Suggestion chips',
+  chatOfferLiveAgent: 'Live-agent handoff',
+  alertEmailEnabled: 'Alert emails',
+  alertEmailUrgent: 'Urgent alert emails',
+  alertEmailWarning: 'Warning alert emails',
+  alertEmailDigest: 'Digest alert emails',
+  alertClassNewInquiry: 'Alert class · new inquiry',
+  alertClassLiveChat: 'Alert class · live chat',
+  alertClassRiskDownload: 'Alert class · risk download',
+  alertClassUnusualTraffic: 'Alert class · unusual traffic',
+  alertClassChatLimit: 'Alert class · chat limit',
+  alertClassOverdueCrm: 'Alert class · overdue CRM',
+};
+
+function formatSettingsChangeValue(value: unknown): string {
+  if (typeof value === 'boolean') return value ? 'on' : 'off';
+  if (typeof value === 'number') return String(value);
+  const text = String(value ?? '').trim();
+  if (!text) return '(default)';
+  return text.length > 28 ? `${text.slice(0, 27)}…` : text;
+}
+
+/** Human-readable diff for owner save toast (caps listed items). */
+export function summarizePortfolioSettingsChanges(
+  before: PortfolioSettings,
+  after: PortfolioSettings,
+  options?: { maxItems?: number }
+): string {
+  const maxItems = Math.min(8, Math.max(1, options?.maxItems ?? 4));
+  const parts: string[] = [];
+  const keys = Object.keys(PORTFOLIO_SETTINGS_CHANGE_LABELS) as Array<keyof PortfolioSettings>;
+
+  for (const key of keys) {
+    const prev = before[key];
+    const next = after[key];
+    if (prev === next) continue;
+    const label = PORTFOLIO_SETTINGS_CHANGE_LABELS[key] || String(key);
+    if (typeof prev === 'boolean' && typeof next === 'boolean') {
+      parts.push(`${next ? 'Enabled' : 'Disabled'} ${label.toLowerCase()}`);
+    } else {
+      parts.push(`${label} → ${formatSettingsChangeValue(next)}`);
+    }
+  }
+
+  if (parts.length === 0) return 'No setting changes detected.';
+  if (parts.length <= maxItems) return parts.join(' · ');
+  const shown = parts.slice(0, maxItems);
+  const rest = parts.length - maxItems;
+  return `${shown.join(' · ')} · and ${rest} more`;
 }
 
 /** UX-only subset safe to expose on `portfolio_settings/public` (no caps/alerts/LLM). */
@@ -652,6 +798,7 @@ export function getEffectivePortfolioSettings(settings: PortfolioSettings): Port
     enableLiveChat: false,
     enableChatLlm: false,
     enableVoiceAgent: false,
+    enableVoiceRealtime: false,
     enableAnnouncements: false,
     enableResumeStudio: false,
     enableDigitalCard: false,

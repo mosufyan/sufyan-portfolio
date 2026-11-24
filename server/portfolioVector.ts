@@ -149,6 +149,10 @@ function chunkFromHit(
 export async function answerPortfolioQuestionSmart(questionRaw: string): Promise<ChatAnswer> {
   const question = questionRaw.trim().slice(0, 500);
   const keyword = answerPortfolioQuestion(question);
+  // Keep structured portfolio answers (certs/awards/skills/…) — vector dump would regress quality.
+  if (keyword.composed && keyword.confidence >= 0.9) {
+    return keyword;
+  }
   const index = getIndex();
   if (!index) return keyword;
 
@@ -192,18 +196,39 @@ export async function answerPortfolioQuestionSmart(questionRaw: string): Promise
           : row
       );
     const qLower = question.toLowerCase();
-    if (/before cisco|prior to cisco|previous (to cisco|employer)/i.test(qLower)) {
+    if (
+      /before cisco|prior to cisco|previous (to cisco|employer)|what did (he|mohammed|sufyan) do before\b/i.test(
+        qLower
+      )
+    ) {
+      // Prefer the composed keyword career answer (HCL + TCS) over vector-only HCL/Cisco-account hits.
+      if (
+        keyword.confidence >= 0.85 &&
+        /hcl/i.test(keyword.answer) &&
+        /tcs|tata/i.test(keyword.answer)
+      ) {
+        return { ...keyword, retrieval: 'hybrid' };
+      }
       for (const row of hybridRanked) {
-        if (/cisco/.test(row.chunk.id)) row.score *= 0.25;
+        if (/cisco-systems/.test(row.chunk.id)) row.score *= 0.2;
         if (/hcl|tata/.test(row.chunk.id) && row.chunk.id.startsWith('exp-')) {
-          row.score = Math.max(row.score, best) + 0.2;
+          const companyBoost = /-role-/.test(row.chunk.id) ? 0.15 : 0.35;
+          row.score = Math.max(row.score, best) + companyBoost;
         }
       }
-      const prior =
-        listKnowledgeChunks().find((c) => c.id.includes('hcl') && c.id.includes('-role-1')) ||
-        listKnowledgeChunks().find((c) => c.id.includes('hcl') && c.id.startsWith('exp-'));
-      if (prior && !hybridRanked.some((r) => r.chunk.id === prior.id)) {
-        hybridRanked.push({ chunk: prior, score: Math.max(best, 0.7) + 0.2 });
+      for (const id of [
+        'exp-hcl-america-inc-hcltech',
+        'exp-tata-consultancy-services',
+        'exp-hcl-america-inc-hcltech-role-1',
+        'exp-tata-consultancy-services-role-1',
+      ]) {
+        const prior = listKnowledgeChunks().find((c) => c.id === id);
+        if (prior && !hybridRanked.some((r) => r.chunk.id === prior.id)) {
+          hybridRanked.push({
+            chunk: prior,
+            score: Math.max(best, 0.7) + (id.includes('-role-') ? 0.2 : 0.35),
+          });
+        }
       }
     } else if (/cisco/.test(qLower)) {
       const cisco = listKnowledgeChunks().find(

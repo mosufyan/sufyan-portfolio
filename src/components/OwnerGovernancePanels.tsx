@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useMemo, useState } from 'react';
+import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   Check,
@@ -27,10 +27,13 @@ import {
   Terminal,
   Trash2,
   Wrench,
+  X,
 } from 'lucide-react';
 import { useFirebase } from '../contexts/FirebaseContext';
 import {
   DEFAULT_PORTFOLIO_SETTINGS,
+  sanitizePortfolioSettings,
+  summarizePortfolioSettingsChanges,
   type AccessRuleDraft,
   type AccessRuleMatchType,
   type AccessRuleType,
@@ -389,12 +392,36 @@ export function SiteControlsPanel({ isLight }: { isLight: boolean }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
+  const successToastTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     setDraft({ ...portfolioSettings });
   }, [portfolioSettings]);
 
+  useEffect(() => {
+    return () => {
+      if (successToastTimerRef.current != null) {
+        window.clearTimeout(successToastTimerRef.current);
+      }
+    };
+  }, []);
+
+  const clearFeedback = () => {
+    setError(null);
+    setSavedNotice(null);
+    if (successToastTimerRef.current != null) {
+      window.clearTimeout(successToastTimerRef.current);
+      successToastTimerRef.current = null;
+    }
+  };
+
   const hasUnsaved = JSON.stringify(draft) !== JSON.stringify(portfolioSettings);
+  const feedbackMessage = error || savedNotice;
+  const feedbackTone: 'error' | 'success' | null = error
+    ? 'error'
+    : savedNotice
+      ? 'success'
+      : null;
 
   const card = isLight
     ? 'border-slate-200 bg-white'
@@ -411,12 +438,17 @@ export function SiteControlsPanel({ isLight }: { isLight: boolean }) {
   const handleSave = async (e: FormEvent) => {
     e.preventDefault();
     if (saving) return;
-    setError(null);
-    setSavedNotice(null);
+    clearFeedback();
     setSaving(true);
+    const previous = portfolioSettings;
+    const nextClean = sanitizePortfolioSettings(draft);
     try {
       await savePortfolioSettings(draft);
-      setSavedNotice('Site settings updated in Firestore & synced with backend security rules.');
+      setSavedNotice(summarizePortfolioSettingsChanges(previous, nextClean));
+      successToastTimerRef.current = window.setTimeout(() => {
+        setSavedNotice(null);
+        successToastTimerRef.current = null;
+      }, 5500);
     } catch (err) {
       setError(toUserFacingError(err, 'Unable to save site controls.'));
     } finally {
@@ -458,33 +490,6 @@ export function SiteControlsPanel({ isLight }: { isLight: boolean }) {
             </span>
           )}
         </div>
-
-        {error && (
-          <div
-            role="alert"
-            className={`rounded-lg border px-3 py-2 text-xs ${
-              isLight
-                ? 'border-rose-300 bg-rose-50 text-rose-800'
-                : 'border-rose-500/40 bg-rose-950/40 text-rose-200'
-            }`}
-          >
-            {error}
-          </div>
-        )}
-
-        {savedNotice && (
-          <div
-            role="status"
-            className={`rounded-lg border px-3 py-2 text-xs flex items-center gap-1.5 ${
-              isLight
-                ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
-                : 'border-emerald-500/40 bg-emerald-950/35 text-emerald-200'
-            }`}
-          >
-            <Check className="w-3.5 h-3.5 shrink-0" />
-            <span>{savedNotice}</span>
-          </div>
-        )}
 
         {/* Availability Status */}
         <div className={`rounded-xl border p-3.5 space-y-3 ${rowCard}`}>
@@ -773,27 +778,68 @@ export function SiteControlsPanel({ isLight }: { isLight: boolean }) {
         <ChatConfigFields draft={draft} setDraft={setDraft} isLight={isLight} />
         <AlertNotifyConfigFields draft={draft} setDraft={setDraft} isLight={isLight} />
 
-        <div className="flex items-center justify-end gap-2 pt-1">
-          <button
-            type="button"
-            disabled={saving || !hasUnsaved}
-            onClick={() => setDraft({ ...portfolioSettings })}
-            className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors cursor-pointer disabled:opacity-40 ${
-              isLight
-                ? 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
-                : 'border-slate-700 bg-slate-900/70 text-slate-300 hover:bg-slate-800'
-            }`}
-          >
-            Reset
-          </button>
-          <button
-            type="submit"
-            disabled={saving}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#38bdf8] hover:bg-sky-300 disabled:opacity-50 text-slate-950 font-semibold text-xs transition-colors cursor-pointer whitespace-nowrap"
-          >
-            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-            <span>Save &amp; Sync Site Controls</span>
-          </button>
+        <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:items-end sm:justify-end">
+          {feedbackMessage && feedbackTone && (
+            <div
+              role={feedbackTone === 'error' ? 'alert' : 'status'}
+              aria-live={feedbackTone === 'error' ? 'assertive' : 'polite'}
+              className={`flex min-w-0 max-w-xl flex-1 items-start gap-2 rounded-lg border px-3 py-2 text-[11px] leading-snug sm:mr-auto ${
+                feedbackTone === 'error'
+                  ? isLight
+                    ? 'border-rose-300 bg-rose-50 text-rose-900'
+                    : 'border-rose-500/40 bg-rose-950/45 text-rose-100'
+                  : isLight
+                    ? 'border-emerald-300 bg-emerald-50 text-emerald-900'
+                    : 'border-emerald-500/40 bg-emerald-950/40 text-emerald-100'
+              }`}
+            >
+              {feedbackTone === 'success' ? (
+                <Check className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              ) : (
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              )}
+              <span className="min-w-0 flex-1">{feedbackMessage}</span>
+              <button
+                type="button"
+                onClick={clearFeedback}
+                className={`shrink-0 rounded-md p-0.5 cursor-pointer ${
+                  isLight ? 'hover:bg-black/5' : 'hover:bg-white/10'
+                }`}
+                aria-label="Dismiss notification"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
+          <div className="flex items-center justify-end gap-2 shrink-0">
+            <button
+              type="button"
+              disabled={saving || !hasUnsaved}
+              onClick={() => {
+                clearFeedback();
+                setDraft({ ...portfolioSettings });
+              }}
+              className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors cursor-pointer disabled:opacity-40 ${
+                isLight
+                  ? 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+                  : 'border-slate-700 bg-slate-900/70 text-slate-300 hover:bg-slate-800'
+              }`}
+            >
+              Reset
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#38bdf8] hover:bg-sky-300 disabled:opacity-50 text-slate-950 font-semibold text-xs transition-colors cursor-pointer whitespace-nowrap"
+            >
+              {saving ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Save className="w-3.5 h-3.5" />
+              )}
+              <span>Save &amp; Sync Site Controls</span>
+            </button>
+          </div>
         </div>
       </div>
     </form>

@@ -1,9 +1,9 @@
 /**
- * Groq Whisper speech-to-text (OpenAI-compatible transcriptions API).
- * Server-only — GROQ_API_KEY must never be exposed to the client.
+ * Grok (xAI) speech-to-text via POST /v1/stt.
+ * Server-only — GROK_API_KEY must never be exposed to the client.
  */
-const DEFAULT_BASE = 'https://api.groq.com/openai/v1';
-const DEFAULT_MODEL = 'whisper-large-v3-turbo';
+const DEFAULT_BASE = 'https://api.x.ai/v1';
+const DEFAULT_MODEL = 'grok-voice-transcribe-2.0';
 const DEFAULT_TIMEOUT_MS = 20_000;
 
 export interface VoiceSttOptions {
@@ -24,8 +24,17 @@ export interface VoiceSttResult {
   error?: string;
 }
 
-export function isVoiceSttConfigured(apiKey = process.env.GROQ_API_KEY || ''): boolean {
-  return Boolean(apiKey && apiKey.trim().length >= 8);
+export function resolveGrokApiKey(apiKey?: string): string {
+  return (
+    apiKey?.trim() ||
+    process.env.GROK_API_KEY?.trim() ||
+    process.env.XAI_API_KEY?.trim() ||
+    ''
+  );
+}
+
+export function isVoiceSttConfigured(apiKey = resolveGrokApiKey()): boolean {
+  return Boolean(apiKey && apiKey.length >= 8);
 }
 
 function extensionForMime(mimeType: string): string {
@@ -37,21 +46,21 @@ function extensionForMime(mimeType: string): string {
   return 'webm';
 }
 
-export async function transcribeAudioWithGroq(
+export async function transcribeAudioWithGrok(
   audio: Buffer,
   options: VoiceSttOptions = {}
 ): Promise<VoiceSttResult> {
   const started = Date.now();
-  const apiKey = (options.apiKey ?? process.env.GROQ_API_KEY ?? '').trim();
+  const apiKey = resolveGrokApiKey(options.apiKey);
   if (!apiKey) {
-    return { ok: false, latencyMs: Date.now() - started, error: 'Groq STT is not configured.' };
+    return { ok: false, latencyMs: Date.now() - started, error: 'Grok STT is not configured.' };
   }
   if (!audio.length) {
     return { ok: false, latencyMs: Date.now() - started, error: 'Empty audio payload.' };
   }
 
   const fetchImpl = options.fetchImpl || fetch;
-  const baseUrl = (options.baseUrl || process.env.GROQ_API_BASE_URL || DEFAULT_BASE).replace(
+  const baseUrl = (options.baseUrl || process.env.GROK_API_BASE_URL || DEFAULT_BASE).replace(
     /\/$/,
     ''
   );
@@ -62,15 +71,16 @@ export async function transcribeAudioWithGroq(
       options.timeoutMs || Number(process.env.VOICE_STT_TIMEOUT_MS) || DEFAULT_TIMEOUT_MS
     )
   );
-  const modelId = (options.modelId || process.env.GROQ_STT_MODEL || '').trim() || DEFAULT_MODEL;
+  const modelId =
+    (options.modelId || process.env.GROK_STT_MODEL || '').trim() || DEFAULT_MODEL;
   const mimeType = (options.mimeType || 'audio/webm').split(';')[0].trim() || 'audio/webm';
   const filename =
     (options.filename || '').trim() || `utterance.${extensionForMime(mimeType)}`;
 
   const form = new FormData();
   form.append('model', modelId);
-  form.append('response_format', 'json');
   if (options.language) form.append('language', options.language);
+  // file must be last per xAI STT docs
   const blob = new Blob([new Uint8Array(audio)], { type: mimeType });
   form.append('file', blob, filename);
 
@@ -78,7 +88,7 @@ export async function transcribeAudioWithGroq(
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const res = await fetchImpl(`${baseUrl}/audio/transcriptions`, {
+    const res = await fetchImpl(`${baseUrl}/stt`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}` },
       body: form,
@@ -87,10 +97,15 @@ export async function transcribeAudioWithGroq(
 
     if (!res.ok) {
       const errText = await res.text().catch(() => '');
+      const permissionDenied =
+        res.status === 403 &&
+        /lacks the permissions|voice endpoints|does not have permission/i.test(errText);
       return {
         ok: false,
         latencyMs: Date.now() - started,
-        error: `Groq STT ${res.status}: ${errText.slice(0, 180)}`,
+        error: permissionDenied
+          ? 'Grok voice APIs are not enabled on this API key. In console.x.ai, edit the key and add Voice permissions, then retry.'
+          : `Grok STT ${res.status}: ${errText.replace(/\s+/g, ' ').slice(0, 160)}`,
       };
     }
 
@@ -100,7 +115,7 @@ export async function transcribeAudioWithGroq(
       return {
         ok: false,
         latencyMs: Date.now() - started,
-        error: 'Groq STT returned empty transcript.',
+        error: 'Grok STT returned empty transcript.',
       };
     }
 
@@ -115,12 +130,20 @@ export async function transcribeAudioWithGroq(
       ok: false,
       latencyMs: Date.now() - started,
       error: aborted
-        ? 'Groq STT timed out.'
+        ? 'Grok STT timed out.'
         : err instanceof Error
           ? err.message
-          : 'Groq STT failed.',
+          : 'Grok STT failed.',
     };
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** @deprecated Use transcribeAudioWithGrok — kept for older imports. */
+export async function transcribeAudioWithGroq(
+  audio: Buffer,
+  options: VoiceSttOptions = {}
+): Promise<VoiceSttResult> {
+  return transcribeAudioWithGrok(audio, options);
 }
