@@ -270,7 +270,7 @@ Without Redis: rate limits, OTP challenges, and live-chat sessions are **per Clo
 
 | Control | Where |
 |---------|-------|
-| CSP, HSTS, nosniff, frame deny | `server/security.ts` |
+| CSP (incl. prod `wss://api.x.ai` for Live S2S), HSTS, nosniff, frame deny | `server/security.ts` (+ CI CSP headers smoke) |
 | Origin + `Sec-Fetch-Site` | Mutation POSTs |
 | Honeypot `website` field | Contact / chat start |
 | Turnstile verify | Contact, CV, live chat start |
@@ -298,7 +298,7 @@ flowchart TD
   S9["9. Optional - deny public PII creates"] --> S10
   S10["10. Optional - Upstash Vector RAG"] --> S11
   S11["11. Optional - Grok LLM + wire-chat-llm-secrets"] --> S12
-  S12["12. GitHub Actions CD on main"]
+  S12["12. GitHub Actions — separate checks + CD on main"]
 ```
 ---
 
@@ -319,11 +319,16 @@ Local:
 ```bash
 npm run lint
 npm test
+npm run test:coverage
+npm run test:rules          # needs Java (Firestore emulator)
 npm run security:audit
 npm run build
+npm run ci:csp-smoke        # needs dist/
+npm run ci:bundle-size
+npm run test:e2e            # Playwright; needs dist/ or starts server
 ```
 
-CI/CD: open a PR to `main` (verify + Docker), then merge to deploy Cloud Run automatically.
+CI/CD: open a PR to `main` — each gate is a **separate** GitHub check (SemVer, typecheck, tests, coverage, CSP, Playwright, Lighthouse, rules, SAST, Docker/Trivy). Merge to deploy Cloud Run automatically. Full table: [ARCHITECTURE.md](./ARCHITECTURE.md#cicd).
 
 ---
 
@@ -337,4 +342,4 @@ CI/CD: open a PR to `main` (verify + Docker), then merge to deploy Cloud Run aut
 | Mail | Resend Free + verified domain | Resend Pro during hiring spikes |
 | Abuse | In-memory RL single instance | Upstash Redis shared RL fail-closed |
 | Chat | Keyword grounded | Vector RAG + optional Grok + per-visitor caps |
-| Deploy | Manual `gcloud run deploy` | GitHub Actions PR checks + auto-deploy on `main` |
+| Deploy | Manual `gcloud run deploy` | Separate GitHub Actions checks (CSP/rules/SAST/Trivy/…) + auto-deploy on `main` |

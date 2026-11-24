@@ -215,7 +215,7 @@ Composite index: `announcements` — `status` ASC + `createdAt` DESC (`firestore
 | `server/chatKnowledge.ts` | Curated knowledge chunks + keyword ranking + concise answers |
 | `server/portfolioVector.ts` | Upstash Vector RAG (embed/sync/query) + keyword hybrid fallback |
 | `server/grokLlm.ts` | Optional Grok (xAI) chat-completions enrichment |
-| `.github/workflows/ci.yml` | PR: lint/test/audit/build + Docker; `main`: deploy Cloud Run |
+| `.github/workflows/ci.yml` | Separate PR checks (SemVer, typecheck, tests, coverage, CSP, Playwright, Lighthouse, rules, SAST, Docker/Trivy); `main`: deploy Cloud Run |
 | `scripts/wire-chat-llm-secrets.sh` | Upsert Grok/Vector secrets → Secret Manager + Cloud Run |
 | `scripts/setup-github-actions-deploy.sh` | One-time WIF + deploy SA for GitHub → Cloud Run |
 | `server/chatSessions.ts` | Live session store + disk cache + Redis write-through |
@@ -264,19 +264,51 @@ mindmap
 
 | Suite | Covers |
 |-------|--------|
-| `server/*.test.ts` | Security, chat limits/receipts/sessions/knowledge, Vector RAG, Grok LLM, notify, Redis |
+| `server/*.test.ts` | Security, chat limits/receipts/sessions/knowledge, Vector RAG, Grok LLM, notify, Redis, voice |
 | `src/utils/*.test.ts` | Governance, announcements, CV/ATS, phone, skills, tracking, routing |
-| `src/utils/portfolioFeatures.test.ts` | Cross-feature matrix smoke |
+| `src/theme/*.test.ts` | Theme/accent packs (including amber hover-remap regression) |
+| `firestore.rules.test.ts` | Firestore rules unit tests (emulator via `npm run test:rules`) |
+| `e2e/smoke.spec.ts` | Playwright smoke (home, appearance menu, `/api/uptime`) |
 
-Run: `npm test` · Lint: `npm run lint` · Audit: `npm run security:audit`
+| Script | Purpose |
+|--------|---------|
+| `npm test` | Unit tests (Vitest) |
+| `npm run test:coverage` | Coverage + thresholds (`server/`, `src/utils/`, `src/theme/`) |
+| `npm run test:rules` | Firestore rules tests under Firebase emulator |
+| `npm run test:e2e` | Playwright smoke |
+| `npm run lint` | TypeScript (`tsc --noEmit`) |
+| `npm run lint:rules` | Firestore rules ESLint |
+| `npm run security:audit` | Production dependency audit |
+| `npm run ci:csp-smoke` | Start prod server; assert CSP / security headers |
+| `npm run ci:bundle-size` | JS asset size budgets |
+| `npm run ci:lighthouse` | Lighthouse floors (a11y / best-practices / SEO / perf) |
 
 ---
 
 ## CI/CD
 
-| Event | Jobs |
-|-------|------|
-| **Pull request → `main`** | Lint · unit tests · `npm audit` · Vite build · Docker image build (no push) |
-| **Push / merge → `main`** | Same verify + Docker, then **Cloud Run deploy** (`gcloud run deploy --source .`) via Workload Identity + smoke `GET /api/chat/status` |
+Each item below is a **separate GitHub Actions check** (`.github/workflows/ci.yml`):
+
+| Check | When | What |
+|-------|------|------|
+| **SemVer tag** | PR only | Fail if `package.json` version already has a released `v*` tag |
+| **Typecheck** | PR + `main` | `tsc --noEmit` |
+| **Firestore rules lint** | PR + `main` | ESLint on `*.rules` |
+| **Unit tests** | PR + `main` | Vitest |
+| **Coverage** | PR + `main` | Vitest coverage thresholds |
+| **npm audit** | PR + `main` | High+ production advisories |
+| **Production build** | PR + `main` | Vite build → `dist` artifact |
+| **CSP headers smoke** | PR + `main` | Live prod CSP must include `wss://api.x.ai`, `media-src`, core headers |
+| **Bundle size** | PR + `main` | JS asset budgets |
+| **Playwright smoke** | PR + `main` | Chromium smoke against Express |
+| **Lighthouse** | PR + `main` | Score floors on local prod URL |
+| **Firestore rules tests** | PR + `main` | Emulator + `@firebase/rules-unit-testing` |
+| **Gitleaks** | PR + `main` | Secret scan (working tree) |
+| **Bandit** | PR + `main` | Python SAST (if any `.py`) |
+| **Semgrep** | PR + `main` | JS/TS security-audit rulesets |
+| **Code Guard (CodeQL)** | PR + `main` | CodeQL analyze |
+| **Docker build** | After gates | Local image (no push) |
+| **Trivy scan** | After Docker | CRITICAL/HIGH image vulns |
+| **Deploy Cloud Run** | `main` push only | WIF deploy + post-deploy API/SPA smoke + GitHub Release |
 
 Auth: GitHub secrets `GCP_WORKLOAD_IDENTITY_PROVIDER` + `GCP_SERVICE_ACCOUNT`; vars `GCP_PROJECT` / `GCP_REGION` / `CLOUD_RUN_SERVICE`.

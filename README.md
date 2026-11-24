@@ -48,7 +48,7 @@ Interactive portfolio and operations console: skill-filtered experience, OTP-gat
 | **Leads** | Contact + CV export with email OTP, Turnstile, honeypot, owner triage inbox |
 | **Chat** | OTP welcome, Upstash Vector RAG, optional Grok enrichment, live-agent handoff |
 | **Owner console** | Google Sign-In, analytics, CRM/alerts, announcements, delegates, incident mode, audit log |
-| **Delivery** | TypeScript · Vitest · Gitleaks · Bandit/Semgrep · CodeQL · Trivy · Cloud Run on `main` |
+| **Delivery** | Separate CI checks: SemVer · typecheck · Vitest/coverage · CSP · Playwright · Lighthouse · rules · Gitleaks · Bandit/Semgrep · CodeQL · Trivy · Cloud Run on `main` |
 
 ## Stack
 
@@ -89,10 +89,14 @@ Open [http://localhost:3000](http://localhost:3000).
 | `npm run dev` | Express + Vite local server |
 | `npm run build` / `npm start` | Production build + serve |
 | `npm test` / `npm run lint` | Vitest · TypeScript |
+| `npm run test:coverage` | Coverage + thresholds |
+| `npm run test:rules` | Firestore rules tests (emulator) |
+| `npm run test:e2e` | Playwright smoke |
+| `npm run ci:csp-smoke` | Assert prod CSP / security headers |
 | `npm run precommit` | Gitleaks + typecheck + rules lint |
 | `npm run release -- 1.0.1` | SemVer bump + annotated `v*` tag |
 
-> PRs fail if `package.json` still uses an already-released `v*` tag — bump before merge. After a green deploy on `main`, CI publishes the matching GitHub Release.
+> PRs fail if `package.json` still uses an already-released `v*` tag (**SemVer tag** check) — bump before merge. After a green deploy on `main`, CI publishes the matching GitHub Release. Full CI check list: [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md#cicd).
 
 ## Docs
 
