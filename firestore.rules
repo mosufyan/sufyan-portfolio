@@ -620,5 +620,14 @@ service cloud.firestore {
       allow update: if false;
       allow delete: if isVerifiedOwnerEmail() && isValidId(adminId);
     }
+
+    // Durable owner KPIs + chat snapshot (Admin SDK writes only; owner console may read).
+    // Docs: owner_metrics/site (pageviews/OG), owner_metrics/chat_cache (sessions + counters).
+    match /owner_metrics/{docId} {
+      allow get: if isVerifiedUser() && isValidId(docId) && isAdmin()
+        && (docId == 'site' || docId == 'chat_cache');
+      allow list: if false;
+      allow create, update, delete: if false;
+    }
   }
 }

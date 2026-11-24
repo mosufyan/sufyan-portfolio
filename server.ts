@@ -77,11 +77,20 @@ import {
 } from './server/observability.ts';
 import {
   adminGetContactMessage,
+  adminLoadSiteTelemetry,
   adminMarkContactReplied,
+  adminSaveSiteTelemetry,
   adminWriteContactMessage,
   adminWriteCvDownload,
   isFirebaseAdminConfigured,
 } from './server/firebaseAdmin.ts';
+import {
+  SITE_TELEMETRY_REDIS_KEY,
+  emptySiteTelemetry,
+  mergeSiteTelemetry,
+  sanitizeSiteTelemetry,
+  type SiteTelemetryState,
+} from './server/ownerDurableState.ts';
 import { answerPortfolioQuestion, listChatSuggestions } from './server/chatKnowledge.ts';
 import {
   answerPortfolioQuestionSmart,
@@ -111,6 +120,7 @@ import {
   publicSessionView,
   startNewChatThread,
   clearOwnerPresence,
+  flushChatCacheDurable,
   flushChatCacheSync,
   touchOwnerPresence,
 } from './server/chatSessions.ts';
@@ -275,13 +285,6 @@ function clampPolicyInt(value: unknown, fallback: number, min: number, max: numb
 const POLICY_CACHE_PATH = path.join(__dirname, '.owner-policy-cache.json');
 const TELEMETRY_CACHE_PATH = path.join(__dirname, '.owner-telemetry-cache.json');
 
-interface SiteTelemetryState {
-  pageviews: number;
-  ogShares: number;
-  ogByTrack: Record<string, number>;
-  updatedAtIso: string;
-}
-
 function normalizeShareTrack(track?: string): ShareTrackId {
   // Literal returns so static analysis cannot treat the key as user-controlled.
   if (track === 'security') return 'security';
@@ -290,46 +293,72 @@ function normalizeShareTrack(track?: string): ShareTrackId {
   return 'executive';
 }
 
-function sanitizeOgByTrack(raw: unknown): Record<string, number> {
-  const out: Record<string, number> = Object.create(null);
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
-  const src = raw as Record<string, unknown>;
-  for (const id of ['executive', 'security', 'platform', 'ai'] as const) {
-    const n = Number(src[id]);
-    if (Number.isFinite(n) && n > 0) out[id] = Math.floor(n);
-  }
-  return out;
-}
-
-function loadSiteTelemetry(): SiteTelemetryState {
-  const defaults: SiteTelemetryState = {
-    pageviews: 0,
-    ogShares: 0,
-    ogByTrack: {},
-    updatedAtIso: new Date().toISOString(),
-  };
+function loadSiteTelemetryFromDisk(): SiteTelemetryState {
   try {
-    if (!fs.existsSync(TELEMETRY_CACHE_PATH)) return defaults;
-    const parsed = JSON.parse(fs.readFileSync(TELEMETRY_CACHE_PATH, 'utf8')) as Partial<SiteTelemetryState>;
-    return {
-      pageviews: Number(parsed.pageviews) || 0,
-      ogShares: Number(parsed.ogShares) || 0,
-      ogByTrack: sanitizeOgByTrack(parsed.ogByTrack),
-      updatedAtIso: typeof parsed.updatedAtIso === 'string' ? parsed.updatedAtIso : defaults.updatedAtIso,
-    };
+    if (!fs.existsSync(TELEMETRY_CACHE_PATH)) return emptySiteTelemetry();
+    const parsed = JSON.parse(fs.readFileSync(TELEMETRY_CACHE_PATH, 'utf8')) as unknown;
+    return sanitizeSiteTelemetry(parsed);
   } catch {
-    return defaults;
+    return emptySiteTelemetry();
   }
 }
 
-let siteTelemetry: SiteTelemetryState = loadSiteTelemetry();
+let siteTelemetry: SiteTelemetryState = loadSiteTelemetryFromDisk();
 let telemetryFlushTimer: ReturnType<typeof setTimeout> | null = null;
+let telemetryHydratePromise: Promise<void> | null = null;
+let siteTelemetryHydrated = false;
 
-function persistSiteTelemetryToDisk(): void {
+function persistSiteTelemetryLocal(state: SiteTelemetryState): void {
   try {
-    fs.writeFileSync(TELEMETRY_CACHE_PATH, JSON.stringify(siteTelemetry, null, 2), 'utf8');
+    fs.writeFileSync(TELEMETRY_CACHE_PATH, JSON.stringify(state, null, 2), 'utf8');
   } catch {
     /* non-fatal */
+  }
+}
+
+async function mergeRemoteSiteTelemetryIntoMemory(): Promise<void> {
+  let merged = siteTelemetry;
+  if (isDistributedStoreEnabled()) {
+    const remote = await redisGetJson<SiteTelemetryState>(SITE_TELEMETRY_REDIS_KEY);
+    if (!remote.error && remote.value) {
+      merged = mergeSiteTelemetry(merged, sanitizeSiteTelemetry(remote.value));
+    }
+  }
+  if (isFirebaseAdminConfigured()) {
+    const fromFs = await adminLoadSiteTelemetry();
+    if (fromFs) {
+      merged = mergeSiteTelemetry(merged, fromFs);
+    }
+  }
+  siteTelemetry = merged;
+}
+
+function persistSiteTelemetryNow(): void {
+  // Merge-before-write so a cold replica cannot clobber higher durable counters.
+  void (async () => {
+    try {
+      await mergeRemoteSiteTelemetryIntoMemory();
+      persistSiteTelemetryLocal(siteTelemetry);
+      if (isDistributedStoreEnabled()) {
+        await redisSetJson(SITE_TELEMETRY_REDIS_KEY, siteTelemetry);
+      }
+      if (isFirebaseAdminConfigured()) {
+        await adminSaveSiteTelemetry(siteTelemetry);
+      }
+    } catch {
+      persistSiteTelemetryLocal(siteTelemetry);
+    }
+  })();
+}
+
+async function persistSiteTelemetryDurable(): Promise<void> {
+  await mergeRemoteSiteTelemetryIntoMemory();
+  persistSiteTelemetryLocal(siteTelemetry);
+  if (isDistributedStoreEnabled()) {
+    await redisSetJson(SITE_TELEMETRY_REDIS_KEY, siteTelemetry);
+  }
+  if (isFirebaseAdminConfigured()) {
+    await adminSaveSiteTelemetry(siteTelemetry);
   }
 }
 
@@ -337,8 +366,44 @@ function scheduleSiteTelemetryFlush(): void {
   if (telemetryFlushTimer) return;
   telemetryFlushTimer = setTimeout(() => {
     telemetryFlushTimer = null;
-    persistSiteTelemetryToDisk();
+    persistSiteTelemetryNow();
   }, 2000);
+}
+
+/** Merge Redis + Firestore into memory so Cloud Run cold starts keep lifetime counters. */
+async function ensureSiteTelemetryHydrated(): Promise<SiteTelemetryState> {
+  if (siteTelemetryHydrated) return siteTelemetry;
+  if (!telemetryHydratePromise) {
+    telemetryHydratePromise = (async () => {
+      try {
+        let merged = siteTelemetry;
+        if (isDistributedStoreEnabled()) {
+          const remote = await redisGetJson<SiteTelemetryState>(SITE_TELEMETRY_REDIS_KEY);
+          if (!remote.error && remote.value) {
+            merged = mergeSiteTelemetry(merged, sanitizeSiteTelemetry(remote.value));
+          }
+        }
+        if (isFirebaseAdminConfigured()) {
+          const fromFs = await adminLoadSiteTelemetry();
+          if (fromFs) {
+            merged = mergeSiteTelemetry(merged, fromFs);
+          }
+        }
+        siteTelemetry = merged;
+        siteTelemetryHydrated = true;
+        persistSiteTelemetryLocal(siteTelemetry);
+        if (isDistributedStoreEnabled()) {
+          void redisSetJson(SITE_TELEMETRY_REDIS_KEY, siteTelemetry);
+        }
+      } catch {
+        siteTelemetryHydrated = true;
+      } finally {
+        telemetryHydratePromise = null;
+      }
+    })();
+  }
+  await telemetryHydratePromise;
+  return siteTelemetry;
 }
 
 function bumpSiteTelemetry(kind: 'pageview' | 'og_share', track?: string): void {
@@ -2339,7 +2404,8 @@ async function startServer() {
     ) {
       return;
     }
-    res.status(200).json(siteTelemetry);
+    const snapshot = await ensureSiteTelemetryHydrated();
+    res.status(200).json(snapshot);
   });
 
   app.post('/api/telemetry/event', async (req: Request, res: Response) => {
@@ -2373,6 +2439,7 @@ async function startServer() {
       }
       const track =
         typeof raw.track === 'string' ? normalizeShareTrack(raw.track.slice(0, 32)) : undefined;
+      await ensureSiteTelemetryHydrated();
       bumpSiteTelemetry(type, track);
       res.status(204).end();
     } catch {
@@ -4594,6 +4661,7 @@ async function startServer() {
           return;
         }
         bumpMetric('chatLiveStarts');
+        await ensureChatCacheHydrated().catch(() => false);
         const session = createChatSession({
           visitorName: name,
           visitorEmail: email.toLowerCase(),
@@ -4603,6 +4671,7 @@ async function startServer() {
           company,
           interest,
         });
+        await flushChatCacheDurable().catch(() => undefined);
         const sessionReceipt = signChatSessionReceipt(session.sessionId, email.toLowerCase());
         void emitOwnerAlert({
           eventType: 'live_chat',
@@ -4737,6 +4806,7 @@ async function startServer() {
 
       bumpMetric('otpVerified');
       bumpMetric('chatLiveStarts');
+      await ensureChatCacheHydrated().catch(() => false);
       const session = createChatSession({
         visitorName: p.name,
         visitorEmail: p.email,
@@ -4746,6 +4816,7 @@ async function startServer() {
         company: p.company,
         interest: p.interest,
       });
+      await flushChatCacheDurable().catch(() => undefined);
       const sessionReceipt = signChatSessionReceipt(session.sessionId, p.email);
 
       void emitOwnerAlert({
@@ -4918,6 +4989,7 @@ async function startServer() {
     } else {
       touchOwnerPresence();
     }
+    await ensureChatCacheHydrated().catch(() => false);
     res.status(200).json({ ok: true, ...getChatStats() });
   });
 
@@ -4982,6 +5054,7 @@ async function startServer() {
         return;
       }
       touchOwnerPresence();
+      await ensureChatCacheHydrated().catch(() => false);
       const raw = (req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {}) as {
         sessionId?: unknown;
         text?: unknown;
@@ -4993,6 +5066,7 @@ async function startServer() {
         res.status(400).json({ error: 'Unable to reply (invalid or closed session).' });
         return;
       }
+      await flushChatCacheDurable().catch(() => undefined);
       res.status(200).json({ ok: true, session: publicSessionView(updated) });
     } catch {
       res.status(500).json({ error: 'Unable to send owner chat reply.' });
@@ -5017,11 +5091,13 @@ async function startServer() {
       sessionId?: unknown;
     };
     const sessionId = typeof raw.sessionId === 'string' ? raw.sessionId.trim() : '';
+    await ensureChatCacheHydrated().catch(() => false);
     const closed = closeChatSession(sessionId);
     if (!closed) {
       res.status(404).json({ error: 'Chat session not found.' });
       return;
     }
+    await flushChatCacheDurable().catch(() => undefined);
     res.status(200).json({ ok: true, session: publicSessionView(closed) });
   });
 
@@ -5143,17 +5219,26 @@ async function startServer() {
     });
   }
 
-  // Rehydrate Owner Chat from Redis before serving traffic (Cloud Run cold start).
-  await ensureChatCacheHydrated().catch(() => false);
+  // Rehydrate durable owner state before serving traffic (Cloud Run cold start).
+  await Promise.all([
+    ensureChatCacheHydrated().catch(() => false),
+    ensureSiteTelemetryHydrated().catch(() => emptySiteTelemetry()),
+  ]);
 
   const shutdown = (signal: string) => {
-    try {
-      flushChatCacheSync();
-    } catch {
-      /* ignore */
-    }
-    console.log(`Received ${signal}; chat cache flushed.`);
-    process.exit(0);
+    void (async () => {
+      try {
+        await Promise.all([flushChatCacheDurable(), persistSiteTelemetryDurable()]);
+      } catch {
+        try {
+          flushChatCacheSync();
+        } catch {
+          /* ignore */
+        }
+      }
+      console.log(`Received ${signal}; durable owner state flushed.`);
+      process.exit(0);
+    })();
   };
   process.once('SIGTERM', () => shutdown('SIGTERM'));
   process.once('SIGINT', () => shutdown('SIGINT'));
