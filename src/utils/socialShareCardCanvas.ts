@@ -1,4 +1,4 @@
-import { brandMarkDataUrl, BRAND_MARK_PNG_SRC } from '../brand/brandMark';
+import { BRAND_MARK_PNG_SRC } from '../brand/brandMark';
 import type { ShareCardTrack } from './ogShare';
 
 export type ShareCardTheme = 'dark' | 'light';
@@ -75,12 +75,10 @@ export async function renderSocialShareCardPng(options: {
   ctx.fill();
   ctx.stroke();
 
-  // Real amber/cyan tiles — never CSS hue-rotate (that washed MS to white).
-  const brandSrc = cardLight
-    ? brandMarkDataUrl(accent, { background: '#ffffff' })
-    : isAmber
-      ? '/pwa-192x192-amber.png'
-      : BRAND_MARK_PNG_SRC;
+  // Same approved PNG tiles for dark + light (never muted SVG recolors).
+  const brandSrc = isAmber
+    ? '/pwa-192x192-amber.png'
+    : BRAND_MARK_PNG_SRC;
   const brandImg = await loadImage(brandSrc, true);
   if (brandImg.naturalWidth > 0) {
     ctx.drawImage(brandImg, 92, 92, 56, 56);
