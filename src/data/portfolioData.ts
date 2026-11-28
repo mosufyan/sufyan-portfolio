@@ -1,3 +1,5 @@
+import { formatTenureDuration } from '../utils/tenureDuration';
+
 export interface Certification {
   id: string;
   title: string;
@@ -49,6 +51,25 @@ export interface CompanyExperience {
   location: string;
   roles: ExperienceRole[];
 }
+
+/** Exact employment windows used for day-aware tenure labels. */
+export const EMPLOYMENT_TENURES = {
+  tcs: {
+    start: new Date(2013, 11, 26), // 26 Dec 2013
+    end: new Date(2019, 7, 31), // 31 Aug 2019
+  },
+  hcl: {
+    start: new Date(2019, 8, 5), // 5 Sep 2019
+    end: new Date(2026, 7, 24), // 24 Aug 2026
+  },
+  cisco: {
+    start: new Date(2026, 7, 25), // 25 Aug 2026
+    end: null as Date | null, // open — Present
+  },
+} as const;
+
+/** @deprecated Prefer EMPLOYMENT_TENURES.cisco.start */
+export const CISCO_ROLE_START = EMPLOYMENT_TENURES.cisco.start;
 
 export interface Award {
   id: string;
@@ -168,16 +189,17 @@ export const TECHNICAL_DISCIPLINES = [
   }
 ];
 
-export const WORK_EXPERIENCE: CompanyExperience[] = [
+const WORK_EXPERIENCE_BASE: CompanyExperience[] = [
   {
     company: 'Cisco Systems Inc.',
     companyTag: 'CURRENT ROLE · FULL-TIME',
-    tenure: 'Aug 2026 — Present · 3 mos',
+    // tenure / period duration hydrated from EMPLOYMENT_TENURES.cisco
+    tenure: 'Aug 2026 — Present',
     location: 'San Jose, California, United States · Hybrid',
     roles: [
       {
         role: 'Software Engineer',
-        period: 'Aug 2026 — Present · 3 mos',
+        period: 'Aug 2026 — Present',
         location: 'San Jose, California, United States · Hybrid',
         employmentType: 'Full-time',
         domain: 'Cisco Systems Inc. Security & Trust Organization (STO) CTO Operations · Project Atlas',
@@ -196,8 +218,9 @@ export const WORK_EXPERIENCE: CompanyExperience[] = [
   },
   {
     company: 'HCL America Inc./HCLTech',
-    companyTag: 'FULL-TIME · 7 YRS',
-    tenure: 'Sep 2019 — Aug 2026 · 7 yrs',
+    companyTag: 'FULL-TIME',
+    // tenure / companyTag duration hydrated from EMPLOYMENT_TENURES.hcl
+    tenure: 'Sep 2019 — Aug 2026',
     location: 'San Francisco Bay Area, United States & Bengaluru, India',
     roles: [
       {
@@ -267,8 +290,9 @@ export const WORK_EXPERIENCE: CompanyExperience[] = [
   },
   {
     company: 'Tata Consultancy Services',
-    companyTag: 'FULL-TIME · 5 YRS 9 MOS',
-    tenure: 'Dec 2013 — Aug 2019 · 5 yrs 9 mos',
+    companyTag: 'FULL-TIME',
+    // tenure / companyTag duration hydrated from EMPLOYMENT_TENURES.tcs
+    tenure: 'Dec 2013 — Aug 2019',
     location: 'Bengaluru, India & Greater London, United Kingdom',
     roles: [
       {
@@ -348,6 +372,48 @@ export const WORK_EXPERIENCE: CompanyExperience[] = [
     ]
   }
 ];
+
+/** Hydrate company tenures from EMPLOYMENT_TENURES (Cisco stays open / Present). */
+export function hydrateWorkExperience(
+  experience: CompanyExperience[] = WORK_EXPERIENCE_BASE,
+  now: Date = new Date()
+): CompanyExperience[] {
+  const tcsDuration = formatTenureDuration(EMPLOYMENT_TENURES.tcs.start, EMPLOYMENT_TENURES.tcs.end);
+  const hclDuration = formatTenureDuration(EMPLOYMENT_TENURES.hcl.start, EMPLOYMENT_TENURES.hcl.end);
+  const ciscoDuration = formatTenureDuration(EMPLOYMENT_TENURES.cisco.start, now);
+
+  return experience.map((comp) => {
+    if (comp.company.includes('Cisco')) {
+      return {
+        ...comp,
+        companyTag: `CURRENT ROLE · FULL-TIME · ${ciscoDuration.toUpperCase()}`,
+        tenure: `Aug 2026 — Present · ${ciscoDuration}`,
+        roles: comp.roles.map((role) =>
+          role.period.startsWith('Aug 2026 — Present')
+            ? { ...role, period: `Aug 2026 — Present · ${ciscoDuration}` }
+            : role
+        ),
+      };
+    }
+    if (comp.company.includes('HCL')) {
+      return {
+        ...comp,
+        companyTag: `FULL-TIME · ${hclDuration.toUpperCase()}`,
+        tenure: `Sep 2019 — Aug 2026 · ${hclDuration}`,
+      };
+    }
+    if (comp.company.includes('Tata') || comp.company.includes('TCS')) {
+      return {
+        ...comp,
+        companyTag: `FULL-TIME · ${tcsDuration.toUpperCase()}`,
+        tenure: `Dec 2013 — Aug 2019 · ${tcsDuration}`,
+      };
+    }
+    return comp;
+  });
+}
+
+export const WORK_EXPERIENCE: CompanyExperience[] = hydrateWorkExperience();
 
 export interface CertificationCategory {
   id: string;
