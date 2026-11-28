@@ -247,7 +247,7 @@ Interactive control map for recruiters: `#architecture` / `#security` (Mermaid f
 | `GET /api/status` | Public | Controls, bot protection, gold-path score, `observability` snapshot, `metricsPath` |
 | `GET /api/health` | Ops | Gold-path checklist; may 503 under `STRICT_PROD_HARDENING` |
 | `GET /api/metrics` | Scrapers / ops | Prometheus counters (OTP, chat RAG/LLM, voice, CSP, HTTP); optional `METRICS_TOKEN` |
-| `GET /api/uptime` | External monitors | Lightweight probe |
+| `GET /api/uptime` | External monitors (UptimeRobot) | Lightweight probe; 503 under `STRICT_PROD_HARDENING` if gold path incomplete |
 | `GET /api/owner/observability` | Owner | Authenticated richer view |
 
 ---
@@ -356,7 +356,7 @@ Each item below is a **separate GitHub Actions check** (`.github/workflows/ci.ym
 |-------|------|------|
 | **SemVer tag** | PR only | Fail if `package.json` version already has a released `v*` tag |
 | **Typecheck** | PR + `main` | `tsc --noEmit` |
-| **Firestore rules lint** | PR + `main` | ESLint on `*.rules` |
+| **Firestore rules lint** | PR + `main` | ESLint on `*.rules` + `firestore.indexes.json` validate |
 | **Unit tests** | PR + `main` | Vitest |
 | **Coverage** | PR + `main` | Vitest coverage thresholds |
 | **npm audit** | PR + `main` | High+ production advisories |
@@ -370,6 +370,8 @@ Each item below is a **separate GitHub Actions check** (`.github/workflows/ci.ym
 | **Code Guard (CodeQL)** | PR + `main` | CodeQL analyze |
 | **Docker build** | After gates | Local image (no push) |
 | **Trivy scan** | After Docker | CRITICAL/HIGH image vulns |
-| **Deploy Cloud Run** | `main` push only | WIF deploy + post-deploy API/SPA smoke + GitHub Release |
+| **Deploy Cloud Run** | `main` push only | WIF → Firestore rules/indexes deploy → Cloud Run image + smoke + GitHub Release |
 
-Auth: GitHub secrets `GCP_WORKLOAD_IDENTITY_PROVIDER` + `GCP_SERVICE_ACCOUNT`; vars `GCP_PROJECT` / `GCP_REGION` / `CLOUD_RUN_SERVICE`.
+Auth: GitHub secrets `GCP_WORKLOAD_IDENTITY_PROVIDER` + `GCP_SERVICE_ACCOUNT`; vars `GCP_PROJECT` / `GCP_REGION` / `CLOUD_RUN_SERVICE`. Deploy SA also holds `roles/firebaserules.admin` + `roles/datastore.indexAdmin` for rules/indexes deploy.
+
+Maturity scores (ops-proven): [PORTFOLIO_ASSESSMENT.md](./PORTFOLIO_ASSESSMENT.md) — Security ~98 · Observability ~97 · Overall ~97.

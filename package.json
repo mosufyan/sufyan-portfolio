@@ -1,7 +1,7 @@
 {
   "name": "sufyan-portfolio",
   "private": true,
-  "version": "1.1.20",
+"version": "1.1.20",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
@@ -24,7 +24,7 @@
     "precommit": "bash ./scripts/pre-commit.sh",
     "release": "bash ./scripts/release.sh",
     "firebase:login": "firebase login",
-    "firebase:deploy-rules": "GOOGLE_CLOUD_QUOTA_PROJECT=mohammed-sufyan-portfolio firebase deploy --only firestore:rules --project mohammed-sufyan-portfolio",
+    "firebase:deploy-rules": "GOOGLE_CLOUD_QUOTA_PROJECT=mohammed-sufyan-portfolio firebase deploy --only firestore:rules,firestore:indexes --project mohammed-sufyan-portfolio",
     "prepare": "husky || true"
   },
   "dependencies": {

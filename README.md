@@ -24,7 +24,7 @@
 <p align="center">
   <a href="https://github.com/mosufyan/sufyan-portfolio/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/mosufyan/sufyan-portfolio/actions/workflows/ci.yml/badge.svg" /></a>
   <a href="https://www.mohammedsufyan.com/"><img alt="Live" src="https://img.shields.io/badge/site-mohammedsufyan.com-0ea5e9?style=flat" /></a>
-  <a href="./package.json"><img alt="Version" src="https://img.shields.io/badge/version-v1.1.20-22c55e?style=flat" /></a>
+<a href="./package.json"><img alt="Version" src="https://img.shields.io/badge/version-v1.1.20-22c55e?style=flat" /></a>
   <img alt="Node" src="https://img.shields.io/badge/node-22+-339933?style=flat&logo=node.js&logoColor=white" />
 </p>
 
@@ -97,7 +97,7 @@ Open [http://localhost:3000](http://localhost:3000).
 | `npm run test:rules` | Firestore rules tests (emulator) |
 | `npm run ci:csp-smoke` | Assert prod CSP / security headers |
 | `npm run precommit` | Gitleaks + typecheck + rules lint |
-| `npm run release -- 1.1.18` | SemVer bump + annotated `v*` tag |
+| `npm run release -- 1.1.20` | SemVer bump + annotated `v*` tag |
 
 > PRs fail if `package.json` still uses an already-released `v*` tag (**SemVer tag** check) — bump before merge. After a green deploy on `main`, CI publishes the matching GitHub Release. Full CI check list: [docs/CI.md](./docs/CI.md).
 

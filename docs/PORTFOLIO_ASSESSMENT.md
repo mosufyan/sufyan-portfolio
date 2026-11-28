@@ -1,7 +1,9 @@
 # Portfolio Assessment — Rating, Gaps & Roadmap
 
-Honest maturity review of **mohammedsufyan.com** after gold-path + P0/P1 closure.  
-Related: [SECURITY.md](./SECURITY.md) · [SECURITY_CONFIGURATION.md](./SECURITY_CONFIGURATION.md) · [EXTERNAL_TOOLS_AND_COSTS.md](./EXTERNAL_TOOLS_AND_COSTS.md) · [ARCHITECTURE.md](./ARCHITECTURE.md)
+Honest maturity review of **mohammedsufyan.com** after gold-path closure **and** production ops wiring.  
+Related: [SECURITY.md](./SECURITY.md) · [SECURITY_CONFIGURATION.md](./SECURITY_CONFIGURATION.md) · [EXTERNAL_TOOLS_AND_COSTS.md](./EXTERNAL_TOOLS_AND_COSTS.md) · [ARCHITECTURE.md](./ARCHITECTURE.md) · [CI.md](./CI.md)
+
+**Reassessment date:** 2026-11-28 (post App Check enforce, Secret Manager secrets, `STRICT_PROD_HARDENING`, UptimeRobot, rules/indexes deploy).
 
 ---
 
@@ -9,19 +11,17 @@ Related: [SECURITY.md](./SECURITY.md) · [SECURITY_CONFIGURATION.md](./SECURITY_
 
 | Goal | Realistic target | Where you are today |
 |------|------------------|---------------------|
-| Security | Defense-in-depth, no known high-severity gold-path gaps | **~97/100** in code (CMS seed-hides, deep experience rules, Mermaid DOMPurify, Admin-only PII, CSP + Live S2S, CI SAST) |
-| Observability | Product telemetry + SRE hooks | **~95/100** (Prometheus `/api/metrics`, RAG/voice/S2S transcript/CSP counters, request IDs, JSON logs, Sentry/Slack, `/api/status` snapshot) |
-| Product polish | Recruiter-ready + control map | **~95/100** (Portfolio Architecture hub, CMS, dual voice with Owner Chat PTT/S2S transcripts, accents) |
-| **Overall** | World-class personal security portfolio | **~96/100** |
+| Security | Defense-in-depth, no known high-severity gold-path gaps | **~98/100** (code + **live** App Check enforce, Admin-only PII, CMS seed-hides, CSP + Live S2S, CI SAST/Trivy, rules/indexes in prod) |
+| Observability | Product telemetry + SRE hooks | **~97/100** (Prometheus `/api/metrics`, RAG/voice/CSP counters, Sentry/Slack live, `STRICT_PROD_HARDENING`, UptimeRobot on `/api/uptime`, `/api/status` snapshot) |
+| Product polish | Recruiter-ready + control map | **~95/100** (Portfolio Architecture hub, CMS, dual voice + Owner Chat PTT/S2S tags, accents) |
+| **Overall** | World-class personal security portfolio | **~97/100** |
 
-**Why not 99?** Remaining points are *production proof*, not missing features:
+Live proof (same day): `/api/health` gold path **10/10**, `productionReady: true`, `/api/uptime` **ok** under strict mode.
 
-1. Firebase Console **App Check Enforcement** on for Firestore  
-2. Live `SENTRY_DSN` + Slack webhook + Upstash Redis/Vector + Turnstile + `SESSION_SECRET` + Grok secrets in Cloud Run  
-3. External uptime vendor green for **30 days** on `/api/uptime`  
-4. Optional: enable `CSP_STRICT_STYLES=true` after `/api/csp-report` is quiet (style-src-elem/attr split; default stays compatible so React/Motion cannot blank the page)
+**Why not 99?** Only *time-based / optional* residual — not missing controls:
 
-Inflating the score to 99 without those would be dishonest — and recruiters who can read rules/logs will notice.
+1. UptimeRobot green for **~30 consecutive days** (monitor is live; clock starts now)  
+2. Optional: `CSP_STRICT_STYLES=true` after `/api/csp-report` is quiet for style-src-elem/attr  
 
 ```mermaid
 %%{init: {'theme': 'neutral'}}%%
@@ -33,9 +33,9 @@ quadrantChart
     quadrant-2 Harden next
     quadrant-3 Early stage
     quadrant-4 Observe next
-    This portfolio: [0.94, 0.97]
+    This portfolio: [0.97, 0.98]
     Typical personal site: [0.15, 0.25]
-    Ops-proven target: [0.96, 0.97]
+    Ops-proven target: [0.97, 0.98]
 ```
 
 ---
@@ -44,51 +44,57 @@ quadrantChart
 
 | Dimension | Score | Rationale |
 |-----------|------:|-----------|
-| **Security** | **97** | Prior gold path + CMS seed-hides (no soft-delete body leak), deep experience role rules, Mermaid SVG sanitize, `cms_mutated` audit, CI SAST/Trivy |
-| **Observability** | **95** | Prometheus `/api/metrics` (+ optional `METRICS_TOKEN`), chat RAG/LLM/voice/CSP/client-error counters, S2S transcript counter, structured chat/voice logs, `/api/status.observability` |
-| **Feature polish** | **95** | Owner CMS hub, Portfolio Architecture, dual voice with PTT/S2S thread logging in Owner Chat, accents |
-| **Hiring narrative** | **94** | Live control map + gold-path + metrics exposition |
-| **Overall** | **96** | Ops checklist below unlocks ~97–98 |
+| **Security** | **98** | Prior gold path + CMS seed-hides, deep experience rules, Mermaid DOMPurify, `cms_mutated` audit, App Check **enforced**, rules/indexes deployed, CI SAST/Trivy |
+| **Observability** | **97** | Prometheus `/api/metrics`, voice/RAG/CSP counters, Sentry + Slack **live**, STRICT health/uptime fail-closed, UptimeRobot external probe, `/api/status.observability` |
+| **Feature polish** | **95** | Owner CMS hub, Portfolio Architecture, dual voice with PTT/S2S thread logging, accents |
+| **Hiring narrative** | **96** | Live control map + gold-path 10/10 + metrics + uptime vendor |
+| **Overall** | **97** | Duration (30‑day uptime) + optional CSP strict styles left for 98–99 |
+
+### What moved the needle this reassessment
+
+| Before (code-ready) | After (ops-proven) |
+|---------------------|--------------------|
+| App Check site key only | **Enforcement on** Firestore |
+| Secrets documented | **Secret Manager → Cloud Run** (gold path 10/10) |
+| `STRICT_PROD_HARDENING` optional | **Enabled** — health/uptime 503 if gold path breaks |
+| `/api/uptime` exists | **UptimeRobot** monitor + email alerts |
+| Manual `firebase deploy` | Deployed + **CI auto-deploy on `main`** (#56) |
 
 ---
 
-## Closed in this pass
+## Closed (code + ops)
 
 - Client **PII creates denied** (`cv_downloads` / `contact_messages` → Admin SDK only)  
 - **`portfolio_settings/public`** UX slice vs **`global`** owner policy  
-- IP intel **HTTPS-only** (ipwho.is → ipapi.co)  
-- CSP **`report-uri`** + **Report-Only** (no `unsafe-inline` scripts; style elem/attr telemetry) for migration  
-- Optional **`CSP_STRICT_STYLES`** kill-switch for enforcing `style-src-elem` / `style-src-attr` split  
-- Production CSP **`wss://api.x.ai`** for Live S2S + CI **CSP headers smoke**  
-- Dual voice: PTT + Live S2S; amber accent hover-only remaps; maintenance banner stacking  
-- `/api/uptime` probe for external monitors  
-- Portfolio Architecture hub (`#architecture` / `#security`) with Mermaid + live readiness  
-- Portfolio CMS hub (`#owner/cms/<tab>`) + seed hides / soft-delete hardening  
-- Prometheus `GET /api/metrics` + richer chat/voice/CSP counters  
-- **Voice channel logging:** PTT tagged `channel:ptt`; Live S2S start notice + captions via receipt-gated `/api/chat/voice/realtime-log`; Owner Chat All/Text/PTT/S2S filters (no raw audio)  
-- **CI split into separate checks:** SemVer, typecheck, unit/coverage, audit, build, CSP, bundle size (~6.5 MiB), Firestore rules lint + emulator tests, Gitleaks, Bandit, Semgrep, CodeQL, Docker, Trivy — [CI.md](./CI.md)
+- IP intel **HTTPS-only**; CSP report-uri + Report-Only; optional `CSP_STRICT_STYLES`  
+- Production CSP **`wss://api.x.ai`** for Live S2S + CI CSP smoke  
+- Dual voice: PTT + Live S2S; Owner Chat channel tags (text / PTT / S2S)  
+- Portfolio Architecture hub + Portfolio CMS + seed-hide soft-delete  
+- Prometheus `GET /api/metrics` + structured chat/voice/CSP logs  
+- **Ops:** App Check enforce · secrets green · `STRICT_PROD_HARDENING` · UptimeRobot · rules/indexes live  
+- **CI:** separate PR gates; `main` deploys Cloud Run (+ Firestore rules/indexes with #56) — [CI.md](./CI.md)
+
+Vendor inventory (incl. UptimeRobot, Sentry, Slack): [EXTERNAL_TOOLS_AND_COSTS.md](./EXTERNAL_TOOLS_AND_COSTS.md).
 
 ---
 
-## Remaining (ops, not code)
+## Ops checklist (production)
 
-| Item | Action |
+| Item | Status |
 |------|--------|
-| App Check Enforcement | Firebase Console → App Check → Firestore Enforce |
-| Secrets green | Turnstile, SESSION_SECRET, Redis, Vector, Grok, Admin JSON, Sentry, Slack |
-| `STRICT_PROD_HARDENING=true` | Health/uptime return 503 if gold path incomplete |
-| External uptime | Point Better Stack / UptimeRobot at `https://www.mohammedsufyan.com/api/uptime` |
-| Deploy rules + indexes | `firestore.rules` + `firestore.indexes.json` |
-| CI/CD | All separate PR checks green + merge-to-`main` auto-deploys Cloud Run (WIF) — see [ARCHITECTURE.md](./ARCHITECTURE.md#cicd) |
+| App Check Enforcement | **Done** |
+| Secrets green (Secret Manager → Cloud Run) | **Done** (gold path 10/10) |
+| `STRICT_PROD_HARDENING=true` | **Done** |
+| External uptime (UptimeRobot → `/api/uptime`) | **Done** (accumulate ~30 days green) |
+| Deploy rules + indexes | **Done** (manual + automated on `main` via #56) |
+| CI/CD | **Done** — [CI.md](./CI.md) |
 
 ---
 
-## Path from 95 → mid-90s
+## Residual (not blockers)
 
-1. Deploy rules; confirm Admin writes appear in Owner Console after a test OTP.  
-2. Enable App Check Enforcement.  
-3. Set observability secrets; confirm Slack on a test live-chat alert.  
-4. Attach an uptime check for 7–30 days.  
-5. Confirm Live Call on production after CSP deploy (`wss://api.x.ai`).  
+1. Keep UptimeRobot green for **7–30 days**.  
+2. Optionally enable `CSP_STRICT_STYLES=true` after Report-Only is quiet.  
+3. Spot-check Live Call + Owner Chat filters after each deploy.
 
-Then you can honestly say **~96–97 production gold path** — still not a magical 99, and that honesty is the engineering signal.
+Honest ceiling without theater: **~97 now**, **~98** after a month of clean uptime — still not a magical 99.

@@ -69,6 +69,22 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint:rules
+      - name: Validate firestore.indexes.json
+        run: |
+          set -euo pipefail
+          node -e "
+            const fs = require('fs');
+            const raw = fs.readFileSync('firestore.indexes.json', 'utf8');
+            const parsed = JSON.parse(raw);
+            if (!parsed || typeof parsed !== 'object') throw new Error('indexes root must be an object');
+            if (!Array.isArray(parsed.indexes)) throw new Error('indexes.indexes must be an array');
+            for (const [i, idx] of parsed.indexes.entries()) {
+              if (!idx.collectionGroup || !Array.isArray(idx.fields) || idx.fields.length < 1) {
+                throw new Error('indexes[' + i + '] missing collectionGroup/fields');
+              }
+            }
+            console.log('OK: firestore.indexes.json (' + parsed.indexes.length + ' indexes)');
+          "
 
   unit-tests:
     name: Unit tests
@@ -382,6 +398,23 @@ jobs:
 
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Deploy Firestore rules and indexes
+        env:
+          PROJECT: ${{ vars.GCP_PROJECT || 'mohammed-sufyan-portfolio' }}
+          GOOGLE_CLOUD_QUOTA_PROJECT: ${{ vars.GCP_PROJECT || 'mohammed-sufyan-portfolio' }}
+        run: |
+          set -euo pipefail
+          # ADC from WIF (google-github-actions/auth). No Firebase CI token required.
+          npm install --global firebase-tools@15
+          firebase deploy \
+            --only firestore:rules,firestore:indexes \
+            --project "$PROJECT" \
+            --non-interactive
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3

@@ -36,13 +36,16 @@ flowchart TB
     SMTP[Custom SMTP]
   end
 
-  subgraph Optional["Optional hardening / AI"]
+  subgraph Optional["Optional hardening / AI / ops"]
     Redis[(Upstash Redis)]
     Vector[(Upstash Vector<br/>chat RAG)]
     AppCheck[App Check<br/>reCAPTCHA Enterprise]
     Grok[Grok xAI API]
     Groq[Groq Whisper STT]
     Eleven[ElevenLabs TTS]
+    Sentry[Sentry]
+    Slack[Slack alerts]
+    Uptime[UptimeRobot<br/>/api/uptime]
   end
 
   Visitor --> CF --> CR
@@ -58,6 +61,9 @@ flowchart TB
   CR --> Grok
   CR --> Groq
   CR --> Eleven
+  CR --> Sentry
+  CR --> Slack
+  Uptime --> CR
   Admin --> FS
   AppCheck --> FS
   GH --> CR
@@ -82,10 +88,13 @@ flowchart TB
 | 11 | **Grok (xAI) API** | Optional chat answer enrichment over retrieved context | Optional | Pay-as-you-go / prepaid credits |
 | 12 | **Groq Whisper** | Optional voice-agent speech-to-text (`GROQ_API_KEY`) | Optional (voice) | Yes (Free plan rate limits) |
 | 13 | **ElevenLabs TTS** | Optional cloud voice replies (`ELEVENLABS_API_KEY`); browser TTS fallback | Optional (voice) | Yes (Free ~10k credits/mo) |
-| 14 | **GitHub Actions** | Separate PR checks (SemVer, typecheck, tests, coverage, CSP, bundle size, rules, SAST, Docker/Trivy) + deploy on `main` — [CI.md](./CI.md) | Yes | Yes (public repos generous) |
-| 15 | **Artifact Registry / Cloud Build** | Used by `gcloud run deploy --source .` from Actions | Yes (with CD) | Small free/low cost |
-| 16 | **Google Domains / Registrar** | Domain registration (DNS may point at Cloudflare) | Domain ownership | At-cost renewal (not “free”) |
-| 17 | **FormSubmit** | Legacy fallback only — **disabled by default** | No (`ALLOW_FORMSUBMIT_FALLBACK=false`) | N/A — keep off |
+| 14 | **GitHub Actions** | Separate PR checks (SemVer, typecheck, tests, coverage, CSP, bundle size, rules, SAST, Docker/Trivy) + deploy Firestore rules/indexes + Cloud Run on `main` — [CI.md](./CI.md) | Yes | Yes (public repos generous) |
+| 15 | **Artifact Registry / Cloud Build** | Used by Docker image push / Cloud Run deploy from Actions | Yes (with CD) | Small free/low cost |
+| 16 | **Sentry** | Server error reporting (`SENTRY_DSN`) | Recommended (gold path) | Yes (Free developer tier) |
+| 17 | **Slack** | Urgent/warning owner alerts (`SLACK_ALERT_WEBHOOK_URL`) | Recommended (gold path) | Workspace plan (webhook free) |
+| 18 | **UptimeRobot** | External HTTP monitor on `GET /api/uptime` (5‑min checks, email on down) | Recommended (ops proof) | Yes (Free: 50 monitors) |
+| 19 | **Google Domains / Registrar** | Domain registration (DNS may point at Cloudflare) | Domain ownership | At-cost renewal (not “free”) |
+| 20 | **FormSubmit** | Legacy fallback only — **disabled by default** | No (`ALLOW_FORMSUBMIT_FALLBACK=false`) | N/A — keep off |
 
 ---
 
@@ -134,8 +143,9 @@ flowchart LR
 | Chat RAG | `UPSTASH_VECTOR_REST_*` → Vector retrieve; keyword fallback |
 | Chat LLM | `GROK_API_KEY` + owner toggle `enableChatLlm` (default model `grok-4.3`) |
 | Voice agent | PTT: `GROQ_API_KEY` + optional `ELEVENLABS_*` + `enableVoiceAgent`; Live S2S: `enableVoiceRealtime` + Grok (`wss://api.x.ai`) |
-| Observability | `SENTRY_DSN`, `SLACK_ALERT_WEBHOOK_URL`, optional `METRICS_TOKEN` for `GET /api/metrics` |
-| CI/CD | Separate checks: SemVer, typecheck, Vitest, coverage, CSP smoke, bundle size (~6.5 MiB), Firestore rules tests, audit, SAST, Docker/Trivy; `main`: Cloud Run deploy (WIF) — [CI.md](./CI.md) |
+| Observability | `SENTRY_DSN`, `SLACK_ALERT_WEBHOOK_URL`, optional `METRICS_TOKEN` for `GET /api/metrics`; `STRICT_PROD_HARDENING=true` (plain env, not a secret) |
+| External uptime | UptimeRobot → `https://www.mohammedsufyan.com/api/uptime` (expect HTTP 200; HEAD or GET) |
+| CI/CD | Separate PR checks + indexes JSON validate; `main`: Firestore rules/indexes deploy + Cloud Run (WIF) — [CI.md](./CI.md) |
 
 ---
 
@@ -308,9 +318,39 @@ flowchart LR
 | Firestore rules tests | Java + Firebase emulator |
 | Gitleaks / Bandit / Semgrep / CodeQL | Secret + SAST |
 | Docker build → Trivy | Image artifact then CRITICAL/HIGH scan |
-| Deploy Cloud Run | **`main` only** — WIF deploy + API/SPA smoke + GitHub Release |
+| Deploy Firestore + Cloud Run | **`main` only** — WIF → `firebase deploy` rules/indexes → image deploy + smoke + GitHub Release |
 
-One-time GCP setup: `./scripts/setup-github-actions-deploy.sh` (deploy SA + WIF). GitHub secrets: `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_SERVICE_ACCOUNT`.
+One-time GCP setup: `./scripts/setup-github-actions-deploy.sh` (deploy SA + WIF + `firebaserules.admin` / `datastore.indexAdmin`). GitHub secrets: `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_SERVICE_ACCOUNT`.
+
+---
+
+### 12. UptimeRobot (external uptime)
+
+| Plan | Price | Limits relevant here |
+|------|-------|----------------------|
+| **Free** | **$0** | 50 monitors, **5‑min** interval, email alerts |
+| Paid | from ~$7/mo | Faster intervals, SMS/voice, status pages |
+
+**Portfolio config (live):**
+- Monitor URL: `https://www.mohammedsufyan.com/api/uptime`
+- Method: **HEAD** (Express `app.get` also answers HEAD) or GET
+- Expect: **HTTP 2xx** (with `STRICT_PROD_HARDENING=true`, gold-path gaps return **503**)
+- Alerts: email → `sufyan.net@gmail.com`
+
+**When it pages:** Cloud Run down, edge failure, or gold-path incomplete under strict mode.
+
+**Upgrade trigger:** Almost never for a personal portfolio — Free is enough.
+
+---
+
+### 13. Sentry + Slack (observability)
+
+| Service | Free usable? | Role |
+|---------|--------------|------|
+| **Sentry** | Yes (developer) | `SENTRY_DSN` — server exceptions |
+| **Slack** | Incoming webhook | `SLACK_ALERT_WEBHOOK_URL` — urgent/warning owner alerts |
+
+Wired via Secret Manager → Cloud Run (`./scripts/wire-observability-secrets.sh`).
 
 ---
 
@@ -380,6 +420,8 @@ flowchart TD
     V2[Upstash Redis: REST URL + token]
     V3[Upstash Vector: REST URL + token]
     V4[xAI/Grok: API key + prepaid credits]
+    V5[Sentry DSN + Slack webhook]
+    V6[UptimeRobot → /api/uptime]
   end
 
   subgraph GitHub["GitHub"]
@@ -389,6 +431,7 @@ flowchart TD
   Cloudflare --> GCP
   Vendors --> GCP
   GitHub --> GCP
+  V6 --> GCP
 ```
 
 Detailed click-path steps: **[SECURITY_CONFIGURATION.md](./SECURITY_CONFIGURATION.md)**.
@@ -454,3 +497,4 @@ flowchart TD
 - [Cloud Run pricing](https://cloud.google.com/run/pricing)
 - [xAI / Grok API](https://x.ai/api) · [xAI docs](https://docs.x.ai/)
 - [GitHub Actions](https://docs.github.com/en/actions)
+- [UptimeRobot](https://uptimerobot.com) · [Sentry](https://sentry.io) · [Slack incoming webhooks](https://api.slack.com/messaging/webhooks)
