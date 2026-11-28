@@ -161,17 +161,18 @@ const LAYERS: LayerDetail[] = [
     design: [
       'X-Request-Id on every response + structured JSON logs (chat RAG / voice / CSP).',
       'GET /api/metrics exposes Prometheus counters; optional METRICS_TOKEN gate.',
-      'Owner Console surfaces funnel, CRM triage, chat, CMS, and audit history.',
-      'Optional Sentry DSN and Slack urgent/warning webhooks.',
+      'Owner Console surfaces funnel, CRM triage, chat (text / PTT / S2S), CMS, and audit history.',
+      'Sentry DSN + Slack urgent/warning webhooks on the gold path.',
       '/api/status exposes boolean gold-path readiness + observability snapshot — never secrets.',
-      'Mermaid architecture SVGs are DOMPurify-sanitized before DOM insert.',
+      'STRICT_PROD_HARDENING makes /api/health and /api/uptime return 503 if gold path is incomplete.',
+      'UptimeRobot probes GET /api/uptime; Mermaid SVGs are DOMPurify-sanitized before DOM insert.',
     ],
     items: [
       'X-Request-Id + structured JSON logs',
       'Prometheus GET /api/metrics (+ optional token)',
-      'Owner Console funnel / CRM / CMS / chat / audit trail',
-      'Optional Sentry DSN + Slack urgent/warning webhooks',
-      'Gold-path checklist + observability on /api/status',
+      'Owner Console funnel / CRM / CMS / chat (PTT·S2S) / audit',
+      'Sentry + Slack + UptimeRobot /api/uptime',
+      'Gold-path checklist + STRICT_PROD_HARDENING',
     ],
   },
 ];
@@ -185,9 +186,9 @@ const PLATFORM: PlatformPillar[] = [
     summary: 'React + Vite SPA with motion, PWA, CV Studio, and owner console.',
     bullets: [
       'Public portfolio, CV Studio, command palette, digital card',
-      'Chat widget · voice agent · live owner handoff',
-      'Owner Console: CMS, funnel, triage, site controls',
-      'Theme: light/dark · cyan/amber accents',
+      'Chat widget · dual voice (PTT + Live S2S) · live owner handoff',
+      'Owner Console: CMS, funnel, triage, chat channel filters',
+      'Portfolio Architecture map (#architecture / #security)',
     ],
   },
   {
@@ -199,7 +200,7 @@ const PLATFORM: PlatformPillar[] = [
     bullets: [
       'CSP · origin · Turnstile · honeypot · UA denylist',
       '/api/chat · /api/contact · /api/cv-* · /api/owner/* · /api/metrics',
-      'HMAC OTP + MX verification on gated flows',
+      '/api/uptime · /api/health (STRICT_PROD_HARDENING aware)',
       'Fail-closed Upstash rate limits & shared quotas',
     ],
   },
@@ -212,8 +213,8 @@ const PLATFORM: PlatformPillar[] = [
     bullets: [
       'Firestore: leads, CV logs, announcements, portfolio_* CMS',
       'Seed hides + deleted==false for public CMS reads',
+      'Rules + indexes deploy on main via GitHub Actions (WIF)',
       'Upstash Redis: OTP, limits, policy, hot cache',
-      'Owner metrics + chat cache across Cloud Run replicas',
     ],
   },
   {
@@ -225,8 +226,8 @@ const PLATFORM: PlatformPillar[] = [
     bullets: [
       'Upstash Vector RAG + keyword hybrid fallback',
       'Grok enrich · Live S2S (wss://api.x.ai) · Groq Whisper · ElevenLabs',
+      'PTT/S2S captions tagged in Owner Chat (no raw audio)',
       'Resend / SMTP for OTP and owner replies',
-      'Cloudflare Turnstile on registration / OTP gates',
     ],
   },
 ];

@@ -36,7 +36,7 @@ flowchart LR
 | Event | What runs |
 |-------|-----------|
 | **Pull request → `main`** | All checks except Deploy |
-| **Push / merge → `main`** | Same checks (SemVer skipped) + **Deploy Cloud Run** + release tag |
+| **Push / merge → `main`** | Same checks (SemVer skipped) + **Firestore rules/indexes deploy** + **Deploy Cloud Run** + release tag |
 
 Concurrency: one run per branch/ref; newer PR pushes cancel in-progress runs.
 
@@ -53,9 +53,9 @@ Concurrency: one run per branch/ref; newer PR pushes cancel in-progress runs.
 - **Significance:** Catches TypeScript breakage before runtime.
 - **How:** `npm ci` → `npm run lint` (`tsc --noEmit`).
 
-### Firestore rules lint
-- **Significance:** Static lint of `firestore.rules` (deny-by-default schemas).
-- **How:** `npm run lint:rules` (ESLint Firebase rules plugin).
+### Firestore rules lint (+ indexes JSON)
+- **Significance:** Static lint of `firestore.rules` and shape-check of `firestore.indexes.json` on every PR — **no prod deploy**.
+- **How:** `npm run lint:rules` (ESLint Firebase rules plugin) + Node parse/validate of indexes JSON.
 
 ### Unit tests
 - **Significance:** Fast regression suite for server security, chat, voice, governance utils, theme accents.
@@ -109,9 +109,10 @@ Concurrency: one run per branch/ref; newer PR pushes cancel in-progress runs.
 - **Significance:** Blocks CRITICAL/HIGH OS/library/misconfig/secret findings in the image.
 - **How:** Load saved image → `aquasecurity/trivy-action` with `exit-code: 1`.
 
-### Deploy Cloud Run (`main` only)
+### Deploy Cloud Run + Firestore (`main` only)
 - **Significance:** Production delivery after all gates.
-- **How:** Workload Identity → build/push Artifact Registry image → `gcloud run deploy` → smoke `/api/uptime`, `/api/health`, `/api/status`, `/api/chat/status` + SPA Firebase `apiKey` bake check → create `v*` tag + GitHub Release if missing.
+- **How:** Workload Identity → **`firebase deploy --only firestore:rules,firestore:indexes`** (ADC; no Firebase CI token) → build/push Artifact Registry image → `gcloud run deploy` → smoke `/api/uptime`, `/api/health`, `/api/status`, `/api/chat/status` + SPA Firebase `apiKey` bake check → create `v*` tag + GitHub Release if missing.
+- **IAM:** deploy SA has `roles/firebaserules.admin` + `roles/datastore.indexAdmin` (granted; also in `scripts/setup-github-actions-deploy.sh` for new setups).
 
 ---
 
