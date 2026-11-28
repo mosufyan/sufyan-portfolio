@@ -62,9 +62,36 @@ type AdminFirestoreModule = {
   };
 };
 
+type DecodedSessionCookie = {
+  uid: string;
+  email?: string;
+  email_verified?: boolean;
+  auth_time?: number;
+  iat?: number;
+  exp?: number;
+  sub?: string;
+};
+
+type AdminAuthLike = {
+  createSessionCookie: (
+    idToken: string,
+    options: { expiresIn: number }
+  ) => Promise<string>;
+  verifySessionCookie: (
+    sessionCookie: string,
+    checkRevoked?: boolean
+  ) => Promise<DecodedSessionCookie>;
+};
+
+type AdminAuthModule = {
+  getAuth: (app?: AdminApp) => AdminAuthLike;
+};
+
 let adminAppModule: AdminAppModule | null = null;
 let firestoreModule: AdminFirestoreModule | null = null;
+let authModule: AdminAuthModule | null = null;
 let firestore: FirestoreLike | null = null;
+let adminAuth: AdminAuthLike | null = null;
 let initAttempted = false;
 
 function readConfiguredFirestoreDatabaseId(): string {
@@ -99,8 +126,11 @@ function tryInitAdmin(): boolean {
     const appMod = require('firebase-admin/app') as AdminAppModule;
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const fsMod = require('firebase-admin/firestore') as AdminFirestoreModule;
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const authMod = require('firebase-admin/auth') as AdminAuthModule;
     adminAppModule = appMod;
     firestoreModule = fsMod;
+    authModule = authMod;
 
     const credential = inlineJson
       ? appMod.cert(JSON.parse(inlineJson) as object)
@@ -108,6 +138,7 @@ function tryInitAdmin(): boolean {
 
     const existing = appMod.getApps();
     const app = existing.length > 0 ? existing[0] : appMod.initializeApp({ credential });
+    adminAuth = authMod.getAuth(app);
 
     const databaseId = readConfiguredFirestoreDatabaseId();
     firestore =
@@ -119,13 +150,57 @@ function tryInitAdmin(): boolean {
     console.error('Firebase Admin init failed; client Firestore writes remain active:', error);
     adminAppModule = null;
     firestoreModule = null;
+    authModule = null;
     firestore = null;
+    adminAuth = null;
     return false;
   }
 }
 
 export function isFirebaseAdminConfigured(): boolean {
   return tryInitAdmin();
+}
+
+export function isFirebaseAdminAuthReady(): boolean {
+  return tryInitAdmin() && adminAuth != null;
+}
+
+export async function adminCreateSessionCookie(
+  idToken: string,
+  expiresInMs: number
+): Promise<string | null> {
+  if (!tryInitAdmin() || !adminAuth) return null;
+  try {
+    return await adminAuth.createSessionCookie(idToken, { expiresIn: expiresInMs });
+  } catch (error) {
+    console.error('Admin createSessionCookie failed:', error);
+    return null;
+  }
+}
+
+export async function adminVerifySessionCookie(
+  sessionCookie: string,
+  checkRevoked = true
+): Promise<DecodedSessionCookie | null> {
+  if (!tryInitAdmin() || !adminAuth) return null;
+  try {
+    return await adminAuth.verifySessionCookie(sessionCookie, checkRevoked);
+  } catch (error) {
+    console.error('Admin verifySessionCookie failed:', error);
+    return null;
+  }
+}
+
+/** True when admins/{uid} exists (delegate console access). */
+export async function adminDelegateExists(uid: string): Promise<boolean> {
+  if (!tryInitAdmin() || !firestore || !uid.trim()) return false;
+  try {
+    const snap = await firestore.collection('admins').doc(uid.trim()).get();
+    return snap.exists;
+  } catch (error) {
+    console.error('Admin admins/{uid} read failed:', error);
+    return false;
+  }
 }
 
 export async function adminWriteCvDownload(

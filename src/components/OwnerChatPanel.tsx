@@ -68,8 +68,9 @@ export default function OwnerChatPanel({ isLight }: { isLight: boolean }) {
     if (!user) return;
     try {
       const headers = await authHeaders();
-      await fetch('/api/owner/presence', { method: 'POST', headers }).catch(() => {});
-      const res = await fetch('/api/owner/chat/sessions', { headers });
+      await fetch('/api/owner/presence', { credentials: 'include',
+          method: 'POST', headers }).catch(() => {});
+      const res = await fetch('/api/owner/chat/sessions', { credentials: 'include', headers });
       const data = (await res.json().catch(() => ({}))) as {
         error?: string;
         stats?: ChatStats;
@@ -109,7 +110,8 @@ export default function OwnerChatPanel({ isLight }: { isLight: boolean }) {
     try {
       const headers = await authHeaders();
       const res = await fetch('/api/owner/chat/reply', {
-        method: 'POST',
+        credentials: 'include',
+          method: 'POST',
         headers,
         body: JSON.stringify({ sessionId: selected.sessionId, text: reply.trim() }),
       });
@@ -136,7 +138,8 @@ export default function OwnerChatPanel({ isLight }: { isLight: boolean }) {
     try {
       const headers = await authHeaders();
       const res = await fetch('/api/owner/chat/close', {
-        method: 'POST',
+        credentials: 'include',
+          method: 'POST',
         headers,
         body: JSON.stringify({ sessionId: selected.sessionId }),
       });

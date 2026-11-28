@@ -73,6 +73,7 @@ export default function OwnerConsolePage({
         const token = await user.getIdToken();
         if (cancelled) return;
         await fetch('/api/owner/presence', {
+          credentials: 'include',
           method: 'POST',
           headers: {
             Authorization: `Bearer ${token}`,

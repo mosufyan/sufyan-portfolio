@@ -166,9 +166,17 @@ html[data-accent='amber'] :is(.site-theme, .site-overlay) .group-hover\:border-c
 html[data-accent='amber'] :is(.site-theme, .site-overlay) .group:hover .group-hover\:border-cyan-400\/60,
 html[data-accent='amber'] :is(.site-theme, .site-overlay) .group-hover\:border-cyan-500\/30:hover,
 html[data-accent='amber'] :is(.site-theme, .site-overlay) .group:hover .group-hover\:border-cyan-500\/30,
+html[data-accent='amber'] :is(.site-theme, .site-overlay) .focus\:border-cyan-300:focus,
+html[data-accent='amber'] :is(.site-theme, .site-overlay) .focus\:border-cyan-400:focus,
 html[data-accent='amber'] :is(.site-theme, .site-overlay) .focus\:border-cyan-500:focus,
+html[data-accent='amber'] :is(.site-theme, .site-overlay) .focus\:border-sky-400:focus,
 html[data-accent='amber'] :is(.site-theme, .site-overlay) .focus\:border-sky-500:focus {
-  border-color: rgb(245 158 11 / 0.55) !important;
+  border-color: #f59e0b !important;
+}
+
+/* Cyan focus glows used on contact/chat fields → amber */
+html[data-accent='amber'] :is(.site-theme, .site-overlay) .focus\:shadow-\[0_0_0_3px_rgba\(34\,211\,238\,0\.18\)\]:focus {
+  box-shadow: 0 0 0 3px rgb(245 158 11 / 0.22) !important;
 }
 
 html[data-accent='amber'] :is(.site-theme, .site-overlay) .border-t-cyan-300,
@@ -234,11 +242,15 @@ html[data-accent='amber'] :is(.site-theme, .site-overlay) .shadow-\[0_0_45px_rgb
   box-shadow: 0 0 14px rgb(245 158 11 / 0.35) !important;
 }
 
+html[data-accent='amber'] :is(.site-theme, .site-overlay) .ring-cyan-400\/40,
 html[data-accent='amber'] :is(.site-theme, .site-overlay) .ring-cyan-500,
 html[data-accent='amber'] :is(.site-theme, .site-overlay) .focus\:ring-cyan-500:focus,
 html[data-accent='amber'] :is(.site-theme, .site-overlay) .focus\:ring-cyan-300:focus,
 html[data-accent='amber'] :is(.site-theme, .site-overlay) .focus-visible\:ring-cyan-300:focus-visible,
+html[data-accent='amber'] :is(.site-theme, .site-overlay) .focus-visible\:ring-cyan-400:focus-visible,
 html[data-accent='amber'] :is(.site-theme, .site-overlay) .ring-sky-500\/60,
+html[data-accent='amber'] :is(.site-theme, .site-overlay) .focus\:border-cyan-300:focus,
+html[data-accent='amber'] :is(.site-theme, .site-overlay) .focus\:border-cyan-400:focus,
 html[data-accent='amber'] :is(.site-theme, .site-overlay) .focus\:border-cyan-500:focus {
   --tw-ring-color: #f59e0b;
   border-color: #f59e0b !important;

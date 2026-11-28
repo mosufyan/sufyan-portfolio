@@ -56,7 +56,8 @@ export default function OwnerAlertsPanel({
       const idToken = await user.getIdToken();
       const body = buildDigestText({ funnel, alerts, telemetry });
       const res = await fetch('/api/owner/digest-email', {
-        method: 'POST',
+        credentials: 'include',
+          method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${idToken}`,
