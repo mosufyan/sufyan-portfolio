@@ -25,6 +25,7 @@ import { useTheme } from '../theme/ThemeProvider';
 import { useFirebase } from '../contexts/FirebaseContext';
 import { OWNER_EMAIL } from '../utils/announcementValidation';
 import { EASE_OUT_EXPO } from './MotionPrimitives';
+import BrandMark from './BrandMark';
 import ThemeAppearanceMenu from './ThemeAppearanceMenu';
 import { toUserFacingError } from '../utils/userFacingError';
 
@@ -282,14 +283,7 @@ export default function Navbar({
           aria-label="Scroll to top / Return to portfolio"
           title="Back to Portfolio Top"
         >
-          <motion.div
-            whileHover={{ scale: 1.06 }}
-            whileTap={{ scale: 0.96 }}
-            transition={{ duration: 0.2, ease: EASE_OUT_EXPO }}
-            className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-500/20 to-blue-600/30 border border-cyan-500/30 text-cyan-400 font-bold font-display text-sm tracking-wider shadow-sm shadow-cyan-500/10 group-hover:border-cyan-400/60 group-hover:shadow-cyan-500/25 transition-colors"
-          >
-            MS
-          </motion.div>
+          <BrandMark size="md" className="shadow-sm shadow-cyan-500/10" />
         </a>
 
         {/* Full desktop nav — xl+ only to avoid crush on tablets / small laptops */}

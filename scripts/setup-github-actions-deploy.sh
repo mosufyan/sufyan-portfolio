@@ -30,7 +30,9 @@ for ROLE in \
   roles/storage.admin \
   roles/secretmanager.secretAccessor \
   roles/firebaserules.admin \
-  roles/datastore.indexAdmin
+  roles/datastore.indexAdmin \
+  roles/serviceusage.serviceUsageViewer \
+  roles/serviceusage.serviceUsageConsumer
 do
   gcloud projects add-iam-policy-binding "$PROJECT" \
     --member="serviceAccount:${SA_EMAIL}" \

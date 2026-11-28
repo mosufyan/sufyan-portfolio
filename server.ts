@@ -3253,10 +3253,11 @@ async function startServer() {
     const rawTrack = typeof req.query.track === 'string' ? req.query.track : undefined;
     const track = normalizeShareTrack(rawTrack);
     const theme = req.query.theme === 'light' ? 'light' : 'dark';
+    const accent = req.query.accent === 'amber' ? 'amber' : 'cyan';
     const skillLabel =
       typeof req.query.skill === 'string' ? req.query.skill.slice(0, 60) : undefined;
     bumpSiteTelemetry('og_share', track);
-    const svg = buildDynamicSocialSvg({ track, theme, skillLabel });
+    const svg = buildDynamicSocialSvg({ track, theme, accent, skillLabel });
     res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8');
     res.setHeader('Cache-Control', 'public, max-age=300');
     res.status(200).send(svg);

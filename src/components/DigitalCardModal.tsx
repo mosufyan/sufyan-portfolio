@@ -20,6 +20,7 @@ import {
 import { PERSONAL_INFO } from '../data/portfolioData';
 import { useTheme } from '../theme/ThemeProvider';
 import { buildVCardString, downloadVCard, PORTFOLIO_CANONICAL_URL } from '../utils/vcard';
+import { brandMarkDataUrl } from '../brand/brandMark';
 import { SHARE_CARD_TRACKS, type ShareTrackId } from '../utils/ogShare';
 import { useModalPlacement } from '../hooks/useModalPlacement';
 import ModalHeaderScan from './ModalHeaderScan';
@@ -204,15 +205,25 @@ export default function DigitalCardModal({ isOpen, onClose }: DigitalCardModalPr
       ctx.fill();
       ctx.stroke();
 
-      // Brand badge
-      ctx.fillStyle = accentSoft;
-      ctx.beginPath();
-      ctx.roundRect(92, 92, 56, 56, 14);
-      ctx.fill();
-      ctx.fillStyle = accent;
-      ctx.font = 'bold 22px system-ui, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('MS', 120, 128);
+      // Brand badge — accent-aware hexagon + MS tile
+      const brandImg = new Image();
+      await new Promise<void>((resolve) => {
+        brandImg.onload = () => resolve();
+        brandImg.onerror = () => resolve();
+        brandImg.src = brandMarkDataUrl(accent);
+      });
+      if (brandImg.naturalWidth > 0) {
+        ctx.drawImage(brandImg, 92, 92, 56, 56);
+      } else {
+        ctx.fillStyle = accentSoft;
+        ctx.beginPath();
+        ctx.roundRect(92, 92, 56, 56, 14);
+        ctx.fill();
+        ctx.fillStyle = accent;
+        ctx.font = 'bold 22px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('MS', 120, 128);
+      }
 
       ctx.textAlign = 'left';
       ctx.fillStyle = accent;
