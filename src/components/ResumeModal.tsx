@@ -7,6 +7,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useModalPlacement } from '../hooks/useModalPlacement';
 import ModalHeaderScan from './ModalHeaderScan';
 import { EASE_OUT_EXPO } from './MotionPrimitives';
+import BrandMark from './BrandMark';
 import ShineSurface from './ShineSurface';
 import ThemeSymbol from './ThemeSymbol';
 import {
@@ -1790,13 +1791,7 @@ export default function ResumeModal({
           <ModalHeaderScan active={isOpen} />
           <div className="flex items-center justify-between gap-2 sm:gap-3 min-w-0">
             <div className="flex items-center gap-2.5 min-w-0 flex-1">
-              <motion.div
-                whileHover={{ rotate: 360, scale: 1.06 }}
-                transition={{ rotate: { duration: 0.65, ease: EASE_OUT_EXPO }, scale: { type: 'spring', stiffness: 400, damping: 20 } }}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-500/20 to-blue-600/30 border border-cyan-500/30 text-cyan-400 font-bold font-display text-xs"
-              >
-                MS
-              </motion.div>
+              <BrandMark size="sm" />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-display font-bold text-white text-[13px] sm:text-base leading-tight">

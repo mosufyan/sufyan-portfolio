@@ -1,3 +1,4 @@
+import { brandMarkSvgSnippet } from '../brand/brandMark';
 import { PERSONAL_INFO } from '../data/portfolioData';
 
 export type ShareTrackId = 'executive' | 'security' | 'platform' | 'ai';
@@ -119,8 +120,7 @@ export function buildDynamicSocialSvg(options: {
   <rect x="44" y="44" width="1112" height="542" rx="28" fill="${cardBg}" fill-opacity="0.94" stroke="${border}" stroke-width="1.5" />
 
   <!-- Brand Mark -->
-  <rect x="96" y="96" width="56" height="56" rx="14" fill="${accentSoft}" stroke="${accentBorder}" stroke-opacity="0.55" />
-  <text x="124" y="133" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="24" font-weight="800" fill="${accent}">MS</text>
+  ${brandMarkSvgSnippet(96, 96, 56)}
 
   <text x="172" y="120" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="700" letter-spacing="2.2" fill="${accent}">VERIFIED ARCHITECT PORTFOLIO</text>
   <text x="172" y="145" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" fill="${mutedColor}">www.mohammedsufyan.com</text>

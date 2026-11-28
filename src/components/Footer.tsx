@@ -5,6 +5,7 @@ import { PERSONAL_INFO } from '../data/portfolioData';
 import { APP_VERSION_LABEL } from '../version';
 import { useFirebase } from '../contexts/FirebaseContext';
 import { HoverLift, Reveal } from './MotionPrimitives';
+import BrandMark from './BrandMark';
 import PWAInstallButton from './PWAInstallButton';
 
 interface FooterProps {
@@ -26,16 +27,7 @@ export default function Footer({ onOpenDigitalCard, onOpenTerminal, onOpenSecuri
           {/* Col 1: Brand & Synopsis */}
           <div className="md:col-span-5 space-y-4">
             <HoverLift className="inline-flex items-center gap-2.5">
-              <motion.div
-                whileHover={{ scale: 1.08, rotate: 360 }}
-                transition={{
-                  scale: { type: 'spring', stiffness: 400, damping: 20 },
-                  rotate: { duration: 0.65, ease: [0.22, 1, 0.36, 1] },
-                }}
-                className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-lg bg-cyan-950/60 border border-cyan-500/40 text-cyan-400 font-bold font-display text-xs"
-              >
-                MS
-              </motion.div>
+              <BrandMark size="md" />
               <span className="font-display font-bold text-sm sm:text-base min-[2560px]:text-lg text-white tracking-tight">
                 MOHAMMED SUFYAN
               </span>

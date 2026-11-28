@@ -204,15 +204,32 @@ export default function DigitalCardModal({ isOpen, onClose }: DigitalCardModalPr
       ctx.fill();
       ctx.stroke();
 
-      // Brand badge
-      ctx.fillStyle = accentSoft;
-      ctx.beginPath();
-      ctx.roundRect(92, 92, 56, 56, 14);
-      ctx.fill();
-      ctx.fillStyle = accent;
-      ctx.font = 'bold 22px system-ui, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('MS', 120, 128);
+      // Brand badge — full cyan hexagon + MS tile
+      const brandImg = new Image();
+      brandImg.crossOrigin = 'anonymous';
+      await new Promise<void>((resolve) => {
+        brandImg.onload = () => resolve();
+        brandImg.onerror = () => resolve();
+        // PNG is more reliable than SVG for canvas drawImage across browsers.
+        brandImg.src = '/pwa-192x192.png';
+      });
+      if (brandImg.naturalWidth > 0) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.roundRect(92, 92, 56, 56, 12);
+        ctx.clip();
+        ctx.drawImage(brandImg, 92, 92, 56, 56);
+        ctx.restore();
+      } else {
+        ctx.fillStyle = accentSoft;
+        ctx.beginPath();
+        ctx.roundRect(92, 92, 56, 56, 14);
+        ctx.fill();
+        ctx.fillStyle = accent;
+        ctx.font = 'bold 22px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('MS', 120, 128);
+      }
 
       ctx.textAlign = 'left';
       ctx.fillStyle = accent;
