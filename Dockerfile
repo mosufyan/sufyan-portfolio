@@ -1,6 +1,6 @@
 # Multi-stage image for Cloud Run (free-tier friendly: small runtime, scale-to-zero)
-# Pin by digest (node:22-bookworm-slim @ 2026-11-11) for supply-chain integrity.
-FROM node:22-bookworm-slim@sha256:e9f565d32859f0cbfb52125eafe8be39390f24dac302dc3cdf566e8ba3ab21ee AS build
+# Pin by digest (node:22-bookworm-slim @ 2026-11-24) for supply-chain integrity.
+FROM node:22-bookworm-slim@sha256:be979e5523c76fa4d5ca4ebd3099078f220aa47ec39c48ad5b5df9314debd6eb AS build
 WORKDIR /app
 
 COPY package.json package-lock.json .npmrc ./
@@ -20,7 +20,7 @@ ENV VITE_FIREBASE_API_KEY=$VITE_FIREBASE_API_KEY \
 # Generate src/vitePublicEnv.generated.ts then build the SPA.
 RUN node scripts/write-vite-public-env.mjs && npm run build
 
-FROM node:22-bookworm-slim@sha256:e9f565d32859f0cbfb52125eafe8be39390f24dac302dc3cdf566e8ba3ab21ee AS runtime
+FROM node:22-bookworm-slim@sha256:be979e5523c76fa4d5ca4ebd3099078f220aa47ec39c48ad5b5df9314debd6eb AS runtime
 WORKDIR /app
 
 ENV NODE_ENV=production
@@ -32,7 +32,11 @@ COPY package.json package-lock.json .npmrc ./
 # Install app deps, then remove the base image's npm/corepack toolchain so Trivy
 # (and the runtime) are not blocked by CVEs in unused package-manager packages.
 # .npmrc (legacy-peer-deps) must be present — npm ci validates the full lockfile.
-RUN npm ci --omit=dev \
+# apt upgrade pulls Debian security fixes on top of the pinned slim base (Trivy HIGH/CRITICAL).
+RUN apt-get update \
+  && apt-get upgrade -y --no-install-recommends \
+  && rm -rf /var/lib/apt/lists/* \
+  && npm ci --omit=dev \
   && npm cache clean --force \
   && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
   && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack

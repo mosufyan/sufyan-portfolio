@@ -38,6 +38,10 @@ import {
   OperationType,
 } from '../firebase';
 import {
+  establishOwnerServerSession,
+  logoutOwnerServerSession,
+} from '../utils/ownerServerSession';
+import {
   generateAnnouncementId,
   isAnnouncementPubliclyVisible,
   isPortfolioOwner,
@@ -253,6 +257,24 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
 
   const isOwner = isPrimaryOwner || isDelegateAdmin;
   ownerAccessRef.current = isOwner;
+
+  // Exchange Firebase ID token for HttpOnly owner session cookie (idle + absolute TTLs).
+  useEffect(() => {
+    if (!authReady || !isOwner || !user) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const idToken = await user.getIdToken();
+        if (cancelled) return;
+        await establishOwnerServerSession(idToken);
+      } catch {
+        /* non-fatal — API calls may fall back in local/dev without Admin Auth */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [authReady, isOwner, user]);
 
   useEffect(() => {
     if (!authReady) return;
@@ -706,6 +728,7 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
         const idToken = await targetUser.getIdToken();
         const res = await fetch('/api/owner/policy-sync', {
           method: 'POST',
+          credentials: 'include',
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${idToken}`,
@@ -785,6 +808,12 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
 
   const signInAsOwner = useCallback(async () => {
     const cred = await signInWithPopup(auth, googleProvider);
+    const idToken = await cred.user.getIdToken();
+    const session = await establishOwnerServerSession(idToken);
+    if (!session.ok) {
+      await signOut(auth);
+      throw new Error(session.error || 'Unable to create owner server session.');
+    }
     if (isPortfolioOwner(cred.user)) {
       const host = typeof window !== 'undefined' ? window.location.hostname : 'unknown';
       await recordAdminAudit('owner_login', `Owner console sign-in from ${host}`, cred.user).catch(
@@ -801,6 +830,7 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
         const token = await currentUser.getIdToken();
         await fetch('/api/owner/presence', {
           method: 'POST',
+          credentials: 'include',
           headers: {
             Authorization: `Bearer ${token}`,
             'Content-Type': 'application/json',
@@ -819,6 +849,7 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
       );
     }
     lastPolicyDigestRef.current = '';
+    await logoutOwnerServerSession();
     await signOut(auth);
   }, [recordAdminAudit]);
 

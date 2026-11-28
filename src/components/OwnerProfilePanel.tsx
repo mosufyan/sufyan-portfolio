@@ -89,6 +89,7 @@ export default function OwnerProfilePanel({
         if (!user) return;
         const idToken = await user.getIdToken();
         const res = await fetch('/api/owner/chat/sessions', {
+          credentials: 'include',
           headers: { Authorization: `Bearer ${idToken}` },
         });
         if (!res.ok) return;
@@ -471,7 +472,8 @@ export function useOwnerOpsHealth(enabled: boolean) {
             if (!r.ok) return null;
             return (await r.json()) as { turnstileSiteKey?: string; otpSupported?: boolean };
           }),
-          fetch('/api/owner/telemetry', { headers: authHeaders })
+          fetch('/api/owner/telemetry', { credentials: 'include',
+          headers: authHeaders })
             .then(async (r) => (r.ok ? ((await r.json()) as SiteTelemetrySnapshot) : null))
             .catch(() => null),
         ]);

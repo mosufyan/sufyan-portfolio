@@ -76,14 +76,33 @@ import {
   structuredLog,
 } from './server/observability.ts';
 import {
+  adminCreateSessionCookie,
+  adminDelegateExists,
   adminGetContactMessage,
   adminLoadSiteTelemetry,
   adminMarkContactReplied,
   adminSaveSiteTelemetry,
+  adminVerifySessionCookie,
   adminWriteContactMessage,
   adminWriteCvDownload,
+  isFirebaseAdminAuthReady,
   isFirebaseAdminConfigured,
 } from './server/firebaseAdmin.ts';
+import {
+  OWNER_SESSION_ABSOLUTE_TTL_MS,
+  OWNER_SESSION_IDLE_TTL_MS,
+} from './server/ownerSessionPolicy.ts';
+import {
+  assessOwnerSessionMeta,
+  buildClearOwnerSessionCookieHeader,
+  buildOwnerSessionCookieHeader,
+  deleteOwnerSessionMeta,
+  ensureOwnerSessionMeta,
+  hashOwnerSessionCookie,
+  parseCookieHeader,
+  saveOwnerSessionMeta,
+  touchOwnerSessionMeta,
+} from './server/ownerSession.ts';
 import {
   SITE_TELEMETRY_REDIS_KEY,
   emptySiteTelemetry,
@@ -988,31 +1007,174 @@ async function verifyOwnerFirebaseIdToken(
   return { ok: true, email: verified.email, uid: verified.uid };
 }
 
-/** Primary owner or Firestore-confirmed delegate admin. */
+async function resolveConsoleActorRole(input: {
+  email: string;
+  uid: string;
+  rawIdToken?: string;
+}): Promise<{ ok: true; role: 'owner' | 'delegate' } | { ok: false; error: string }> {
+  if (input.email.toLowerCase() === DESTINATION_EMAIL.toLowerCase()) {
+    return { ok: true, role: 'owner' };
+  }
+
+  if (await adminDelegateExists(input.uid)) {
+    return { ok: true, role: 'delegate' };
+  }
+
+  if (input.rawIdToken) {
+    try {
+      const dbPath = encodeURIComponent(FIRESTORE_DATABASE_ID);
+      const url = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/${dbPath}/documents/admins/${encodeURIComponent(input.uid)}`;
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${input.rawIdToken}` },
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!res.ok) {
+        return { ok: false, error: 'Restricted to verified portfolio owner or delegate admin.' };
+      }
+      return { ok: true, role: 'delegate' };
+    } catch {
+      return { ok: false, error: 'Unable to verify console actor privileges.' };
+    }
+  }
+
+  return { ok: false, error: 'Restricted to verified portfolio owner or delegate admin.' };
+}
+
+/** Primary owner or Firestore-confirmed delegate admin (Firebase ID token). */
 async function verifyConsoleActorToken(
   authHeader: string | undefined
 ): Promise<{ ok: true; email: string; uid: string; role: 'owner' | 'delegate' } | { ok: false; error: string }> {
   const verified = await verifyFirebaseIdTokenPayload(authHeader);
   if (!verified.ok) return verified;
 
-  if (verified.email.toLowerCase() === DESTINATION_EMAIL.toLowerCase()) {
-    return { ok: true, email: verified.email, uid: verified.uid, role: 'owner' };
+  const roleCheck = await resolveConsoleActorRole({
+    email: verified.email,
+    uid: verified.uid,
+    rawIdToken: verified.rawToken,
+  });
+  if (!roleCheck.ok) return roleCheck;
+  return { ok: true, email: verified.email, uid: verified.uid, role: roleCheck.role };
+}
+
+type ConsoleActorOk = {
+  ok: true;
+  email: string;
+  uid: string;
+  role: 'owner' | 'delegate';
+  via: 'session' | 'idToken';
+  idleRemainingMs?: number;
+  absoluteRemainingMs?: number;
+  warn?: boolean;
+};
+
+type ConsoleActorErr = { ok: false; error: string; code?: string };
+
+/**
+ * Prefer Firebase session cookie (idle + absolute). Falls back to Bearer ID token
+ * only when Admin Auth session cookies are unavailable (local/dev).
+ */
+async function verifyConsoleActorRequest(
+  req: Request,
+  res: Response,
+  options: { refreshActivity?: boolean; allowIdTokenFallback?: boolean } = {}
+): Promise<ConsoleActorOk | ConsoleActorErr> {
+  const refreshActivity = options.refreshActivity !== false;
+  const allowIdTokenFallback = options.allowIdTokenFallback === true;
+  const secure = Boolean(req.secure || req.headers['x-forwarded-proto'] === 'https');
+  const sessionCookie = parseCookieHeader(
+    typeof req.headers.cookie === 'string' ? req.headers.cookie : undefined
+  );
+
+  if (sessionCookie && isFirebaseAdminAuthReady()) {
+    const decoded = await adminVerifySessionCookie(sessionCookie, true);
+    if (!decoded?.uid) {
+      res.setHeader('Set-Cookie', buildClearOwnerSessionCookieHeader(secure));
+      return { ok: false, error: 'Owner session expired. Please sign in again.', code: 'session_expired' };
+    }
+    const email =
+      typeof decoded.email === 'string' ? decoded.email.trim().toLowerCase() : '';
+    if (!email || decoded.email_verified === false) {
+      res.setHeader('Set-Cookie', buildClearOwnerSessionCookieHeader(secure));
+      return { ok: false, error: 'Verified email claim required.', code: 'session_expired' };
+    }
+
+    const roleCheck = await resolveConsoleActorRole({ email, uid: decoded.uid });
+    if (!roleCheck.ok) {
+      res.setHeader('Set-Cookie', buildClearOwnerSessionCookieHeader(secure));
+      return roleCheck;
+    }
+
+    const issuedAtMs =
+      typeof decoded.auth_time === 'number' && decoded.auth_time > 0
+        ? decoded.auth_time * 1000
+        : typeof decoded.iat === 'number' && decoded.iat > 0
+          ? decoded.iat * 1000
+          : Date.now();
+
+    const { meta, timing } = await ensureOwnerSessionMeta({
+      sessionCookie,
+      uid: decoded.uid,
+      email,
+      role: roleCheck.role,
+      issuedAt: issuedAtMs,
+    });
+
+    if (!timing.ok) {
+      await deleteOwnerSessionMeta(meta.sid);
+      res.setHeader('Set-Cookie', buildClearOwnerSessionCookieHeader(secure));
+      return {
+        ok: false,
+        error:
+          timing.reason === 'idle'
+            ? 'Owner session idle timeout. Please sign in again.'
+            : 'Owner session expired. Please sign in again.',
+        code: 'session_expired',
+      };
+    }
+
+    if (refreshActivity) {
+      const touched = touchOwnerSessionMeta(meta);
+      await saveOwnerSessionMeta(touched);
+      const refreshed = assessOwnerSessionMeta(touched);
+      return {
+        ok: true,
+        email,
+        uid: decoded.uid,
+        role: roleCheck.role,
+        via: 'session',
+        idleRemainingMs: refreshed.idleRemainingMs,
+        absoluteRemainingMs: refreshed.absoluteRemainingMs,
+        warn: refreshed.warn,
+      };
+    }
+
+    return {
+      ok: true,
+      email,
+      uid: decoded.uid,
+      role: roleCheck.role,
+      via: 'session',
+      idleRemainingMs: timing.idleRemainingMs,
+      absoluteRemainingMs: timing.absoluteRemainingMs,
+      warn: timing.warn,
+    };
   }
 
-  try {
-    const dbPath = encodeURIComponent(FIRESTORE_DATABASE_ID);
-    const url = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/${dbPath}/documents/admins/${encodeURIComponent(verified.uid)}`;
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${verified.rawToken}` },
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!res.ok) {
-      return { ok: false, error: 'Restricted to verified portfolio owner or delegate admin.' };
-    }
-    return { ok: true, email: verified.email, uid: verified.uid, role: 'delegate' };
-  } catch {
-    return { ok: false, error: 'Unable to verify console actor privileges.' };
+  if (isFirebaseAdminAuthReady() && !allowIdTokenFallback) {
+    return {
+      ok: false,
+      error: 'Owner session required. Please sign in again.',
+      code: 'session_required',
+    };
   }
+
+  const tokenAuth = await verifyConsoleActorToken(req.headers.authorization);
+  if (!tokenAuth.ok) return tokenAuth;
+  return { ...tokenAuth, via: 'idToken' };
+}
+
+function isOwnerRequestSecure(req: Request): boolean {
+  return Boolean(req.secure || req.headers['x-forwarded-proto'] === 'https');
 }
 
 interface ContactPayload {
@@ -2368,8 +2530,136 @@ async function startServer() {
     });
   });
 
+  app.post('/api/owner/session/login', async (req: Request, res: Response) => {
+    try {
+      if (rejectDisallowedOrigin(req, res)) return;
+      if (!req.is('application/json')) {
+        res.status(415).json({ error: 'Content-Type must be application/json.' });
+        return;
+      }
+      if (!isFirebaseAdminAuthReady()) {
+        res.status(503).json({ error: 'Owner session cookies require Firebase Admin Auth.' });
+        return;
+      }
+      const idToken =
+        typeof req.body?.idToken === 'string'
+          ? req.body.idToken.trim()
+          : typeof req.headers.authorization === 'string' &&
+              req.headers.authorization.startsWith('Bearer ')
+            ? req.headers.authorization.slice(7).trim()
+            : '';
+      if (!idToken) {
+        res.status(400).json({ error: 'Firebase ID token required.' });
+        return;
+      }
+      const verified = await verifyFirebaseIdTokenPayload(`Bearer ${idToken}`);
+      if (!verified.ok) {
+        res.status(401).json({ error: verified.error });
+        return;
+      }
+      const roleCheck = await resolveConsoleActorRole({
+        email: verified.email,
+        uid: verified.uid,
+        rawIdToken: verified.rawToken,
+      });
+      if (!roleCheck.ok) {
+        res.status(403).json({ error: roleCheck.error });
+        return;
+      }
+      if (
+        await enforceRateLimit(res, 'contact', `owner-session-login:${verified.uid}`, {
+          maxRequests: 20,
+          error: 'Owner session login rate limit exceeded.',
+        })
+      ) {
+        return;
+      }
+
+      const sessionCookie = await adminCreateSessionCookie(idToken, OWNER_SESSION_ABSOLUTE_TTL_MS);
+      if (!sessionCookie) {
+        res.status(500).json({ error: 'Failed to create owner session cookie.' });
+        return;
+      }
+      const now = Date.now();
+      const sid = hashOwnerSessionCookie(sessionCookie);
+      await saveOwnerSessionMeta({
+        sid,
+        uid: verified.uid,
+        email: verified.email,
+        role: roleCheck.role,
+        issuedAt: now,
+        lastActivityAt: now,
+      });
+      const secure = isOwnerRequestSecure(req);
+      res.setHeader(
+        'Set-Cookie',
+        buildOwnerSessionCookieHeader(sessionCookie, {
+          maxAgeSec: Math.floor(OWNER_SESSION_ABSOLUTE_TTL_MS / 1000),
+          secure,
+        })
+      );
+      res.status(200).json({
+        ok: true,
+        role: roleCheck.role,
+        idleRemainingMs: OWNER_SESSION_IDLE_TTL_MS,
+        absoluteRemainingMs: OWNER_SESSION_ABSOLUTE_TTL_MS,
+        warn: false,
+      });
+    } catch (error) {
+      console.error('owner session login failed:', error);
+      res.status(500).json({ error: 'Unable to create owner session.' });
+    }
+  });
+
+  app.get('/api/owner/session/status', async (req: Request, res: Response) => {
+    const authCheck = await verifyConsoleActorRequest(req, res, {
+      refreshActivity: false,
+      allowIdTokenFallback: true,
+    });
+    if (!authCheck.ok) {
+      res.status(401).json({ ok: false, error: authCheck.error, code: authCheck.code });
+      return;
+    }
+    res.status(200).json({
+      ok: true,
+      via: authCheck.via,
+      role: authCheck.role,
+      idleRemainingMs: authCheck.idleRemainingMs ?? null,
+      absoluteRemainingMs: authCheck.absoluteRemainingMs ?? null,
+      warn: Boolean(authCheck.warn),
+    });
+  });
+
+  app.post('/api/owner/session/touch', async (req: Request, res: Response) => {
+    if (rejectDisallowedOrigin(req, res)) return;
+    const authCheck = await verifyConsoleActorRequest(req, res, { refreshActivity: true });
+    if (!authCheck.ok) {
+      res.status(401).json({ ok: false, error: authCheck.error, code: authCheck.code });
+      return;
+    }
+    res.status(200).json({
+      ok: true,
+      idleRemainingMs: authCheck.idleRemainingMs ?? null,
+      absoluteRemainingMs: authCheck.absoluteRemainingMs ?? null,
+      warn: Boolean(authCheck.warn),
+    });
+  });
+
+  app.post('/api/owner/session/logout', async (req: Request, res: Response) => {
+    if (rejectDisallowedOrigin(req, res)) return;
+    const secure = isOwnerRequestSecure(req);
+    const sessionCookie = parseCookieHeader(
+      typeof req.headers.cookie === 'string' ? req.headers.cookie : undefined
+    );
+    if (sessionCookie) {
+      await deleteOwnerSessionMeta(hashOwnerSessionCookie(sessionCookie));
+    }
+    res.setHeader('Set-Cookie', buildClearOwnerSessionCookieHeader(secure));
+    res.status(200).json({ ok: true });
+  });
+
   app.get('/api/owner/observability', async (req: Request, res: Response) => {
-    const authCheck = await verifyConsoleActorToken(req.headers.authorization);
+    const authCheck = await verifyConsoleActorRequest(req, res);
     if (!authCheck.ok) {
       res.status(401).json({ error: authCheck.error });
       return;
@@ -2391,7 +2681,7 @@ async function startServer() {
   });
 
   app.get('/api/owner/telemetry', async (req: Request, res: Response) => {
-    const authCheck = await verifyConsoleActorToken(req.headers.authorization);
+    const authCheck = await verifyConsoleActorRequest(req, res);
     if (!authCheck.ok) {
       res.status(401).json({ error: authCheck.error });
       return;
@@ -2499,7 +2789,7 @@ async function startServer() {
         return;
       }
       if (rejectDisallowedOrigin(req, res)) return;
-      const authCheck = await verifyConsoleActorToken(req.headers.authorization);
+      const authCheck = await verifyConsoleActorRequest(req, res);
       if (!authCheck.ok) {
         res.status(401).json({ error: authCheck.error });
         return;
@@ -2562,9 +2852,13 @@ async function startServer() {
       }
       if (rejectDisallowedOrigin(req, res)) return;
 
-      const authCheck = await verifyOwnerFirebaseIdToken(req.headers.authorization);
+      const authCheck = await verifyConsoleActorRequest(req, res, { allowIdTokenFallback: true });
       if (!authCheck.ok) {
         res.status(401).json({ error: authCheck.error });
+        return;
+      }
+      if (authCheck.role !== 'owner') {
+        res.status(403).json({ error: 'Restricted to verified portfolio owner.' });
         return;
       }
       if (
@@ -2830,7 +3124,7 @@ async function startServer() {
       }
       if (rejectDisallowedOrigin(req, res)) return;
 
-      const authCheck = await verifyConsoleActorToken(req.headers.authorization);
+      const authCheck = await verifyConsoleActorRequest(req, res);
       if (!authCheck.ok) {
         res.status(401).json({ error: authCheck.error });
         return;
@@ -4966,7 +5260,7 @@ async function startServer() {
   });
 
   app.post('/api/owner/presence', async (req: Request, res: Response) => {
-    const authCheck = await verifyConsoleActorToken(req.headers.authorization);
+    const authCheck = await verifyConsoleActorRequest(req, res, { refreshActivity: false, allowIdTokenFallback: true });
     if (!authCheck.ok) {
       res.status(401).json({ error: authCheck.error });
       return;
@@ -4994,7 +5288,7 @@ async function startServer() {
   });
 
   app.get('/api/owner/chat/sessions', async (req: Request, res: Response) => {
-    const authCheck = await verifyConsoleActorToken(req.headers.authorization);
+    const authCheck = await verifyConsoleActorRequest(req, res);
     if (!authCheck.ok) {
       res.status(401).json({ error: authCheck.error });
       return;
@@ -5040,7 +5334,7 @@ async function startServer() {
         return;
       }
       if (rejectDisallowedOrigin(req, res)) return;
-      const authCheck = await verifyConsoleActorToken(req.headers.authorization);
+      const authCheck = await verifyConsoleActorRequest(req, res);
       if (!authCheck.ok) {
         res.status(401).json({ error: authCheck.error });
         return;
@@ -5074,7 +5368,7 @@ async function startServer() {
   });
 
   app.post('/api/owner/chat/close', async (req: Request, res: Response) => {
-    const authCheck = await verifyConsoleActorToken(req.headers.authorization);
+    const authCheck = await verifyConsoleActorRequest(req, res);
     if (!authCheck.ok) {
       res.status(401).json({ error: authCheck.error });
       return;

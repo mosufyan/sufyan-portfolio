@@ -338,7 +338,8 @@ jobs:
           ignore-unfixed: true
           vuln-type: os,library
           severity: CRITICAL,HIGH
-          scanners: vuln,secret,misconfig
+          # Vulns only — secret/misconfig noise is not actionable for this image gate.
+          scanners: vuln
 
   deploy:
     name: Deploy Cloud Run

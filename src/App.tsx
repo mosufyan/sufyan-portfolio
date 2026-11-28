@@ -21,6 +21,7 @@ import EngineeringTerminal from './components/EngineeringTerminal';
 import UnifiedScrollHud, { type PortfolioReadingMode } from './components/UnifiedScrollHud';
 import DigitalCardModal from './components/DigitalCardModal';
 import OwnerConsolePage from './components/OwnerConsolePage';
+import OwnerSessionGuard from './components/OwnerSessionGuard';
 import ChatWidget from './components/ChatWidget';
 import SecurityArchitectureModal from './components/SecurityArchitectureModal';
 import { Certification } from './data/portfolioData';
@@ -100,6 +101,7 @@ export default function App() {
         if (cancelled) return;
         await fetch('/api/owner/presence', {
           method: 'POST',
+          credentials: 'include',
           headers: {
             Authorization: `Bearer ${token}`,
             'Content-Type': 'application/json',
@@ -420,6 +422,7 @@ export default function App() {
         {/* Outside site-theme so light remapping cannot wash out dark chrome.
             site-overlay still receives accent remaps (amber/cyan) site-wide. */}
         <div className="site-overlay">
+          <OwnerSessionGuard />
           <CredentialModal
             certification={selectedCert}
             onClose={() => setSelectedCert(null)}
