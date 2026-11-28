@@ -27,6 +27,9 @@ import {
 import {
   announcementToAwardDraft,
   announcementToCertificationDraft,
+  EXPERIENCE_COMPANY_KEYS,
+  EXPERIENCE_COMPANY_LABELS,
+  type ExperienceCompanyKey,
 } from '../utils/portfolioContentValidation';
 import { EASE_OUT_EXPO } from './MotionPrimitives';
 import { toUserFacingError } from '../utils/userFacingError';
@@ -69,8 +72,13 @@ export default function OwnerAnnouncementsPanel({ isLight }: { isLight: boolean 
     deleteAnnouncement,
     importStarterAnnouncements,
   } = useFirebase();
-  const { upsertCertification, upsertAward, upsertDiscipline, saveCiscoRole, ciscoRole } =
-    usePortfolioContent();
+  const {
+    upsertCertification,
+    upsertAward,
+    upsertDiscipline,
+    saveCompanyExperience,
+    companyExperience,
+  } = usePortfolioContent();
 
   const [composerOpen, setComposerOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -79,7 +87,8 @@ export default function OwnerAnnouncementsPanel({ isLight }: { isLight: boolean 
   const [publishToCerts, setPublishToCerts] = useState(false);
   const [publishToAwards, setPublishToAwards] = useState(false);
   const [publishToDiscipline, setPublishToDiscipline] = useState(false);
-  const [publishToCisco, setPublishToCisco] = useState(false);
+  const [publishToExperience, setPublishToExperience] = useState(false);
+  const [experienceCompany, setExperienceCompany] = useState<ExperienceCompanyKey>('cisco');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
@@ -91,7 +100,8 @@ export default function OwnerAnnouncementsPanel({ isLight }: { isLight: boolean 
     setPublishToCerts(false);
     setPublishToAwards(false);
     setPublishToDiscipline(false);
-    setPublishToCisco(false);
+    setPublishToExperience(false);
+    setExperienceCompany('cisco');
     setFeedbackError(null);
     setFeedbackSuccess(null);
     setComposerOpen(true);
@@ -176,16 +186,25 @@ export default function OwnerAnnouncementsPanel({ isLight }: { isLight: boolean 
         });
         extras.push('disciplines');
       }
-      if (publishToCisco) {
-        await saveCiscoRole({
-          ...ciscoRole,
-          highlights: [
-            check.normalized.summary,
-            ...ciscoRole.highlights.filter((h) => h !== check.normalized.summary),
-          ].slice(0, 12),
+      if (publishToExperience) {
+        const base = companyExperience[experienceCompany];
+        const roles = [...base.roles];
+        if (roles[0]) {
+          roles[0] = {
+            ...roles[0],
+            highlights: [
+              check.normalized.summary,
+              ...roles[0].highlights.filter((h) => h !== check.normalized.summary),
+            ].slice(0, 12),
+          };
+        }
+        await saveCompanyExperience({
+          ...base,
+          companyKey: experienceCompany,
+          roles,
           sourceAnnouncementId: editingId || undefined,
         });
-        extras.push('Cisco role');
+        extras.push(`${EXPERIENCE_COMPANY_LABELS[experienceCompany]} experience`);
       }
 
       const base =
@@ -203,7 +222,7 @@ export default function OwnerAnnouncementsPanel({ isLight }: { isLight: boolean 
       setPublishToCerts(false);
       setPublishToAwards(false);
       setPublishToDiscipline(false);
-      setPublishToCisco(false);
+      setPublishToExperience(false);
     } catch (err) {
       setFeedbackError(
         toUserFacingError(err, 'Unable to save announcement. Please verify owner access.')
@@ -518,10 +537,10 @@ export default function OwnerAnnouncementsPanel({ isLight }: { isLight: boolean 
                       set: setPublishToDiscipline,
                     },
                     {
-                      id: 'cisco',
-                      label: 'Cisco current-role highlights',
-                      checked: publishToCisco,
-                      set: setPublishToCisco,
+                      id: 'experience',
+                      label: 'Experience highlight (company below)',
+                      checked: publishToExperience,
+                      set: setPublishToExperience,
                     },
                   ] as const
                 ).map((opt) => (
@@ -536,6 +555,19 @@ export default function OwnerAnnouncementsPanel({ isLight }: { isLight: boolean 
                   </label>
                 ))}
               </div>
+              {publishToExperience && (
+                <select
+                  value={experienceCompany}
+                  onChange={(e) => setExperienceCompany(e.target.value as ExperienceCompanyKey)}
+                  className={`w-full rounded-lg border px-3 py-2 text-xs font-mono focus:outline-none ${inputCls}`}
+                >
+                  {EXPERIENCE_COMPANY_KEYS.map((key) => (
+                    <option key={key} value={key}>
+                      Append highlight to {EXPERIENCE_COMPANY_LABELS[key]} (latest role)
+                    </option>
+                  ))}
+                </select>
+              )}
               <p className={`text-[10px] ${mutedCls}`}>
                 Creates/updates Firestore-backed portfolio entities (editable later in their console tabs).
               </p>

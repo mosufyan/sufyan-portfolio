@@ -33,8 +33,11 @@ import {
 } from '../data/portfolioData';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import {
-  applyCiscoRoleOverride,
+  applyExperienceOverrides,
+  experienceDraftToCiscoRole,
+  getAllStaticCompanyExperienceDrafts,
   getStaticCiscoRoleDraft,
+  getStaticCompanyExperienceDraft,
   mergeAwards,
   mergeAwardsByOrganization,
   mergeCertificationCategories,
@@ -50,18 +53,23 @@ import {
 import {
   awardDraftToRecord,
   certificationDraftToRecord,
+  EXPERIENCE_COMPANY_KEYS,
   generatePortfolioEntityId,
   isValidPortfolioEntityId,
   recommendationDraftToRecord,
+  sanitizeExperienceRoleDraft,
   validateAwardDraft,
   validateCertificationDraft,
   validateCiscoRoleDraft,
+  validateCompanyExperienceDraft,
   validateDisciplineDraft,
   validateRecommendationDraft,
   type AwardDraft,
   type CertificationDraft,
   type CiscoRoleDraft,
+  type CompanyExperienceDraft,
   type DisciplineDraft,
+  type ExperienceCompanyKey,
   type RecommendationDraft,
 } from '../utils/portfolioContentValidation';
 import { useFirebase } from './FirebaseContext';
@@ -74,6 +82,9 @@ interface PortfolioContentContextValue {
   recommendations: Recommendation[];
   disciplines: TechnicalDiscipline[];
   workExperience: CompanyExperience[];
+  /** Effective drafts per company (cloud override or static seed). */
+  companyExperience: Record<ExperienceCompanyKey, CompanyExperienceDraft>;
+  /** Convenience: Cisco first-role view (legacy + announcements). */
   ciscoRole: CiscoRoleDraft;
   loadingPortfolioContent: boolean;
   upsertCertification: (draft: CertificationDraft, id?: string) => Promise<string>;
@@ -84,6 +95,8 @@ interface PortfolioContentContextValue {
   deleteRecommendation: (id: string) => Promise<void>;
   upsertDiscipline: (draft: DisciplineDraft, id?: string) => Promise<string>;
   deleteDiscipline: (id: string) => Promise<void>;
+  saveCompanyExperience: (draft: CompanyExperienceDraft) => Promise<void>;
+  /** Updates Cisco company role 0 via portfolio_experience/cisco (and legacy doc). */
   saveCiscoRole: (draft: CiscoRoleDraft) => Promise<void>;
 }
 
@@ -159,13 +172,16 @@ export function PortfolioContentProvider({ children }: { children: ReactNode }) 
   const [cloudAwards, setCloudAwards] = useState<CloudAward[]>([]);
   const [cloudRecs, setCloudRecs] = useState<CloudRecommendation[]>([]);
   const [cloudDisciplines, setCloudDisciplines] = useState<CloudDiscipline[]>([]);
+  const [cloudExperience, setCloudExperience] = useState<
+    Partial<Record<ExperienceCompanyKey, CompanyExperienceDraft>>
+  >({});
   const [ciscoRoleCloud, setCiscoRoleCloud] = useState<CiscoRoleDraft | null>(null);
   const [loadingPortfolioContent, setLoadingPortfolioContent] = useState(true);
 
   useEffect(() => {
     if (!authReady) return;
     const unsubs: Array<() => void> = [];
-    let pending = 5;
+    let pending = 6;
     const markReady = () => {
       pending -= 1;
       if (pending <= 0) setLoadingPortfolioContent(false);
@@ -298,6 +314,42 @@ export function PortfolioContentProvider({ children }: { children: ReactNode }) 
     );
 
     unsubs.push(
+      onSnapshot(
+        collection(db, 'portfolio_experience'),
+        (snap) => {
+          const next: Partial<Record<ExperienceCompanyKey, CompanyExperienceDraft>> = {};
+          for (const d of snap.docs) {
+            if (!(EXPERIENCE_COMPANY_KEYS as readonly string[]).includes(d.id)) continue;
+            const data = d.data();
+            const companyKey = d.id as ExperienceCompanyKey;
+            const roles = Array.isArray(data.roles)
+              ? data.roles.map((role) =>
+                  sanitizeExperienceRoleDraft(
+                    role && typeof role === 'object'
+                      ? (role as Record<string, unknown>)
+                      : {}
+                  )
+                )
+              : [];
+            next[companyKey] = {
+              companyKey,
+              companyTag: String(data.companyTag || ''),
+              tenure: String(data.tenure || ''),
+              location: String(data.location || ''),
+              roles,
+              sourceAnnouncementId: data.sourceAnnouncementId
+                ? String(data.sourceAnnouncementId)
+                : undefined,
+            };
+          }
+          setCloudExperience(next);
+          markReady();
+        },
+        () => markReady()
+      )
+    );
+
+    unsubs.push(
       onSnapshot(doc(db, 'portfolio_cisco_role', 'current'), (snap) => {
         if (!snap.exists()) {
           setCiscoRoleCloud(null);
@@ -331,13 +383,26 @@ export function PortfolioContentProvider({ children }: { children: ReactNode }) 
   const awardsByOrganization = useMemo(() => mergeAwardsByOrganization(awards), [awards]);
   const recommendations = useMemo(() => mergeRecommendations(cloudRecs), [cloudRecs]);
   const disciplines = useMemo(() => mergeDisciplines(cloudDisciplines), [cloudDisciplines]);
-  const ciscoRole = useMemo(
-    () => ciscoRoleCloud || getStaticCiscoRoleDraft(),
-    [ciscoRoleCloud]
-  );
+  const companyExperience = useMemo(() => {
+    const seeds = getAllStaticCompanyExperienceDrafts();
+    return {
+      cisco: cloudExperience.cisco || seeds.cisco,
+      hcl: cloudExperience.hcl || seeds.hcl,
+      tcs: cloudExperience.tcs || seeds.tcs,
+    };
+  }, [cloudExperience]);
+  const ciscoRole = useMemo(() => {
+    const fromExperience = experienceDraftToCiscoRole(cloudExperience.cisco);
+    return fromExperience || ciscoRoleCloud || getStaticCiscoRoleDraft();
+  }, [cloudExperience.cisco, ciscoRoleCloud]);
   const workExperience = useMemo(
-    () => applyCiscoRoleOverride(WORK_EXPERIENCE, ciscoRoleCloud),
-    [ciscoRoleCloud]
+    () =>
+      applyExperienceOverrides(
+        WORK_EXPERIENCE,
+        cloudExperience,
+        cloudExperience.cisco ? null : ciscoRoleCloud
+      ),
+    [cloudExperience, ciscoRoleCloud]
   );
 
   const upsertCertification = useCallback(
@@ -543,11 +608,64 @@ export function PortfolioContentProvider({ children }: { children: ReactNode }) 
     [isOwner, user?.uid]
   );
 
+  const saveCompanyExperience = useCallback(
+    async (draft: CompanyExperienceDraft) => {
+      assertOwner(isOwner);
+      const validation = validateCompanyExperienceDraft(draft);
+      if (!validation.valid) throw new Error(validation.errors[0]);
+      try {
+        await upsertCloudDoc(
+          'portfolio_experience',
+          validation.normalized.companyKey,
+          {
+            companyKey: validation.normalized.companyKey,
+            companyTag: validation.normalized.companyTag,
+            tenure: validation.normalized.tenure,
+            location: validation.normalized.location,
+            roles: validation.normalized.roles,
+            sourceAnnouncementId: validation.normalized.sourceAnnouncementId || '',
+          },
+          user?.uid || ''
+        );
+      } catch (error) {
+        handleFirestoreError(
+          error,
+          OperationType.WRITE,
+          `portfolio_experience/${validation.normalized.companyKey}`
+        );
+      }
+    },
+    [isOwner, user?.uid]
+  );
+
   const saveCiscoRole = useCallback(
     async (draft: CiscoRoleDraft) => {
       assertOwner(isOwner);
       const validation = validateCiscoRoleDraft(draft);
       if (!validation.valid) throw new Error(validation.errors[0]);
+      const base = cloudExperience.cisco || getStaticCompanyExperienceDraft('cisco');
+      const roles = [...base.roles];
+      const first = roles[0] || sanitizeExperienceRoleDraft({});
+      roles[0] = {
+        ...first,
+        domain: validation.normalized.domain || first.domain,
+        proofMetric: validation.normalized.proofMetric || first.proofMetric,
+        recognitionBadge: validation.normalized.recognitionBadge || first.recognitionBadge,
+        highlights:
+          validation.normalized.highlights.length > 0
+            ? validation.normalized.highlights
+            : first.highlights,
+        technologies:
+          validation.normalized.technologies.length > 0
+            ? validation.normalized.technologies
+            : first.technologies,
+      };
+      await saveCompanyExperience({
+        ...base,
+        companyKey: 'cisco',
+        roles,
+        sourceAnnouncementId: validation.normalized.sourceAnnouncementId,
+      });
       try {
         await upsertCloudDoc(
           'portfolio_cisco_role',
@@ -558,11 +676,11 @@ export function PortfolioContentProvider({ children }: { children: ReactNode }) 
           },
           user?.uid || ''
         );
-      } catch (error) {
-        handleFirestoreError(error, OperationType.WRITE, 'portfolio_cisco_role/current');
+      } catch {
+        /* optional legacy mirror */
       }
     },
-    [isOwner, user?.uid]
+    [cloudExperience.cisco, isOwner, saveCompanyExperience, user?.uid]
   );
 
   const value = useMemo<PortfolioContentContextValue>(
@@ -574,6 +692,7 @@ export function PortfolioContentProvider({ children }: { children: ReactNode }) 
       recommendations,
       disciplines,
       workExperience,
+      companyExperience,
       ciscoRole,
       loadingPortfolioContent,
       upsertCertification,
@@ -584,6 +703,7 @@ export function PortfolioContentProvider({ children }: { children: ReactNode }) 
       deleteRecommendation,
       upsertDiscipline,
       deleteDiscipline,
+      saveCompanyExperience,
       saveCiscoRole,
     }),
     [
@@ -592,6 +712,7 @@ export function PortfolioContentProvider({ children }: { children: ReactNode }) 
       certificationCategories,
       certifications,
       ciscoRole,
+      companyExperience,
       deleteAward,
       deleteCertification,
       deleteDiscipline,
@@ -600,6 +721,7 @@ export function PortfolioContentProvider({ children }: { children: ReactNode }) 
       loadingPortfolioContent,
       recommendations,
       saveCiscoRole,
+      saveCompanyExperience,
       upsertAward,
       upsertCertification,
       upsertDiscipline,

@@ -87,7 +87,7 @@ export default function Footer({ onOpenDigitalCard, onOpenTerminal, onOpenSecuri
                     className="inline-flex items-center gap-1.5 hover:text-cyan-400 hover:translate-x-0.5 transition-all cursor-pointer"
                   >
                     <Shield className="w-3 h-3" />
-                    Security Architecture
+                    Portfolio Architecture
                   </button>
                 </li>
               )}

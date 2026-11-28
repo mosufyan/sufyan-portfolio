@@ -14,12 +14,15 @@ import {
 } from 'lucide-react';
 import { usePortfolioContent } from '../contexts/PortfolioContentContext';
 import {
+  EXPERIENCE_COMPANY_KEYS,
+  EXPERIENCE_COMPANY_LABELS,
   PORTFOLIO_CERT_CATEGORIES,
   PORTFOLIO_REC_TYPES,
   type AwardDraft,
   type CertificationDraft,
-  type CiscoRoleDraft,
   type DisciplineDraft,
+  type ExperienceCompanyKey,
+  type ExperienceRoleDraft,
   type RecommendationDraft,
 } from '../utils/portfolioContentValidation';
 import { toUserFacingError } from '../utils/userFacingError';
@@ -545,21 +548,73 @@ export function OwnerDisciplinesPanel({ isLight }: { isLight: boolean }) {
   );
 }
 
-export function OwnerCiscoRolePanel({ isLight }: { isLight: boolean }) {
-  const { ciscoRole, saveCiscoRole } = usePortfolioContent();
+export function OwnerExperiencePanel({ isLight }: { isLight: boolean }) {
+  const { companyExperience, saveCompanyExperience } = usePortfolioContent();
   const ui = usePanelChrome(isLight);
+  const [companyKey, setCompanyKey] = useState<ExperienceCompanyKey>('cisco');
+  const [roleIndex, setRoleIndex] = useState(0);
+  const [draft, setDraft] = useState(companyExperience.cisco);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [form, setForm] = useState<CiscoRoleDraft>(ciscoRole);
-  const [highlightsText, setHighlightsText] = useState(listToLines(ciscoRole.highlights));
-  const [techText, setTechText] = useState(ciscoRole.technologies.join(', '));
 
   useEffect(() => {
-    setForm(ciscoRole);
-    setHighlightsText(listToLines(ciscoRole.highlights));
-    setTechText(ciscoRole.technologies.join(', '));
-  }, [ciscoRole]);
+    setDraft(companyExperience[companyKey]);
+    setRoleIndex(0);
+  }, [companyExperience, companyKey]);
+
+  const role = draft.roles[roleIndex] || {
+    role: '',
+    period: '',
+    location: '',
+    employmentType: 'Full-time',
+    domain: '',
+    proofMetric: '',
+    recognitionBadge: '',
+    highlights: [],
+    technologies: [],
+  };
+
+  const updateRole = (patch: Partial<ExperienceRoleDraft>) => {
+    setDraft((prev) => {
+      const roles = [...prev.roles];
+      roles[roleIndex] = { ...role, ...patch };
+      return { ...prev, roles };
+    });
+  };
+
+  const addRole = () => {
+    setDraft((prev) => ({
+      ...prev,
+      roles: [
+        ...prev.roles,
+        {
+          role: 'New role',
+          period: 'Present',
+          location: prev.location || '',
+          employmentType: 'Full-time',
+          domain: '',
+          proofMetric: '',
+          recognitionBadge: '',
+          highlights: ['Describe the primary outcome for this role.'],
+          technologies: [],
+        },
+      ],
+    }));
+    setRoleIndex(draft.roles.length);
+  };
+
+  const removeRole = () => {
+    if (draft.roles.length <= 1) {
+      setError('Keep at least one role for this company.');
+      return;
+    }
+    setDraft((prev) => {
+      const roles = prev.roles.filter((_, i) => i !== roleIndex);
+      return { ...prev, roles };
+    });
+    setRoleIndex((idx) => Math.max(0, idx - 1));
+  };
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -567,14 +622,10 @@ export function OwnerCiscoRolePanel({ isLight }: { isLight: boolean }) {
     setBusy(true);
     setError(null);
     try {
-      await saveCiscoRole({
-        ...form,
-        highlights: linesToList(highlightsText),
-        technologies: techText.split(',').map((t) => t.trim()).filter(Boolean),
-      });
-      setSuccess('Cisco current-role highlights saved to Firestore.');
+      await saveCompanyExperience({ ...draft, companyKey });
+      setSuccess(`${EXPERIENCE_COMPANY_LABELS[companyKey]} experience saved to Firestore.`);
     } catch (err) {
-      setError(toUserFacingError(err, 'Unable to save Cisco role.'));
+      setError(toUserFacingError(err, 'Unable to save company experience.'));
     } finally {
       setBusy(false);
     }
@@ -586,27 +637,170 @@ export function OwnerCiscoRolePanel({ isLight }: { isLight: boolean }) {
         <div className="flex items-start gap-2.5">
           <Briefcase className={`w-4 h-4 mt-0.5 ${ui.accentCls}`} />
           <div>
-            <h3 className={`text-sm font-display font-bold ${ui.titleCls}`}>Current Role · Cisco Highlights</h3>
+            <h3 className={`text-sm font-display font-bold ${ui.titleCls}`}>
+              Professional Experience Editor
+            </h3>
             <p className={`text-xs ${ui.mutedCls}`}>
-              Update Project Atlas highlights, domain, proof metrics, and technologies. Persisted and merged live.
+              Edit Cisco, HCL, or TCS company metadata and every role. Saves persist in Firestore and
+              override seed data on the public timeline.
             </p>
           </div>
         </div>
       </div>
+
+      <div className={`flex flex-wrap gap-2 rounded-xl border p-2 ${ui.toolbar}`}>
+        {EXPERIENCE_COMPANY_KEYS.map((key) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setCompanyKey(key)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-mono transition-colors cursor-pointer ${
+              companyKey === key
+                ? 'bg-[#38bdf8] text-slate-950 font-semibold'
+                : isLight
+                  ? 'text-slate-600 hover:bg-white'
+                  : 'text-slate-300 hover:bg-slate-900'
+            }`}
+          >
+            {EXPERIENCE_COMPANY_LABELS[key]}
+          </button>
+        ))}
+      </div>
+
       <Feedback error={error} success={success} isLight={isLight} />
-      <form onSubmit={onSubmit} className={`rounded-xl border p-4 space-y-3 ${ui.toolbar}`}>
-        <input className={`w-full rounded-lg border px-3 py-2 text-xs focus:outline-none focus-visible:ring-2 ${ui.inputCls}`} placeholder="Domain" value={form.domain} onChange={(e) => setForm((p) => ({ ...p, domain: e.target.value }))} />
-        <input className={`w-full rounded-lg border px-3 py-2 text-xs focus:outline-none focus-visible:ring-2 ${ui.inputCls}`} placeholder="Proof metric" value={form.proofMetric} onChange={(e) => setForm((p) => ({ ...p, proofMetric: e.target.value }))} />
-        <input className={`w-full rounded-lg border px-3 py-2 text-xs focus:outline-none focus-visible:ring-2 ${ui.inputCls}`} placeholder="Recognition badge (optional)" value={form.recognitionBadge} onChange={(e) => setForm((p) => ({ ...p, recognitionBadge: e.target.value }))} />
-        <textarea className={`w-full rounded-lg border px-3 py-2 text-xs focus:outline-none focus-visible:ring-2 resize-y min-h-32 ${ui.inputCls}`} placeholder="Highlights (one per line)" value={highlightsText} onChange={(e) => setHighlightsText(e.target.value)} />
-        <input className={`w-full rounded-lg border px-3 py-2 text-xs focus:outline-none focus-visible:ring-2 ${ui.inputCls}`} placeholder="Technologies (comma-separated)" value={techText} onChange={(e) => setTechText(e.target.value)} />
+
+      <form onSubmit={onSubmit} className={`rounded-xl border p-4 space-y-4 ${ui.toolbar}`}>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <input
+            className={`w-full rounded-lg border px-3 py-2 text-xs focus:outline-none focus-visible:ring-2 ${ui.inputCls}`}
+            placeholder="Company tag"
+            value={draft.companyTag}
+            onChange={(e) => setDraft((p) => ({ ...p, companyTag: e.target.value }))}
+          />
+          <input
+            className={`w-full rounded-lg border px-3 py-2 text-xs focus:outline-none focus-visible:ring-2 ${ui.inputCls}`}
+            placeholder="Tenure label"
+            value={draft.tenure}
+            onChange={(e) => setDraft((p) => ({ ...p, tenure: e.target.value }))}
+          />
+          <input
+            className={`w-full rounded-lg border px-3 py-2 text-xs focus:outline-none focus-visible:ring-2 ${ui.inputCls}`}
+            placeholder="Company location"
+            value={draft.location}
+            onChange={(e) => setDraft((p) => ({ ...p, location: e.target.value }))}
+          />
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <span className={`text-[11px] font-mono uppercase ${ui.mutedCls}`}>Roles</span>
+          {draft.roles.map((r, idx) => (
+            <button
+              key={`${r.role}-${idx}`}
+              type="button"
+              onClick={() => setRoleIndex(idx)}
+              className={`px-2.5 py-1 rounded-lg border text-[11px] cursor-pointer ${
+                roleIndex === idx
+                  ? isLight
+                    ? 'border-sky-400 bg-sky-50 text-sky-800'
+                    : 'border-cyan-500/50 bg-cyan-950/40 text-cyan-200'
+                  : isLight
+                    ? 'border-slate-200'
+                    : 'border-slate-700'
+              }`}
+            >
+              {idx + 1}. {r.role || 'Untitled'}
+            </button>
+          ))}
+          <button type="button" onClick={addRole} className={ui.primaryBtn}>
+            <Plus className="w-3.5 h-3.5" /> Add role
+          </button>
+          <button
+            type="button"
+            onClick={removeRole}
+            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[11px] ${
+              isLight ? 'border-rose-300 text-rose-700' : 'border-rose-500/40 text-rose-300'
+            }`}
+          >
+            <Trash2 className="w-3 h-3" /> Remove role
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <input
+            className={`w-full rounded-lg border px-3 py-2 text-xs focus:outline-none focus-visible:ring-2 ${ui.inputCls}`}
+            required
+            placeholder="Role title *"
+            value={role.role}
+            onChange={(e) => updateRole({ role: e.target.value })}
+          />
+          <input
+            className={`w-full rounded-lg border px-3 py-2 text-xs focus:outline-none focus-visible:ring-2 ${ui.inputCls}`}
+            required
+            placeholder="Period *"
+            value={role.period}
+            onChange={(e) => updateRole({ period: e.target.value })}
+          />
+          <input
+            className={`w-full rounded-lg border px-3 py-2 text-xs focus:outline-none focus-visible:ring-2 ${ui.inputCls}`}
+            placeholder="Location"
+            value={role.location}
+            onChange={(e) => updateRole({ location: e.target.value })}
+          />
+          <input
+            className={`w-full rounded-lg border px-3 py-2 text-xs focus:outline-none focus-visible:ring-2 ${ui.inputCls}`}
+            placeholder="Employment type"
+            value={role.employmentType}
+            onChange={(e) => updateRole({ employmentType: e.target.value })}
+          />
+          <input
+            className={`w-full rounded-lg border px-3 py-2 text-xs focus:outline-none focus-visible:ring-2 ${ui.inputCls}`}
+            placeholder="Domain"
+            value={role.domain}
+            onChange={(e) => updateRole({ domain: e.target.value })}
+          />
+          <input
+            className={`w-full rounded-lg border px-3 py-2 text-xs focus:outline-none focus-visible:ring-2 ${ui.inputCls}`}
+            placeholder="Proof metric"
+            value={role.proofMetric}
+            onChange={(e) => updateRole({ proofMetric: e.target.value })}
+          />
+        </div>
+        <input
+          className={`w-full rounded-lg border px-3 py-2 text-xs focus:outline-none focus-visible:ring-2 ${ui.inputCls}`}
+          placeholder="Recognition badge (optional)"
+          value={role.recognitionBadge}
+          onChange={(e) => updateRole({ recognitionBadge: e.target.value })}
+        />
+        <textarea
+          className={`w-full rounded-lg border px-3 py-2 text-xs focus:outline-none focus-visible:ring-2 resize-y min-h-28 ${ui.inputCls}`}
+          placeholder="Highlights (one per line) *"
+          value={listToLines(role.highlights)}
+          onChange={(e) => updateRole({ highlights: linesToList(e.target.value) })}
+        />
+        <input
+          className={`w-full rounded-lg border px-3 py-2 text-xs focus:outline-none focus-visible:ring-2 ${ui.inputCls}`}
+          placeholder="Technologies (comma-separated)"
+          value={role.technologies.join(', ')}
+          onChange={(e) =>
+            updateRole({
+              technologies: e.target.value
+                .split(',')
+                .map((t) => t.trim())
+                .filter(Boolean),
+            })
+          }
+        />
+
         <div className="flex justify-end">
           <button type="submit" disabled={busy} className={ui.primaryBtn}>
             {busy && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-            <span>Save Current Role</span>
+            <span>Save {EXPERIENCE_COMPANY_LABELS[companyKey]}</span>
           </button>
         </div>
       </form>
     </div>
   );
 }
+
+/** @deprecated Use OwnerExperiencePanel — kept as alias for older imports. */
+export const OwnerCiscoRolePanel = OwnerExperiencePanel;

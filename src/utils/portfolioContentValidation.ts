@@ -12,9 +12,25 @@ export const PORTFOLIO_PUBLISH_TARGETS = [
   'awards',
   'recommendations',
   'disciplines',
-  'ciscoRole',
+  'experience',
 ] as const;
 export type PortfolioPublishTarget = (typeof PORTFOLIO_PUBLISH_TARGETS)[number];
+
+export const EXPERIENCE_COMPANY_KEYS = ['cisco', 'hcl', 'tcs'] as const;
+export type ExperienceCompanyKey = (typeof EXPERIENCE_COMPANY_KEYS)[number];
+
+export const EXPERIENCE_COMPANY_LABELS: Record<ExperienceCompanyKey, string> = {
+  cisco: 'Cisco Systems Inc.',
+  hcl: 'HCL America Inc./HCLTech',
+  tcs: 'Tata Consultancy Services',
+};
+
+export function companyKeyFromName(company: string): ExperienceCompanyKey | null {
+  if (company.includes('Cisco')) return 'cisco';
+  if (company.includes('HCL')) return 'hcl';
+  if (company.includes('Tata') || company.includes('TCS')) return 'tcs';
+  return null;
+}
 
 const ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
 
@@ -81,6 +97,27 @@ export interface CiscoRoleDraft {
   recognitionBadge: string;
   highlights: string[];
   technologies: string[];
+  sourceAnnouncementId?: string;
+}
+
+export interface ExperienceRoleDraft {
+  role: string;
+  period: string;
+  location: string;
+  employmentType: string;
+  domain: string;
+  proofMetric: string;
+  recognitionBadge: string;
+  highlights: string[];
+  technologies: string[];
+}
+
+export interface CompanyExperienceDraft {
+  companyKey: ExperienceCompanyKey;
+  companyTag: string;
+  tenure: string;
+  location: string;
+  roles: ExperienceRoleDraft[];
   sourceAnnouncementId?: string;
 }
 
@@ -307,6 +344,84 @@ export function validateCiscoRoleDraft(input: Partial<CiscoRoleDraft>): {
   for (const h of normalized.highlights) {
     if (h.length < 10) errors.push('Each highlight must be at least 10 characters.');
   }
+  return { valid: errors.length === 0, errors, normalized };
+}
+
+export function sanitizeExperienceRoleDraft(
+  input: Partial<ExperienceRoleDraft>
+): ExperienceRoleDraft {
+  const highlights = Array.isArray(input.highlights)
+    ? input.highlights.map((h) => String(h).trim()).filter(Boolean).slice(0, 12)
+    : [];
+  const technologies = Array.isArray(input.technologies)
+    ? input.technologies.map((t) => String(t).trim()).filter(Boolean).slice(0, 24)
+    : [];
+  return {
+    role: String(input.role || '').trim().slice(0, 120),
+    period: String(input.period || '').trim().slice(0, 80),
+    location: String(input.location || '').trim().slice(0, 160),
+    employmentType: String(input.employmentType || '').trim().slice(0, 40) || 'Full-time',
+    domain: String(input.domain || '').trim().slice(0, 200),
+    proofMetric: String(input.proofMetric || '').trim().slice(0, 200),
+    recognitionBadge: String(input.recognitionBadge || '').trim().slice(0, 160),
+    highlights,
+    technologies,
+  };
+}
+
+export function validateExperienceRoleDraft(input: Partial<ExperienceRoleDraft>): {
+  valid: boolean;
+  errors: string[];
+  normalized: ExperienceRoleDraft;
+} {
+  const normalized = sanitizeExperienceRoleDraft(input);
+  const errors: string[] = [];
+  if (normalized.role.length < 2) errors.push('Role title is required.');
+  if (normalized.period.length < 3) errors.push('Period is required.');
+  if (normalized.highlights.length < 1) errors.push('Add at least one highlight.');
+  for (const h of normalized.highlights) {
+    if (h.length < 10) errors.push('Each highlight must be at least 10 characters.');
+  }
+  return { valid: errors.length === 0, errors, normalized };
+}
+
+export function sanitizeCompanyExperienceDraft(
+  input: Partial<CompanyExperienceDraft> & { companyKey: ExperienceCompanyKey }
+): CompanyExperienceDraft {
+  const roles = Array.isArray(input.roles)
+    ? input.roles.map((r) => sanitizeExperienceRoleDraft(r)).slice(0, 12)
+    : [];
+  return {
+    companyKey: input.companyKey,
+    companyTag: String(input.companyTag || '').trim().slice(0, 80),
+    tenure: String(input.tenure || '').trim().slice(0, 80),
+    location: String(input.location || '').trim().slice(0, 160),
+    roles,
+    sourceAnnouncementId: input.sourceAnnouncementId
+      ? cleanId(String(input.sourceAnnouncementId))
+      : undefined,
+  };
+}
+
+export function validateCompanyExperienceDraft(
+  input: Partial<CompanyExperienceDraft> & { companyKey: ExperienceCompanyKey }
+): {
+  valid: boolean;
+  errors: string[];
+  normalized: CompanyExperienceDraft;
+} {
+  const normalized = sanitizeCompanyExperienceDraft(input);
+  const errors: string[] = [];
+  if (!(EXPERIENCE_COMPANY_KEYS as readonly string[]).includes(normalized.companyKey)) {
+    errors.push('Invalid company key.');
+  }
+  if (normalized.roles.length < 1) errors.push('At least one role is required.');
+  normalized.roles.forEach((role, idx) => {
+    const check = validateExperienceRoleDraft(role);
+    if (!check.valid) {
+      errors.push(`Role ${idx + 1}: ${check.errors[0]}`);
+    }
+  });
   return { valid: errors.length === 0, errors, normalized };
 }
 

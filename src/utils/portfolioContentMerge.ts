@@ -14,7 +14,17 @@ import {
   TECHNICAL_DISCIPLINES,
   WORK_EXPERIENCE,
 } from '../data/portfolioData';
-import type { CiscoRoleDraft, DisciplineDraft } from './portfolioContentValidation';
+import type {
+  CiscoRoleDraft,
+  CompanyExperienceDraft,
+  DisciplineDraft,
+  ExperienceCompanyKey,
+  ExperienceRoleDraft,
+} from './portfolioContentValidation';
+import {
+  companyKeyFromName,
+  EXPERIENCE_COMPANY_KEYS,
+} from './portfolioContentValidation';
 
 export type CloudCertification = Certification & {
   source: 'cloud';
@@ -170,6 +180,85 @@ export function mergeDisciplines(
   ) as TechnicalDiscipline[];
 }
 
+export type CloudCompanyExperience = CompanyExperienceDraft & {
+  source: 'cloud';
+};
+
+function roleToDraft(role: CompanyExperience['roles'][number]): ExperienceRoleDraft {
+  return {
+    role: role.role,
+    period: role.period,
+    location: role.location,
+    employmentType: role.employmentType || 'Full-time',
+    domain: role.domain || '',
+    proofMetric: role.proofMetric || '',
+    recognitionBadge: role.recognitionBadge || '',
+    highlights: [...role.highlights],
+    technologies: [...role.technologies],
+  };
+}
+
+export function getStaticCompanyExperienceDraft(
+  companyKey: ExperienceCompanyKey
+): CompanyExperienceDraft {
+  const seed = WORK_EXPERIENCE.find((c) => companyKeyFromName(c.company) === companyKey);
+  return {
+    companyKey,
+    companyTag: seed?.companyTag || '',
+    tenure: seed?.tenure || '',
+    location: seed?.location || '',
+    roles: seed?.roles.map(roleToDraft) || [],
+  };
+}
+
+export function getAllStaticCompanyExperienceDrafts(): Record<
+  ExperienceCompanyKey,
+  CompanyExperienceDraft
+> {
+  return {
+    cisco: getStaticCompanyExperienceDraft('cisco'),
+    hcl: getStaticCompanyExperienceDraft('hcl'),
+    tcs: getStaticCompanyExperienceDraft('tcs'),
+  };
+}
+
+/** Apply per-company cloud overrides (full role lists) onto seed WORK_EXPERIENCE. */
+export function applyExperienceOverrides(
+  experience: CompanyExperience[],
+  cloudByCompany: Partial<Record<ExperienceCompanyKey, CompanyExperienceDraft | null>>,
+  /** Legacy single-doc override for Cisco role 0 when portfolio_experience/cisco is absent. */
+  legacyCiscoRole: CiscoRoleDraft | null = null
+): CompanyExperience[] {
+  return experience.map((comp) => {
+    const key = companyKeyFromName(comp.company);
+    if (!key) return comp;
+    const cloud = cloudByCompany[key];
+    if (cloud && cloud.roles.length > 0) {
+      return {
+        ...comp,
+        companyTag: cloud.companyTag || comp.companyTag,
+        tenure: cloud.tenure || comp.tenure,
+        location: cloud.location || comp.location,
+        roles: cloud.roles.map((role) => ({
+          role: role.role,
+          period: role.period,
+          location: role.location,
+          employmentType: role.employmentType || 'Full-time',
+          domain: role.domain || undefined,
+          proofMetric: role.proofMetric || undefined,
+          recognitionBadge: role.recognitionBadge || undefined,
+          highlights: role.highlights,
+          technologies: role.technologies,
+        })),
+      };
+    }
+    if (key === 'cisco' && legacyCiscoRole) {
+      return applyCiscoRoleOverride([comp], legacyCiscoRole)[0]!;
+    }
+    return comp;
+  });
+}
+
 export function applyCiscoRoleOverride(
   experience: CompanyExperience[],
   cisco: CiscoRoleDraft | null
@@ -193,8 +282,8 @@ export function applyCiscoRoleOverride(
 }
 
 export function getStaticCiscoRoleDraft(): CiscoRoleDraft {
-  const cisco = WORK_EXPERIENCE.find((c) => c.company.includes('Cisco'));
-  const role = cisco?.roles[0];
+  const draft = getStaticCompanyExperienceDraft('cisco');
+  const role = draft.roles[0];
   return {
     domain: role?.domain || '',
     proofMetric: role?.proofMetric || '',
@@ -203,3 +292,19 @@ export function getStaticCiscoRoleDraft(): CiscoRoleDraft {
     technologies: role?.technologies ? [...role.technologies] : [],
   };
 }
+
+export function experienceDraftToCiscoRole(
+  draft: CompanyExperienceDraft | null | undefined
+): CiscoRoleDraft | null {
+  const role = draft?.roles[0];
+  if (!role) return null;
+  return {
+    domain: role.domain,
+    proofMetric: role.proofMetric,
+    recognitionBadge: role.recognitionBadge,
+    highlights: [...role.highlights],
+    technologies: [...role.technologies],
+  };
+}
+
+export { EXPERIENCE_COMPANY_KEYS };

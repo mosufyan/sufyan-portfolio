@@ -710,5 +710,17 @@ service cloud.firestore {
         && hasAuthorAndTimestamps(incoming());
       allow delete: if isAdmin() && roleId == 'current';
     }
+
+    match /portfolio_experience/{companyKey} {
+      allow get, list: if true;
+      allow create, update: if isAdmin()
+        && companyKey in ['cisco', 'hcl', 'tcs']
+        && incoming().companyKey == companyKey
+        && incoming().roles is list
+        && incoming().roles.size() >= 1
+        && incoming().roles.size() <= 12
+        && hasAuthorAndTimestamps(incoming());
+      allow delete: if isAdmin() && companyKey in ['cisco', 'hcl', 'tcs'];
+    }
   }
 }
