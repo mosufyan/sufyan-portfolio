@@ -1,12 +1,8 @@
 import { Cpu, Layers, Server, Shield, Terminal, Activity, Sparkles, CheckCircle2, X, ArrowUpRight, Share2, Check } from 'lucide-react';
 import { MouseEvent as ReactMouseEvent, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, useMotionValue, useReducedMotion, useSpring } from 'motion/react';
-import {
-  CERTIFICATIONS,
-  SKILL_FILTER_PRESETS,
-  TECHNICAL_DISCIPLINES,
-  WORK_EXPERIENCE,
-} from '../data/portfolioData';
+import { SKILL_FILTER_PRESETS } from '../data/portfolioData';
+import { usePortfolioContent } from '../contexts/PortfolioContentContext';
 import {
   doesCertMatchSkill,
   doesRoleMatchSkill,
@@ -79,6 +75,11 @@ function MagneticSkillTag({
 }
 
 export default function Skills({ selectedSkills, onSelectSkill, onApplySkills, readingMode = 'deep' }: SkillsProps) {
+  const {
+    certifications: CERTIFICATIONS,
+    disciplines: TECHNICAL_DISCIPLINES,
+    workExperience: WORK_EXPERIENCE,
+  } = usePortfolioContent();
   const [linkCopied, setLinkCopied] = useState(false);
   const [countPulse, setCountPulse] = useState(0);
   const skillFilter = formatSkillFilterSummary(selectedSkills);

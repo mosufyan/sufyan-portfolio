@@ -13,7 +13,8 @@ import {
   X,
 } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion, useScroll, useSpring } from 'motion/react';
-import { EMPLOYMENT_TENURES, SKILL_FILTER_PRESETS, WORK_EXPERIENCE } from '../data/portfolioData';
+import { EMPLOYMENT_TENURES, SKILL_FILTER_PRESETS } from '../data/portfolioData';
+import { usePortfolioContent } from '../contexts/PortfolioContentContext';
 import { doesRoleMatchSkill, doesTechTagMatchSkill, formatSkillFilterSummary } from '../utils/skillMatcher';
 import { formatCurrentTenureLabel, formatTenureDuration } from '../utils/tenureDuration';
 import { CollapseTimeline, CollapseTimelineNode } from './CollapseTimeline';
@@ -111,6 +112,7 @@ export default function Experience({
   focusedCompany,
   readingMode = 'deep',
 }: ExperienceProps) {
+  const { workExperience: WORK_EXPERIENCE } = usePortfolioContent();
   const sectionRef = useRef<HTMLElement>(null);
   const shouldReduceMotion = useReducedMotion();
   const { scrollYProgress } = useScroll({
@@ -145,7 +147,7 @@ export default function Experience({
       }
       return next;
     });
-  }, [hasSkillFilter, selectedSkills]);
+  }, [hasSkillFilter, selectedSkills, WORK_EXPERIENCE]);
 
   // In 30-second recruiter brief mode, auto-open the two most recent companies for instant impact scan
   useEffect(() => {

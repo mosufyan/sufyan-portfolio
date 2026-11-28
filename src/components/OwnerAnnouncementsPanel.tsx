@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useFirebase } from '../contexts/FirebaseContext';
+import { usePortfolioContent } from '../contexts/PortfolioContentContext';
 import {
   ANNOUNCEMENT_BADGES,
   ANNOUNCEMENT_CONSTRAINTS,
@@ -23,6 +24,10 @@ import {
   type AnnouncementRecord,
   type AnnouncementStatus,
 } from '../utils/announcementValidation';
+import {
+  announcementToAwardDraft,
+  announcementToCertificationDraft,
+} from '../utils/portfolioContentValidation';
 import { EASE_OUT_EXPO } from './MotionPrimitives';
 import { toUserFacingError } from '../utils/userFacingError';
 
@@ -64,11 +69,17 @@ export default function OwnerAnnouncementsPanel({ isLight }: { isLight: boolean 
     deleteAnnouncement,
     importStarterAnnouncements,
   } = useFirebase();
+  const { upsertCertification, upsertAward, upsertDiscipline, saveCiscoRole, ciscoRole } =
+    usePortfolioContent();
 
   const [composerOpen, setComposerOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(() => createEmptyForm());
   const [keepStarterOnFirstPublish, setKeepStarterOnFirstPublish] = useState(true);
+  const [publishToCerts, setPublishToCerts] = useState(false);
+  const [publishToAwards, setPublishToAwards] = useState(false);
+  const [publishToDiscipline, setPublishToDiscipline] = useState(false);
+  const [publishToCisco, setPublishToCisco] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
@@ -77,6 +88,10 @@ export default function OwnerAnnouncementsPanel({ isLight }: { isLight: boolean 
   const openNewComposer = () => {
     setEditingId(null);
     setForm(createEmptyForm());
+    setPublishToCerts(false);
+    setPublishToAwards(false);
+    setPublishToDiscipline(false);
+    setPublishToCisco(false);
     setFeedbackError(null);
     setFeedbackSuccess(null);
     setComposerOpen(true);
@@ -122,18 +137,73 @@ export default function OwnerAnnouncementsPanel({ isLight }: { isLight: boolean 
     try {
       if (editingId) {
         await updateAnnouncement(editingId, check.normalized);
-        setFeedbackSuccess('Announcement updated cleanly.');
       } else {
         await createAnnouncement(check.normalized, keepStarterOnFirstPublish);
-        setFeedbackSuccess(
-          check.normalized.status === 'published'
-            ? 'Announcement published live to visitors.'
-            : `Announcement saved as ${check.normalized.status}.`
-        );
       }
+
+      const extras: string[] = [];
+      if (publishToCerts) {
+        await upsertCertification(
+          announcementToCertificationDraft({
+            title: check.normalized.title,
+            summary: check.normalized.summary,
+            date: check.normalized.date,
+            linkUrl: check.normalized.linkUrl,
+            announcementId: editingId || undefined,
+          })
+        );
+        extras.push('certifications');
+      }
+      if (publishToAwards) {
+        await upsertAward(
+          announcementToAwardDraft({
+            title: check.normalized.title,
+            summary: check.normalized.summary,
+            date: check.normalized.date,
+            announcementId: editingId || undefined,
+          })
+        );
+        extras.push('awards');
+      }
+      if (publishToDiscipline) {
+        await upsertDiscipline({
+          title: check.normalized.title.slice(0, 120),
+          status: 'ANNOUNCED',
+          description: check.normalized.summary.slice(0, 400),
+          technologies: ['Announced update'],
+          level: 90,
+          sourceAnnouncementId: editingId || undefined,
+        });
+        extras.push('disciplines');
+      }
+      if (publishToCisco) {
+        await saveCiscoRole({
+          ...ciscoRole,
+          highlights: [
+            check.normalized.summary,
+            ...ciscoRole.highlights.filter((h) => h !== check.normalized.summary),
+          ].slice(0, 12),
+          sourceAnnouncementId: editingId || undefined,
+        });
+        extras.push('Cisco role');
+      }
+
+      const base =
+        editingId
+          ? 'Announcement updated.'
+          : check.normalized.status === 'published'
+            ? 'Announcement published live to visitors.'
+            : `Announcement saved as ${check.normalized.status}.`;
+      setFeedbackSuccess(
+        extras.length > 0 ? `${base} Also synced: ${extras.join(', ')}.` : base
+      );
       setComposerOpen(false);
       setEditingId(null);
       setForm(createEmptyForm());
+      setPublishToCerts(false);
+      setPublishToAwards(false);
+      setPublishToDiscipline(false);
+      setPublishToCisco(false);
     } catch (err) {
       setFeedbackError(
         toUserFacingError(err, 'Unable to save announcement. Please verify owner access.')
@@ -417,6 +487,59 @@ export default function OwnerAnnouncementsPanel({ isLight }: { isLight: boolean 
                 <span>Keep existing starter milestones alongside this announcement</span>
               </label>
             )}
+
+            <div
+              className={`rounded-lg border p-3 space-y-2 ${
+                isLight ? 'border-slate-200 bg-white' : 'border-slate-700/80 bg-[#070b14]'
+              }`}
+            >
+              <p className={`text-[11px] font-mono uppercase ${mutedCls}`}>
+                Also publish to portfolio sections
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {(
+                  [
+                    {
+                      id: 'certs',
+                      label: 'Licenses & certifications',
+                      checked: publishToCerts,
+                      set: setPublishToCerts,
+                    },
+                    {
+                      id: 'awards',
+                      label: 'Recognition & honors',
+                      checked: publishToAwards,
+                      set: setPublishToAwards,
+                    },
+                    {
+                      id: 'disc',
+                      label: 'Skills / disciplines',
+                      checked: publishToDiscipline,
+                      set: setPublishToDiscipline,
+                    },
+                    {
+                      id: 'cisco',
+                      label: 'Cisco current-role highlights',
+                      checked: publishToCisco,
+                      set: setPublishToCisco,
+                    },
+                  ] as const
+                ).map((opt) => (
+                  <label key={opt.id} className={`flex items-center gap-2 text-xs cursor-pointer ${bodyCls}`}>
+                    <input
+                      type="checkbox"
+                      checked={opt.checked}
+                      onChange={(e) => opt.set(e.target.checked)}
+                      className="rounded border-slate-600 text-cyan-500 focus:ring-cyan-500"
+                    />
+                    <span>{opt.label}</span>
+                  </label>
+                ))}
+              </div>
+              <p className={`text-[10px] ${mutedCls}`}>
+                Creates/updates Firestore-backed portfolio entities (editable later in their console tabs).
+              </p>
+            </div>
 
             <div className="flex items-center justify-end gap-2 pt-1">
               <button

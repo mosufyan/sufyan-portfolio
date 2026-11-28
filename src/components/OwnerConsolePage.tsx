@@ -1,12 +1,17 @@
 import { useEffect, useState } from 'react';
 import {
   ArrowLeft,
+  Award,
+  BadgeCheck,
+  Briefcase,
   Download,
   ExternalLink,
   History,
+  Layers,
   LogOut,
   Megaphone,
   MessageSquare,
+  Quote,
   Shield,
   ShieldCheck,
   SlidersHorizontal,
@@ -18,6 +23,7 @@ import {
   Headphones,
 } from 'lucide-react';
 import { useFirebase } from '../contexts/FirebaseContext';
+import { usePortfolioContent } from '../contexts/PortfolioContentContext';
 import { useTheme } from '../theme/ThemeProvider';
 import { OWNER_EMAIL } from '../utils/announcementValidation';
 import {
@@ -32,6 +38,13 @@ import OwnerFunnelPanel from './OwnerFunnelPanel';
 import OwnerProfilePanel, { useOwnerOpsHealth } from './OwnerProfilePanel';
 import { DelegatesPanel } from './OwnerGovernancePanels';
 import OwnerChatPanel from './OwnerChatPanel';
+import {
+  OwnerCiscoRolePanel,
+  OwnerCredentialsPanel,
+  OwnerDisciplinesPanel,
+  OwnerRecognitionPanel,
+  OwnerRecommendationsPanel,
+} from './OwnerPortfolioCmsPanels';
 
 export type OwnerConsoleSection = OwnerConsoleSectionId;
 
@@ -49,6 +62,12 @@ export default function OwnerConsolePage({
   initialSection,
 }: OwnerConsolePageProps) {
   const { isLight } = useTheme();
+  const {
+    certifications,
+    awards,
+    recommendations,
+    disciplines,
+  } = usePortfolioContent();
   const {
     user,
     cvDownloadLogs,
@@ -179,6 +198,35 @@ export default function OwnerConsolePage({
           icon: Megaphone,
         },
         {
+          id: 'credentials',
+          label: 'Licenses & Certs',
+          badge: String(certifications.length),
+          icon: BadgeCheck,
+        },
+        {
+          id: 'recognition',
+          label: 'Recognition & Honors',
+          badge: String(awards.length),
+          icon: Award,
+        },
+        {
+          id: 'recommendations',
+          label: 'LinkedIn Recs',
+          badge: String(recommendations.length),
+          icon: Quote,
+        },
+        {
+          id: 'disciplines',
+          label: 'Skills & Disciplines',
+          badge: String(disciplines.length),
+          icon: Layers,
+        },
+        {
+          id: 'ciscoRole',
+          label: 'Cisco Current Role',
+          icon: Briefcase,
+        },
+        {
           id: 'rules',
           label: 'Allow / Block Rules',
           badge: String(accessRules.length),
@@ -258,6 +306,26 @@ export default function OwnerConsolePage({
       title: 'Announcements & Publications Manager',
       subtitle:
         'Draft, schedule, and publish career milestones and architecture announcements.',
+    },
+    credentials: {
+      title: 'Licenses & Official Certifications',
+      subtitle: 'Add or edit credentials. Changes persist in Firestore and merge over seed data.',
+    },
+    recognition: {
+      title: 'Recognition & Honors',
+      subtitle: 'Manage corporate awards and citations with full edit/delete persistence.',
+    },
+    recommendations: {
+      title: 'LinkedIn Recommendations',
+      subtitle: 'Edit existing endorsements or publish new quotes to the public portfolio.',
+    },
+    disciplines: {
+      title: 'Technical Skills & Architecture Disciplines',
+      subtitle: 'Update discipline cards, technology tags, and proficiency levels.',
+    },
+    ciscoRole: {
+      title: 'Current Role · Cisco Highlights',
+      subtitle: 'Persist Project Atlas highlights, domain, proof metrics, and technologies.',
     },
     rules: {
       title: 'Allowlist & Blocklist Access Rules',
@@ -549,6 +617,16 @@ export default function OwnerConsolePage({
                 <DelegatesPanel isLight={isLight} />
               ) : section === 'announcements' ? (
                 <OwnerAnnouncementsPanel isLight={isLight} />
+              ) : section === 'credentials' ? (
+                <OwnerCredentialsPanel isLight={isLight} />
+              ) : section === 'recognition' ? (
+                <OwnerRecognitionPanel isLight={isLight} />
+              ) : section === 'recommendations' ? (
+                <OwnerRecommendationsPanel isLight={isLight} />
+              ) : section === 'disciplines' ? (
+                <OwnerDisciplinesPanel isLight={isLight} />
+              ) : section === 'ciscoRole' ? (
+                <OwnerCiscoRolePanel isLight={isLight} />
               ) : WORKSPACE_TABS.has(section) ? (
                 <CvAnalyticsPanel
                   isLight={isLight}
