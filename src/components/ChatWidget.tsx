@@ -966,6 +966,21 @@ export default function ChatWidget() {
                 text,
               },
             ]);
+            // Persist captions into the OTP session for Owner Console (fire-and-forget).
+            if (liveSession && liveReceipt && text.trim()) {
+              void fetch('/api/chat/voice/realtime-log', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  ...chatReceiptHeaders(liveReceipt),
+                },
+                body: JSON.stringify({
+                  sessionId: liveSession.sessionId,
+                  role: bubbleRole,
+                  text: text.trim().slice(0, 2000),
+                }),
+              }).catch(() => {});
+            }
           },
           onError: (message) => setError(message),
           onPortfolioTool: callRealtimePortfolioTool,

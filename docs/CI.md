@@ -79,7 +79,7 @@ Concurrency: one run per branch/ref; newer PR pushes cancel in-progress runs.
 
 ### Bundle size
 - **Significance:** Guards accidental JS bloat that hurts first load.
-- **How:** `scripts/ci-bundle-size.mjs` sums `dist/assets/*.js`; fails if total or largest chunk exceeds budget (~4.5 MiB / ~3.0 MiB).
+- **How:** `scripts/ci-bundle-size.mjs` sums `dist/assets/*.js`; fails if total or largest chunk exceeds budget (**~6.5 MiB** total / **~3.0 MiB** largest — includes lazy Mermaid diagram chunks for `#architecture`).
 
 ### Firestore rules tests
 - **Significance:** Behavioral proof of deny-by-default and public vs draft announcement reads.

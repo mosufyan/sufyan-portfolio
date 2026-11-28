@@ -31,6 +31,8 @@ This portfolio combines a public showcase with hardened lead-capture APIs (`/api
 | Cross-site API forgery | Strong (`Origin`/`Referer` allowlist + `Sec-Fetch-Site: cross-site` block) |
 | Unauthorized Firestore PII read | Strong (strict owner-only Firestore rules + RS256 token verification) |
 | Unauthenticated Firestore create abuse | Mitigated via App Check +/or Admin SDK server writes (see below) |
+| Soft-deleted CMS content leak | Mitigated (`deleted == false` public queries + `portfolio_seed_hides`; Mermaid SVG DOMPurify) |
+| Voice transcript spoof into owner thread | Mitigated (`/api/chat/voice/realtime-log` requires chat receipt; roles limited to visitor/bot; rate-limited) |
 | Scraping public client portfolio copy | Expected for unauthenticated public SPAs (mitigate further with Cloudflare Bot Fight Mode / WAF) |
 | Multi-instance rate-limit bypass | Mitigated when Upstash Redis is configured |
 
@@ -112,7 +114,7 @@ Full Cloudflare / Cloud Run / Firebase / Resend checklists, upgrade paths, and *
 4. Cloud Run → set `TRUST_PROXY=1`, `TURNSTILE_*`, `SESSION_SECRET`, optional Upstash Redis + `FIREBASE_SERVICE_ACCOUNT_JSON`.
 5. Firebase → App Check (reCAPTCHA Enterprise) → set `VITE_RECAPTCHA_SITE_KEY` → rebuild → enforce App Check for Firestore when metrics look healthy.
 
-After deploy, open Security Architecture on the site (or `GET /api/status`) and confirm `cloudflareEdge`, `turnstile`, and `redis` pills are green when those pieces are live.
+After deploy, open **Portfolio Architecture** on the site (`#architecture` / `#security`, or `GET /api/status`) and confirm `cloudflareEdge`, `turnstile`, and `redis` pills are green when those pieces are live. Optional: scrape `GET /api/metrics` (set `METRICS_TOKEN` in production).
 
 ### Quick env checklist
 
@@ -141,6 +143,11 @@ UPSTASH_VECTOR_REST_TOKEN=...
 GROK_API_KEY=...
 # GROK_API_BASE_URL=https://api.x.ai/v1
 # CHAT_LLM_TIMEOUT_MS=12000
+
+# Observability (optional gold path)
+# SENTRY_DSN=...
+# SLACK_ALERT_WEBHOOK_URL=...
+# METRICS_TOKEN=...   # gate GET /api/metrics when publicly scrapable
 ```
 
 Wire chat secrets to Cloud Run: `./scripts/wire-chat-llm-secrets.sh` (reads `.env`).

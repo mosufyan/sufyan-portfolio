@@ -125,6 +125,7 @@ import {
 } from './server/chatReceipt.ts';
 import {
   appendChatMessage,
+  appendChatSystemNotice,
   bumpBotQuestion,
   bumpLiveRequest,
   bumpLlmCall,
@@ -2434,7 +2435,7 @@ async function startServer() {
     });
   });
 
-  /** Public boolean status for the Security Architecture page (no secrets). */
+  /** Public boolean status for the Portfolio Architecture map (no secrets). */
   app.get('/api/status', (req: Request, res: Response) => {
     const gold = evaluateGoldPathHardening();
     const cloudflareEdge = isCloudflareEdgeProxied({
@@ -4633,8 +4634,8 @@ async function startServer() {
       }
 
       if (sessionId && sessionEmail) {
-        appendChatMessage(sessionId, 'visitor', turn.transcript);
-        appendChatMessage(sessionId, 'bot', turn.answer.answer);
+        appendChatMessage(sessionId, 'visitor', turn.transcript, { channel: 'ptt' });
+        appendChatMessage(sessionId, 'bot', turn.answer.answer, { channel: 'ptt' });
       }
 
       const llmRemaining = (await checkChatLimitAsync(visitorKey, 'llm', limitPolicy)).remaining;
@@ -4798,6 +4799,14 @@ async function startServer() {
         sessionMinutes,
       });
 
+      if (sessionId && sessionEmail) {
+        appendChatSystemNotice(
+          sessionId,
+          `Live speech-to-speech started (${sessionMinutes} min window).`,
+          { channel: 's2s' }
+        );
+      }
+
       res.status(200).json({
         ok: true,
         token: minted.token,
@@ -4816,6 +4825,90 @@ async function startServer() {
       });
     } catch {
       res.status(500).json({ error: 'Unable to start live voice session right now.' });
+    }
+  });
+
+  /**
+   * Persist Live S2S captions into the chat session for Owner Console.
+   * Auth: verified chat receipt. Roles limited to visitor/bot (no owner spoof).
+   */
+  app.post('/api/chat/voice/realtime-log', async (req: Request, res: Response) => {
+    try {
+      if (!req.is('application/json')) {
+        res.status(415).json({ error: 'Content-Type must be application/json.' });
+        return;
+      }
+      if (rejectDisallowedOrigin(req, res)) return;
+      if (
+        !runtimeOwnerPolicy.enablePortfolioChat ||
+        !runtimeOwnerPolicy.enableVoiceRealtime ||
+        runtimeOwnerPolicy.incidentMode
+      ) {
+        res.status(503).json({ error: 'Live speech-to-speech is temporarily unavailable.' });
+        return;
+      }
+
+      const clientIp = extractClientIp(req);
+      if (
+        await enforceRateLimit(res, 'chat', `voice-rt-log:${clientIp}`, {
+          maxRequests: 90,
+          error: 'Too many live voice transcript writes. Please wait a moment.',
+        })
+      ) {
+        return;
+      }
+
+      const raw = (req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {}) as {
+        sessionId?: unknown;
+        receipt?: unknown;
+        role?: unknown;
+        text?: unknown;
+      };
+      const sessionId = typeof raw.sessionId === 'string' ? raw.sessionId.trim() : '';
+      const receipt = extractChatReceipt(req, raw.receipt);
+      const roleRaw = typeof raw.role === 'string' ? raw.role.trim().toLowerCase() : '';
+      const role = roleRaw === 'visitor' || roleRaw === 'assistant' || roleRaw === 'bot' ? roleRaw : '';
+      const text = typeof raw.text === 'string' ? raw.text.trim().slice(0, 2000) : '';
+      if (!sessionId || !receipt) {
+        res.status(401).json({ error: 'Chat session receipt required.', code: 'SESSION_EXPIRED' });
+        return;
+      }
+      if (!role || text.length < 1) {
+        res.status(400).json({ error: 'role (visitor|bot) and text are required.' });
+        return;
+      }
+
+      const auth = verifyChatSessionReceipt(receipt, sessionId);
+      if (!auth.ok) {
+        res.status(401).json(chatSessionAuthError(auth));
+        return;
+      }
+      const session = await getChatSessionAsync(sessionId);
+      if (!session || session.visitorEmail !== auth.email || session.status === 'closed') {
+        res.status(404).json({ error: 'Chat session not found or closed.' });
+        return;
+      }
+
+      const messageRole = role === 'visitor' ? 'visitor' : 'bot';
+      const updated = appendChatMessage(sessionId, messageRole, text, { channel: 's2s' });
+      if (!updated) {
+        res.status(404).json({ error: 'Chat session not found or closed.' });
+        return;
+      }
+
+      bumpMetric('voiceRealtimeTranscripts');
+      structuredLog('info', 'voice_realtime_transcript', {
+        requestId: req.requestId,
+        role: messageRole,
+        chars: text.length,
+      });
+
+      res.status(200).json({
+        ok: true,
+        session: publicSessionView(updated, { threadOnly: true }),
+      });
+    } catch {
+      res.status(500).json({ error: 'Unable to record live voice transcript right now.' });
     }
   });
 
@@ -4849,6 +4942,7 @@ async function startServer() {
 
       const sessionId = typeof raw.sessionId === 'string' ? raw.sessionId.trim() : '';
       const receipt = extractChatReceipt(req, raw.receipt);
+      let sessionEmail = '';
       if (sessionId && receipt) {
         const auth = verifyChatSessionReceipt(receipt, sessionId);
         if (!auth.ok) {
@@ -4860,12 +4954,19 @@ async function startServer() {
           res.status(404).json({ error: 'Chat session not found or closed.' });
           return;
         }
+        sessionEmail = auth.email;
       } else if (sessionId) {
         res.status(401).json({ error: 'Chat session receipt required.', code: 'SESSION_EXPIRED' });
         return;
       }
 
       const answer = await answerPortfolioQuestionSmart(question);
+      if (sessionId && sessionEmail) {
+        // Backup if spoken captions are delayed; dedupe window merges identical captions.
+        appendChatMessage(sessionId, 'visitor', question, { channel: 's2s' });
+        appendChatMessage(sessionId, 'bot', answer.answer, { channel: 's2s' });
+        bumpMetric('voiceRealtimeTranscripts');
+      }
       res.status(200).json({
         ok: true,
         answer: answer.answer,

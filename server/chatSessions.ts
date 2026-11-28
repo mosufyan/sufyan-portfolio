@@ -31,12 +31,15 @@ const FIRESTORE_MAX_SESSIONS = 100;
 const FIRESTORE_MAX_MESSAGES = 40;
 
 export type ChatMessageRole = 'visitor' | 'owner' | 'system' | 'bot';
+/** How the utterance entered the thread (defaults to text when omitted). */
+export type ChatMessageChannel = 'text' | 'ptt' | 's2s';
 
 export interface ChatMessage {
   id: string;
   role: ChatMessageRole;
   text: string;
   createdAtMs: number;
+  channel?: ChatMessageChannel;
 }
 
 export interface ChatSession {
@@ -466,22 +469,44 @@ export function listChatSessions(): ChatSession[] {
   return [...sessions.values()].sort((a, b) => b.updatedAtMs - a.updatedAtMs);
 }
 
-export function appendChatMessage(
-  sessionId: string,
-  role: Exclude<ChatMessageRole, 'system'>,
-  text: string
-): ChatSession | null {
-  const session = sessions.get(sessionId);
-  if (!session || session.status === 'closed') return null;
+function normalizeChannel(channel?: ChatMessageChannel): ChatMessageChannel | undefined {
+  if (channel === 'ptt' || channel === 's2s' || channel === 'text') return channel;
+  return undefined;
+}
+
+function pushSessionMessage(
+  session: ChatSession,
+  role: ChatMessageRole,
+  text: string,
+  channel?: ChatMessageChannel
+): boolean {
   const now = Date.now();
   const clean = text.trim().slice(0, 2000);
-  if (clean.length < 1) return null;
-  session.messages.push({
+  if (clean.length < 1) return false;
+
+  const normalized = normalizeChannel(channel);
+  const last = session.messages.at(-1);
+  // Dedupe rapid identical voice captions (client transcript + tool echo).
+  if (
+    last &&
+    last.role === role &&
+    last.text === clean &&
+    (last.channel || 'text') === (normalized || 'text') &&
+    now - last.createdAtMs < 2500
+  ) {
+    return false;
+  }
+
+  const message: ChatMessage = {
     id: `m-${crypto.randomBytes(4).toString('hex')}`,
     role,
     text: clean,
     createdAtMs: now,
-  });
+  };
+  if (normalized && normalized !== 'text') {
+    message.channel = normalized;
+  }
+  session.messages.push(message);
   if (session.messages.length > MAX_MESSAGES) {
     session.messages = session.messages.slice(-MAX_MESSAGES);
   }
@@ -491,6 +516,35 @@ export function appendChatMessage(
     session.lastOwnerAtMs = now;
     session.status = 'active';
   }
+  return true;
+}
+
+export function appendChatMessage(
+  sessionId: string,
+  role: Exclude<ChatMessageRole, 'system'>,
+  text: string,
+  options?: { channel?: ChatMessageChannel }
+): ChatSession | null {
+  const session = sessions.get(sessionId);
+  if (!session || session.status === 'closed') return null;
+  if (text.trim().length < 1) return null;
+  // false = deduped identical caption; still a successful no-op for the caller.
+  pushSessionMessage(session, role, text, options?.channel);
+  scheduleFlush();
+  mirrorSession(session);
+  return session;
+}
+
+/** System notice (e.g. Live S2S started) — visible in owner + visitor threads. */
+export function appendChatSystemNotice(
+  sessionId: string,
+  text: string,
+  options?: { channel?: ChatMessageChannel }
+): ChatSession | null {
+  const session = sessions.get(sessionId);
+  if (!session || session.status === 'closed') return null;
+  if (text.trim().length < 1) return null;
+  pushSessionMessage(session, 'system', text, options?.channel);
   scheduleFlush();
   mirrorSession(session);
   return session;
@@ -572,6 +626,7 @@ export function publicSessionView(
       role: m.role,
       text: m.text,
       createdAtMs: m.createdAtMs,
+      ...(m.channel && m.channel !== 'text' ? { channel: m.channel } : {}),
     })),
   };
 }

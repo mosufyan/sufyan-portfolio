@@ -27,7 +27,7 @@ export const SHARE_CARD_TRACKS: readonly ShareCardTrack[] = [
   {
     id: 'security',
     label: 'Security & Zero Trust',
-    headline: 'Mohammed Sufyan · Security Architecture',
+    headline: 'Mohammed Sufyan · Portfolio Architecture',
     subline: 'Project Atlas Security Data Platform · Zero Trust & Vulnerability Engines',
     kicker: 'Cisco STO CTO Ops · Governance, Compliance & Policy Enforcement',
     metrics: ['Zero Trust', 'Project Atlas', '20x Certified'],

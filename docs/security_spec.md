@@ -56,3 +56,19 @@ Automated coverage: `firestore.rules.test.ts` via `npm run test:rules` (Firebase
 - Unauthenticated or non-owner user attempting `create` or `update` on `/portfolio_settings/global`, or `get` on `/portfolio_settings/other` -> **DENIED**.
 - Spoofed `actorUid` or `createdByUid` or `updatedByUid` differing from `request.auth.uid` -> **DENIED**.
 
+## Portfolio CMS (`/portfolio_*`) Invariants
+15. **Public Non-Deleted Bodies**: `/portfolio_certifications`, `/portfolio_awards`, `/portfolio_recommendations`, and `/portfolio_disciplines` allow public `get`/`list` only when `deleted == false` (or the field is absent). Soft-deleted cloud docs must not be readable by visitors.
+16. **Seed Hides Are Markers Only**: `/portfolio_seed_hides/{hideId}` stores `collection` + `entityId` (+ author/timestamps) — no portfolio body text. Public may `get`/`list` markers; only admins create/update/delete. `collection` must be one of the four CMS body collections above.
+17. **Admin-Only Writes + Schema Bounds**: CMS creates/updates require `isAdmin()`, valid IDs, string length caps, `deleted == false` on write payloads for body collections, and `hasAuthorAndTimestamps`. Hard deletes are admin-only.
+18. **Experience Role Depth**: `/portfolio_experience/{companyKey}` allows public read; writes require `companyKey in ['cisco','hcl','tcs']`, matching `companyKey` field, and deep `isValidExperienceRoles` validation (role/period/highlights/technologies bounds per role).
+19. **Cisco Role Singleton**: `/portfolio_cisco_role/{roleId}` is public-readable; writes/deletes only for `roleId == 'current'` by admins.
+20. **CMS Audit Trail**: Owner CMS upserts/deletes emit `admin_audit_logs` events with `action == 'cms_mutated'` (allowed by `isValidAdminAuditLog`).
+
+## Portfolio CMS Dirty Dozen Checks
+- Public visitor `list`/`get` on a CMS doc with `deleted: true` -> **DENIED** (`isPublicCmsDoc()`).
+- Non-admin signed-in user `create`/`update`/`delete` on any `/portfolio_*` body collection -> **DENIED**.
+- Admin create on `/portfolio_seed_hides` with unknown `collection` or missing `entityId` -> **DENIED**.
+- Admin write on `/portfolio_experience/foo` (invalid company key) -> **DENIED**.
+- Admin write experience role missing `highlights` / oversized strings -> **DENIED** (`isValidExperienceRole`).
+- Admin create audit log with `action: 'cms_mutated'` and spoofed `actorUid` -> **DENIED**.
+

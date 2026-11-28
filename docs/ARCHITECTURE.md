@@ -1,8 +1,8 @@
 # Portfolio Architecture
 
-Living documentation for the Mohammed Sufyan portfolio — React/Vite client, Express API, Firebase Auth/Firestore, and owner governance.
+Living documentation for the Mohammed Sufyan portfolio — React/Vite client, Express API, Firebase Auth/Firestore, Portfolio CMS, and owner governance.
 
-Related: [SECURITY.md](./SECURITY.md) · [SECURITY_CONFIGURATION.md](./SECURITY_CONFIGURATION.md) · [EXTERNAL_TOOLS_AND_COSTS.md](./EXTERNAL_TOOLS_AND_COSTS.md) · [PORTFOLIO_ASSESSMENT.md](./PORTFOLIO_ASSESSMENT.md) · [README](../README.md)
+Related: [SECURITY.md](./SECURITY.md) · [SECURITY_CONFIGURATION.md](./SECURITY_CONFIGURATION.md) · [EXTERNAL_TOOLS_AND_COSTS.md](./EXTERNAL_TOOLS_AND_COSTS.md) · [PORTFOLIO_ASSESSMENT.md](./PORTFOLIO_ASSESSMENT.md) · [CI.md](./CI.md) · [README](../README.md)
 
 ---
 
@@ -12,8 +12,9 @@ Related: [SECURITY.md](./SECURITY.md) · [SECURITY_CONFIGURATION.md](./SECURITY_
 flowchart TB
   subgraph Client["Browser client"]
     UI[Portfolio UI]
+    Arch["#architecture hub<br/>Mermaid + readiness"]
     Chat[ChatWidget]
-    Owner[Owner Console]
+    Owner["Owner Console<br/>Portfolio CMS tabs"]
     TS[Turnstile]
   end
 
@@ -25,10 +26,11 @@ flowchart TB
     Contact["/api/contact*"]
     CV["/api/cv-*"]
     OwnerAPI["/api/owner/*"]
+    Status["/api/status · /api/health<br/>/api/metrics"]
   end
 
   subgraph Data["Persistence"]
-    FS[(Firestore)]
+    FS[(Firestore<br/>CMS · announcements · PII)]
     Redis[(Upstash Redis<br/>limits · policy · OTP · hot cache)]
     FSMetrics[(Firestore owner_metrics<br/>site + chat_cache)]
     Disk[(.owner-chat-cache.json<br/>local fallback)]
@@ -49,6 +51,7 @@ flowchart TB
   end
 
   UI --> Sec
+  Arch --> Status
   Chat --> ChatAPI
   Chat --> TS --> CF
   Owner --> FB
@@ -73,6 +76,7 @@ flowchart TB
   OwnerAPI --> Mail
   OwnerAPI --> Redis
   OwnerAPI --> FSMetrics
+  Status --> Redis
   GH --> Edge
 ```
 
@@ -123,7 +127,7 @@ sequenceDiagram
 | Grok enrich | Owner `enableChatLlm` + `GROK_API_KEY` | Rewrite from retrieved context; else show grounded text |
 | LLM off | Toggle off | Vector/keyword answer only — no `api.x.ai` calls |
 
-### Voice agent (push-to-talk v1)
+### Voice agent (dual path)
 
 ```mermaid
 sequenceDiagram
@@ -135,33 +139,36 @@ sequenceDiagram
   participant Vec as UpstashVector
   participant LLM as Grok
   participant EL as ElevenLabs
+  participant Live as Grok Live S2S
 
-  V->>W: Hold mic / release
-  W->>T: submitUtterance blob
-  Note over T: HttpTurnTransport v1
-  T->>API: POST /api/chat/voice/turn multipart
-  API->>Groq: Transcribe
-  API->>Vec: RAG retrieve
-  opt enableChatLlm
-    API->>LLM: Enrich
-  end
-  opt ELEVENLABS_API_KEY
-    API->>EL: TTS Flash
-  end
-  API-->>W: transcript + answer + optional audio
-  alt cloud audio present
-    W->>W: Play MPEG
-  else fallback
-    W->>W: speechSynthesis
+  alt Push-to-talk
+    V->>W: Hold mic / release
+    W->>T: submitUtterance blob
+    Note over T: HttpTurnTransport
+    T->>API: POST /api/chat/voice/turn multipart
+    API->>Groq: Transcribe
+    API->>Vec: RAG retrieve
+    opt enableChatLlm
+      API->>LLM: Enrich
+    end
+    opt ELEVENLABS_API_KEY
+      API->>EL: TTS Flash
+    end
+    API-->>W: transcript + answer + optional audio
+  else Live S2S
+    V->>W: Start Live Call
+    W->>Live: wss://api.x.ai (CSP allowlisted)
+    Note over W,Live: Realtime speech; gated by enableVoiceRealtime
   end
 ```
 
 | Piece | Detail |
 |-------|--------|
-| Gate | Owner `enableVoiceAgent` + `GROQ_API_KEY` → `voiceAgentAvailable` on `/api/chat/status` |
+| PTT gate | Owner `enableVoiceAgent` + `GROQ_API_KEY` → `voiceAgentAvailable` on `/api/chat/status` |
+| Live S2S | Owner `enableVoiceRealtime` + Grok Live; production CSP allows `wss://api.x.ai` |
 | Quotas | Consumes **voice** + **question** counters (`chatMaxVoiceTurnsPerVisitor`, default 8) |
-| Client abstraction | `VoiceTransport` in `src/utils/voiceTransport.ts` — v1 `HttpTurnTransport`; v2 can add streaming without rewriting ChatWidget |
-| Continuous mode | **Not in v1** — leave as a future `StreamingTransport` (WebSocket/WebRTC) |
+| Client abstraction | `VoiceTransport` in `src/utils/voiceTransport.ts` — `HttpTurnTransport` for PTT; Live Call uses Grok WebSocket |
+| Owner Console | PTT transcripts append with `channel: ptt`; Live S2S start notice + captions via `/api/chat/voice/realtime-log` (`channel: s2s`); thread filter chips All/Text/PTT/S2S |
 
 ### Quota keys (anti-spoof)
 
@@ -205,20 +212,61 @@ Composite index: `announcements` — `status` ASC + `createdAt` DESC (`firestore
 
 ---
 
+## Portfolio CMS
+
+Owner Console hub at `#owner/cms/<tab>` (legacy hashes still resolve). Seed data in `portfolioData` merges with Firestore overrides; soft-delete of seeds uses `portfolio_seed_hides` markers (no content tombstones).
+
+```mermaid
+flowchart LR
+  Seed[Static portfolioData] --> Merge[portfolioContentMerge]
+  FS[(Firestore CMS docs)] --> Merge
+  Hides[(portfolio_seed_hides)] --> Merge
+  Merge --> Public[Public portfolio UI]
+  Owner[Owner CMS tabs] --> FS
+  Owner -->|hide seed| Hides
+  Owner -->|cms_mutated| Audit[(admin_audit_logs)]
+```
+
+| Collection | Public read | Admin write notes |
+|------------|-------------|-------------------|
+| `portfolio_certifications` / `_awards` / `_recommendations` / `_disciplines` | Non-deleted only (`deleted == false`) | Schema-validated; soft-delete via `deleted` or seed hide |
+| `portfolio_seed_hides` | Yes (markers only) | Admin create/delete; `collection` + `entityId` |
+| `portfolio_experience` | Yes | Keys `cisco` / `hcl` / `tcs`; deep `roles[]` validation |
+| `portfolio_cisco_role` | Yes | Singleton `current` |
+
+Composite indexes: each CMS collection — `deleted` ASC + `updatedAt` DESC.
+
+Interactive control map for recruiters: `#architecture` / `#security` (Mermaid flows, layer pills, live `/api/status` readiness).
+
+---
+
+## Observability surface
+
+| Endpoint | Audience | Contents |
+|----------|----------|----------|
+| `GET /api/status` | Public | Controls, bot protection, gold-path score, `observability` snapshot, `metricsPath` |
+| `GET /api/health` | Ops | Gold-path checklist; may 503 under `STRICT_PROD_HARDENING` |
+| `GET /api/metrics` | Scrapers / ops | Prometheus counters (OTP, chat RAG/LLM, voice, CSP, HTTP); optional `METRICS_TOKEN` |
+| `GET /api/uptime` | External monitors | Lightweight probe |
+| `GET /api/owner/observability` | Owner | Authenticated richer view |
+
+---
+
 ## Module map
 
 | Path | Responsibility |
 |------|----------------|
-| `server.ts` | HTTP routes, OTP, chat, owner reply binding, health/status/uptime |
+| `server.ts` | HTTP routes, OTP, chat, owner reply binding, health/status/uptime/metrics |
 | `server/security.ts` | Headers, CSP reports, Turnstile, honeypot, origin checks |
 | `server/distributedStore.ts` | Upstash rate limits (fail-closed), policy, OTP/session KV helpers |
 | `server/telemetry.ts` | IP/ASN risk, MX/phone checks, Redis-backed OTP bridge |
-| `server/observability.ts` | Request IDs, structured logs, metrics, Sentry/Slack hooks |
+| `server/observability.ts` | Request IDs, structured logs, Prometheus counters, Sentry/Slack hooks |
 | `server/chatLimits.ts` | Per-visitor question / LLM / live caps (Redis-shared) |
 | `server/chatKnowledge.ts` | Curated knowledge chunks + keyword ranking + concise answers |
 | `server/portfolioVector.ts` | Upstash Vector RAG (embed/sync/query) + keyword hybrid fallback |
 | `server/grokLlm.ts` | Optional Grok (xAI) chat-completions enrichment |
 | `.github/workflows/ci.yml` | Separate PR checks (SemVer, typecheck, tests, coverage, CSP, bundle size, rules, SAST, Docker/Trivy); `main`: deploy Cloud Run — see [CI.md](./CI.md) |
+| `scripts/ci-bundle-size.mjs` | JS budget (~6.5 MiB total / ~3.0 MiB largest; Mermaid lazy chunks) |
 | `scripts/wire-chat-llm-secrets.sh` | Upsert Grok/Vector secrets → Secret Manager + Cloud Run |
 | `scripts/setup-github-actions-deploy.sh` | One-time WIF + deploy SA for GitHub → Cloud Run |
 | `server/chatSessions.ts` | Live session store + disk + Redis hot cache + Firestore `owner_metrics/chat_cache` |
@@ -227,12 +275,17 @@ Composite index: `announcements` — `status` ASC + `createdAt` DESC (`firestore
 | `server/chatReceipt.ts` | Header-based session receipt extraction |
 | `server/ownerNotify.ts` | Urgent / warning / digest router |
 | `server/firebaseAdmin.ts` | Admin SDK PII writes + inquiry reply binding |
-| `src/components/ChatWidget.tsx` | Visitor chat UI + Turnstile |
-| `src/components/OwnerConsolePage.tsx` | Full-page owner console shell |
+| `src/components/ChatWidget.tsx` | Visitor chat UI + Turnstile + dual voice |
+| `src/components/OwnerConsolePage.tsx` | Full-page owner console + Portfolio CMS hub |
+| `src/components/SecurityArchitectureModal.tsx` | Portfolio Architecture map (`#architecture` / `#security`) |
+| `src/components/SecurityMermaidChart.tsx` | Lazy Mermaid + DOMPurify SVG sanitize |
+| `src/contexts/PortfolioContentContext.tsx` | CMS listeners, seed hides, `cms_mutated` audits |
+| `src/utils/portfolioContentMerge.ts` | Seed + cloud merge / soft-delete semantics |
+| `src/utils/ownerConsoleRouting.ts` | `#owner/cms/<tab>` + legacy hash parse |
 | `src/utils/ownerGovernance.ts` | Settings sanitize + access rules + feature toggles |
-| `firestore.rules` | Deny-by-default collection rules (Admin-only PII creates) |
-| `firestore.indexes.json` | Composite indexes (announcements, analytics queries) |
-| `docs/` | Architecture, security config, costs, assessment |
+| `firestore.rules` | Deny-by-default; CMS public non-deleted; Admin-only PII creates |
+| `firestore.indexes.json` | Announcements + CMS `deleted`+`updatedAt` composites |
+| `docs/` | Architecture, security config, costs, assessment, CI |
 
 ---
 
@@ -255,12 +308,18 @@ mindmap
       Firestore field schemas
       PII collections owner-only
       Public announcements filter
+      CMS non-deleted + seed hides
       Reply bound to inquiry email
     Abuse
       Honeypot
       Per-IP + per-email buckets
       Chat caps by IP/email
       Incident mode kill-switch
+    Observe
+      Request IDs + JSON logs
+      Prometheus /api/metrics
+      CSP report-uri
+      Sentry / Slack hooks
 ```
 
 ---
@@ -303,7 +362,7 @@ Each item below is a **separate GitHub Actions check** (`.github/workflows/ci.ym
 | **npm audit** | PR + `main` | High+ production advisories |
 | **Production build** | PR + `main` | Vite build → `dist` artifact |
 | **CSP headers smoke** | PR + `main` | Live prod CSP must include `wss://api.x.ai`, `media-src`, core headers |
-| **Bundle size** | PR + `main` | JS asset budgets |
+| **Bundle size** | PR + `main` | JS asset budgets (~6.5 MiB total) |
 | **Firestore rules tests** | PR + `main` | Emulator + `@firebase/rules-unit-testing` |
 | **Gitleaks** | PR + `main` | Secret scan (working tree) |
 | **Bandit** | PR + `main` | Python SAST (if any `.py`) |
