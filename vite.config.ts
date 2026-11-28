@@ -22,7 +22,13 @@ export default defineConfig(() => {
       injectExperienceYears(),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'icon.svg', 'og-social-banner.jpg'],
+        includeAssets: [
+          'favicon.ico',
+          'apple-touch-icon.png',
+          'icon.svg',
+          'icon-amber.svg',
+          'og-social-banner.jpg',
+        ],
         manifest: {
           id: '/',
           name: 'Mohammed Sufyan — Software Engineer',

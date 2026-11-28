@@ -205,7 +205,7 @@ export default function DigitalCardModal({ isOpen, onClose }: DigitalCardModalPr
       ctx.fill();
       ctx.stroke();
 
-      // Brand badge — accent-aware hexagon + MS tile
+      // Brand badge — exact approved hexagon+MS mark (recolored for accent)
       const brandImg = new Image();
       await new Promise<void>((resolve) => {
         brandImg.onload = () => resolve();
@@ -214,15 +214,6 @@ export default function DigitalCardModal({ isOpen, onClose }: DigitalCardModalPr
       });
       if (brandImg.naturalWidth > 0) {
         ctx.drawImage(brandImg, 92, 92, 56, 56);
-      } else {
-        ctx.fillStyle = accentSoft;
-        ctx.beginPath();
-        ctx.roundRect(92, 92, 56, 56, 14);
-        ctx.fill();
-        ctx.fillStyle = accent;
-        ctx.font = 'bold 22px system-ui, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText('MS', 120, 128);
       }
 
       ctx.textAlign = 'left';

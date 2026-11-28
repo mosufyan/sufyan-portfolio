@@ -1,10 +1,5 @@
 import { motion, useReducedMotion } from 'motion/react';
-import { useMemo } from 'react';
-import {
-  brandMarkDataUrl,
-  BRAND_ACCENT_HEX,
-  BRAND_MARK_PNG_SRC,
-} from '../brand/brandMark';
+import { BRAND_MARK_PNG_SRC } from '../brand/brandMark';
 import { useTheme } from '../theme/ThemeProvider';
 import { EASE_OUT_EXPO } from './MotionPrimitives';
 
@@ -13,6 +8,9 @@ const SIZE_PX = {
   md: 36,
   lg: 40,
 } as const;
+
+/** Cyan (#22d3ee ≈ 187°) → amber (#fbbf24 ≈ 43°) */
+const AMBER_MARK_FILTER = 'hue-rotate(-144deg) saturate(1.2) brightness(1.05)';
 
 export type BrandMarkSize = keyof typeof SIZE_PX | number;
 
@@ -24,9 +22,8 @@ interface BrandMarkProps {
 }
 
 /**
- * Exact approved hexagon+MS logo (concept B / PWA mark).
- * Cyan uses the shipped PNG so pixels match the suggested logo;
- * amber uses the same SVG paths recolored.
+ * Exact approved hexagon+MS logo (concept B / PWA PNG).
+ * Always the same artwork — amber is a hue shift so shape never drifts.
  */
 export default function BrandMark({
   size = 'md',
@@ -34,30 +31,23 @@ export default function BrandMark({
   animate = true,
 }: BrandMarkProps) {
   const reduceMotion = useReducedMotion();
-  const { accent, isLight } = useTheme();
+  const { accent } = useTheme();
   const px = typeof size === 'number' ? size : SIZE_PX[size];
   const isAmber = accent === 'amber';
-  const markColor = isAmber
-    ? isLight
-      ? '#b45309'
-      : BRAND_ACCENT_HEX.amber
-    : BRAND_ACCENT_HEX.cyan;
-
-  const src = useMemo(
-    () => (isAmber ? brandMarkDataUrl(markColor) : BRAND_MARK_PNG_SRC),
-    [isAmber, markColor]
-  );
 
   const mark = (
     <img
-      src={src}
+      src={BRAND_MARK_PNG_SRC}
       alt=""
       width={px}
       height={px}
       draggable={false}
       decoding="async"
       className="block h-full w-full rounded-lg object-cover"
-      style={{ transform: 'translateZ(0)' }}
+      style={{
+        transform: 'translateZ(0)',
+        filter: isAmber ? AMBER_MARK_FILTER : undefined,
+      }}
     />
   );
 

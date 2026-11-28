@@ -69,6 +69,29 @@ function readStoredAccent(): SiteAccent {
   return 'cyan';
 }
 
+const FAVICON_VERSION = '1.1.24';
+
+function syncDocumentFavicon(accent: SiteAccent) {
+  const href =
+    accent === 'amber'
+      ? `/icon-amber.svg?v=${FAVICON_VERSION}`
+      : `/icon.svg?v=${FAVICON_VERSION}`;
+
+  let link = document.querySelector<HTMLLinkElement>(
+    'link[data-brand-favicon="svg"]'
+  );
+  if (!link) {
+    link = document.createElement('link');
+    link.rel = 'icon';
+    link.type = 'image/svg+xml';
+    link.setAttribute('data-brand-favicon', 'svg');
+    document.head.appendChild(link);
+  }
+  if (link.getAttribute('href') !== href) {
+    link.setAttribute('href', href);
+  }
+}
+
 function applyThemeToDocument(theme: SiteTheme, accent: SiteAccent) {
   const root = document.documentElement;
   root.setAttribute('data-theme', theme);
@@ -80,6 +103,8 @@ function applyThemeToDocument(theme: SiteTheme, accent: SiteAccent) {
   if (meta) {
     meta.setAttribute('content', theme === 'light' ? '#f8fafc' : '#06080d');
   }
+
+  syncDocumentFavicon(accent);
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
