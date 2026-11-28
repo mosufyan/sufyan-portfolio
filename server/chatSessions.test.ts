@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import {
   appendChatMessage,
+  appendChatSystemNotice,
   clearOwnerPresence,
   closeChatSession,
   createChatSession,
@@ -74,6 +75,29 @@ describe('chatSessions', () => {
     expect(isOwnerOnline()).toBe(true);
     clearOwnerPresence();
     expect(isOwnerOnline()).toBe(false);
+  });
+
+  it('tags PTT/S2S channels and dedupes rapid identical captions', () => {
+    const session = createChatSession({
+      visitorName: 'Voice User',
+      visitorEmail: 'voice@example.com',
+      ipAddress: '203.0.113.40',
+      userAgent: 'vitest',
+    });
+    appendChatMessage(session.sessionId, 'visitor', 'Tell me about Cisco', { channel: 'ptt' });
+    appendChatMessage(session.sessionId, 'bot', 'Cisco tenure highlights…', { channel: 'ptt' });
+    appendChatSystemNotice(session.sessionId, 'Live speech-to-speech started (5 min window).', {
+      channel: 's2s',
+    });
+    appendChatMessage(session.sessionId, 'visitor', 'What certs?', { channel: 's2s' });
+    // Identical caption within dedupe window should not double-append.
+    appendChatMessage(session.sessionId, 'visitor', 'What certs?', { channel: 's2s' });
+    const view = publicSessionView(getChatSession(session.sessionId)!);
+    const ptt = view.messages.filter((m) => m.channel === 'ptt');
+    const s2s = view.messages.filter((m) => m.channel === 's2s');
+    expect(ptt.length).toBe(2);
+    expect(s2s.some((m) => /speech-to-speech started/i.test(m.text))).toBe(true);
+    expect(s2s.filter((m) => m.text === 'What certs?').length).toBe(1);
   });
 
   it('starts a new visitor thread while keeping prior messages for the owner', () => {

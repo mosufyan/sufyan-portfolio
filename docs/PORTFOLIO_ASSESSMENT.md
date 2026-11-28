@@ -10,8 +10,8 @@ Related: [SECURITY.md](./SECURITY.md) · [SECURITY_CONFIGURATION.md](./SECURITY_
 | Goal | Realistic target | Where you are today |
 |------|------------------|---------------------|
 | Security | Defense-in-depth, no known high-severity gold-path gaps | **~97/100** in code (CMS seed-hides, deep experience rules, Mermaid DOMPurify, Admin-only PII, CSP + Live S2S, CI SAST) |
-| Observability | Product telemetry + SRE hooks | **~94/100** (Prometheus `/api/metrics`, RAG/voice/CSP counters, request IDs, JSON logs, Sentry/Slack, `/api/status` snapshot) |
-| Product polish | Recruiter-ready + control map | **~94/100** (Portfolio Architecture hub, CMS, dual voice, accents) |
+| Observability | Product telemetry + SRE hooks | **~95/100** (Prometheus `/api/metrics`, RAG/voice/S2S transcript/CSP counters, request IDs, JSON logs, Sentry/Slack, `/api/status` snapshot) |
+| Product polish | Recruiter-ready + control map | **~95/100** (Portfolio Architecture hub, CMS, dual voice with Owner Chat PTT/S2S transcripts, accents) |
 | **Overall** | World-class personal security portfolio | **~96/100** |
 
 **Why not 99?** Remaining points are *production proof*, not missing features:
@@ -45,8 +45,8 @@ quadrantChart
 | Dimension | Score | Rationale |
 |-----------|------:|-----------|
 | **Security** | **97** | Prior gold path + CMS seed-hides (no soft-delete body leak), deep experience role rules, Mermaid SVG sanitize, `cms_mutated` audit, CI SAST/Trivy |
-| **Observability** | **94** | Prometheus `/api/metrics` (+ optional `METRICS_TOKEN`), chat RAG/LLM/voice/CSP/client-error counters, structured chat/voice logs, `/api/status.observability` |
-| **Feature polish** | **94** | Owner CMS hub, Portfolio Architecture, dual voice, accents |
+| **Observability** | **95** | Prometheus `/api/metrics` (+ optional `METRICS_TOKEN`), chat RAG/LLM/voice/CSP/client-error counters, S2S transcript counter, structured chat/voice logs, `/api/status.observability` |
+| **Feature polish** | **95** | Owner CMS hub, Portfolio Architecture, dual voice with PTT/S2S thread logging in Owner Chat, accents |
 | **Hiring narrative** | **94** | Live control map + gold-path + metrics exposition |
 | **Overall** | **96** | Ops checklist below unlocks ~97–98 |
 
@@ -65,6 +65,7 @@ quadrantChart
 - Portfolio Architecture hub (`#architecture` / `#security`) with Mermaid + live readiness  
 - Portfolio CMS hub (`#owner/cms/<tab>`) + seed hides / soft-delete hardening  
 - Prometheus `GET /api/metrics` + richer chat/voice/CSP counters  
+- **Voice channel logging:** PTT tagged `channel:ptt`; Live S2S start notice + captions via receipt-gated `/api/chat/voice/realtime-log`; Owner Chat All/Text/PTT/S2S filters (no raw audio)  
 - **CI split into separate checks:** SemVer, typecheck, unit/coverage, audit, build, CSP, bundle size (~6.5 MiB), Firestore rules lint + emulator tests, Gitleaks, Bandit, Semgrep, CodeQL, Docker, Trivy — [CI.md](./CI.md)
 
 ---

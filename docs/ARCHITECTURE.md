@@ -168,6 +168,7 @@ sequenceDiagram
 | Live S2S | Owner `enableVoiceRealtime` + Grok Live; production CSP allows `wss://api.x.ai` |
 | Quotas | Consumes **voice** + **question** counters (`chatMaxVoiceTurnsPerVisitor`, default 8) |
 | Client abstraction | `VoiceTransport` in `src/utils/voiceTransport.ts` — `HttpTurnTransport` for PTT; Live Call uses Grok WebSocket |
+| Owner Console | PTT transcripts append with `channel: ptt`; Live S2S start notice + captions via `/api/chat/voice/realtime-log` (`channel: s2s`); thread filter chips All/Text/PTT/S2S |
 
 ### Quota keys (anti-spoof)
 

@@ -32,6 +32,7 @@ This portfolio combines a public showcase with hardened lead-capture APIs (`/api
 | Unauthorized Firestore PII read | Strong (strict owner-only Firestore rules + RS256 token verification) |
 | Unauthenticated Firestore create abuse | Mitigated via App Check +/or Admin SDK server writes (see below) |
 | Soft-deleted CMS content leak | Mitigated (`deleted == false` public queries + `portfolio_seed_hides`; Mermaid SVG DOMPurify) |
+| Voice transcript spoof into owner thread | Mitigated (`/api/chat/voice/realtime-log` requires chat receipt; roles limited to visitor/bot; rate-limited) |
 | Scraping public client portfolio copy | Expected for unauthenticated public SPAs (mitigate further with Cloudflare Bot Fight Mode / WAF) |
 | Multi-instance rate-limit bypass | Mitigated when Upstash Redis is configured |
 

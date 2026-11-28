@@ -4,7 +4,14 @@ import { useFirebase } from '../contexts/FirebaseContext';
 import { toUserFacingError } from '../utils/userFacingError';
 import ChatMessageComposer from './ChatMessageComposer';
 
-type ChatMessage = { id: string; role: string; text: string; createdAtMs: number };
+type ChatChannel = 'text' | 'ptt' | 's2s';
+type ChatMessage = {
+  id: string;
+  role: string;
+  text: string;
+  createdAtMs: number;
+  channel?: ChatChannel;
+};
 type ChatSession = {
   sessionId: string;
   status: string;
@@ -14,6 +21,7 @@ type ChatSession = {
   updatedAtMs: number;
   messages: ChatMessage[];
 };
+type ChannelFilter = 'all' | ChatChannel;
 
 type ChatStats = {
   botQuestions: number;
@@ -53,6 +61,7 @@ export default function OwnerChatPanel({ isLight }: { isLight: boolean }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [channelFilter, setChannelFilter] = useState<ChannelFilter>('all');
 
   const card = isLight ? 'border-slate-200 bg-white' : 'border-slate-800 bg-[#090d16]';
   const muted = isLight ? 'text-slate-500' : 'text-slate-400';
@@ -97,6 +106,43 @@ export default function OwnerChatPanel({ isLight }: { isLight: boolean }) {
     () => sessions.find((s) => s.sessionId === selectedId) || sessions[0] || null,
     [sessions, selectedId]
   );
+
+  const filteredMessages = useMemo(() => {
+    if (!selected) return [];
+    if (channelFilter === 'all') return selected.messages;
+    return selected.messages.filter((m) => (m.channel || 'text') === channelFilter);
+  }, [selected, channelFilter]);
+
+  const channelBadge = (channel?: ChatChannel) => {
+    const c = channel || 'text';
+    if (c === 'ptt') {
+      return (
+        <span
+          className={`ml-1 inline-flex items-center rounded border px-1 py-px text-[9px] font-mono uppercase ${
+            isLight
+              ? 'border-violet-300 bg-violet-50 text-violet-700'
+              : 'border-violet-500/40 bg-violet-950/30 text-violet-300'
+          }`}
+        >
+          PTT
+        </span>
+      );
+    }
+    if (c === 's2s') {
+      return (
+        <span
+          className={`ml-1 inline-flex items-center rounded border px-1 py-px text-[9px] font-mono uppercase ${
+            isLight
+              ? 'border-amber-300 bg-amber-50 text-amber-800'
+              : 'border-amber-500/40 bg-amber-950/30 text-amber-200'
+          }`}
+        >
+          S2S
+        </span>
+      );
+    }
+    return null;
+  };
 
   useEffect(() => {
     if (selected && selected.sessionId !== selectedId) setSelectedId(selected.sessionId);
@@ -261,6 +307,33 @@ export default function OwnerChatPanel({ isLight }: { isLight: boolean }) {
                     <span className={`text-[10px] font-mono ${muted}`}>{selected.sessionId}</span>
                   </div>
                   <div className={`text-[10px] font-mono truncate ${muted}`}>{selected.visitorEmail}</div>
+                  <div className="mt-1.5 flex flex-wrap gap-1" role="group" aria-label="Filter by channel">
+                    {(
+                      [
+                        ['all', 'All'],
+                        ['text', 'Text'],
+                        ['ptt', 'PTT'],
+                        ['s2s', 'S2S'],
+                      ] as const
+                    ).map(([id, label]) => (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => setChannelFilter(id)}
+                        className={`rounded-md border px-1.5 py-0.5 text-[10px] font-mono uppercase cursor-pointer ${
+                          channelFilter === id
+                            ? isLight
+                              ? 'border-sky-500 bg-sky-50 text-sky-800'
+                              : 'border-cyan-400/50 bg-cyan-500/15 text-cyan-200'
+                            : isLight
+                              ? 'border-slate-200 text-slate-600'
+                              : 'border-slate-700 text-slate-400'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 <button
                   type="button"
@@ -273,27 +346,35 @@ export default function OwnerChatPanel({ isLight }: { isLight: boolean }) {
                 </button>
               </div>
               <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-2">
-                {selected.messages.map((m) => (
-                  <div
-                    key={m.id}
-                    className={`rounded-lg px-2.5 py-1.5 text-xs whitespace-pre-wrap ${
-                      m.role === 'owner'
-                        ? 'bg-cyan-500/15 border border-cyan-500/25 ml-6'
-                        : m.role === 'visitor'
-                          ? isLight
-                            ? 'bg-slate-100 mr-6'
-                            : 'bg-[#121826] mr-6'
-                          : isLight
-                            ? 'bg-amber-50 text-amber-900'
-                            : 'bg-amber-950/25 text-amber-100'
-                    }`}
-                  >
-                    <div className={`text-[10px] font-mono mb-0.5 ${muted}`}>
-                      {m.role} · {new Date(m.createdAtMs).toLocaleTimeString()}
-                    </div>
-                    {m.text}
+                {filteredMessages.length === 0 ? (
+                  <div className={`text-[11px] font-mono ${muted}`}>
+                    No {channelFilter === 'all' ? '' : `${channelFilter.toUpperCase()} `}messages in this
+                    session yet.
                   </div>
-                ))}
+                ) : (
+                  filteredMessages.map((m) => (
+                    <div
+                      key={m.id}
+                      className={`rounded-lg px-2.5 py-1.5 text-xs whitespace-pre-wrap ${
+                        m.role === 'owner'
+                          ? 'bg-cyan-500/15 border border-cyan-500/25 ml-6'
+                          : m.role === 'visitor'
+                            ? isLight
+                              ? 'bg-slate-100 mr-6'
+                              : 'bg-[#121826] mr-6'
+                            : isLight
+                              ? 'bg-amber-50 text-amber-900'
+                              : 'bg-amber-950/25 text-amber-100'
+                      }`}
+                    >
+                      <div className={`text-[10px] font-mono mb-0.5 ${muted}`}>
+                        {m.role}
+                        {channelBadge(m.channel)} · {new Date(m.createdAtMs).toLocaleTimeString()}
+                      </div>
+                      {m.text}
+                    </div>
+                  ))
+                )}
               </div>
               <div className={`p-2.5 border-t ${isLight ? 'border-slate-200' : 'border-slate-800'}`}>
                 <ChatMessageComposer

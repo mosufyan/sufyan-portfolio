@@ -24,7 +24,7 @@
 <p align="center">
   <a href="https://github.com/mosufyan/sufyan-portfolio/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/mosufyan/sufyan-portfolio/actions/workflows/ci.yml/badge.svg" /></a>
   <a href="https://www.mohammedsufyan.com/"><img alt="Live" src="https://img.shields.io/badge/site-mohammedsufyan.com-0ea5e9?style=flat" /></a>
-  <a href="./package.json"><img alt="Version" src="https://img.shields.io/badge/version-v1.1.17-22c55e?style=flat" /></a>
+  <a href="./package.json"><img alt="Version" src="https://img.shields.io/badge/version-v1.1.18-22c55e?style=flat" /></a>
   <img alt="Node" src="https://img.shields.io/badge/node-22+-339933?style=flat&logo=node.js&logoColor=white" />
 </p>
 
