@@ -145,11 +145,11 @@ export function buildDynamicSocialSvg(options: {
   <rect width="1200" height="630" fill="url(#glow)" />
   <rect x="44" y="44" width="1112" height="542" rx="28" fill="${cardBg}" fill-opacity="0.94" stroke="${border}" stroke-width="1.5" />
 
-  <!-- Brand Mark -->
-  ${brandMarkSvgSnippet(96, 96, 56, accent)}
+  <!-- Brand Mark — hex+MS only, no dark tile -->
+  ${brandMarkSvgSnippet(88, 88, 64, accent, { background: 'transparent' })}
 
-  <text x="172" y="120" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="700" letter-spacing="2.2" fill="${accent}">VERIFIED ARCHITECT PORTFOLIO</text>
-  <text x="172" y="145" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" fill="${mutedColor}">www.mohammedsufyan.com</text>
+  <text x="168" y="114" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="700" letter-spacing="2.2" fill="${accent}">VERIFIED ARCHITECT PORTFOLIO</text>
+  <text x="168" y="140" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" fill="${mutedColor}">www.mohammedsufyan.com</text>
 
   <!-- Main Title -->
   <text x="96" y="246" font-family="system-ui, -apple-system, sans-serif" font-size="52" font-weight="800" letter-spacing="-1" fill="${titleColor}">${safeHeadline}</text>

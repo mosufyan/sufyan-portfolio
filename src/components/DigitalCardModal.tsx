@@ -205,24 +205,24 @@ export default function DigitalCardModal({ isOpen, onClose }: DigitalCardModalPr
       ctx.fill();
       ctx.stroke();
 
-      // Brand badge — exact approved hexagon+MS mark (recolored for accent)
+      // Brand mark — hex+MS only (no dark tile) so it sits cleanly on the card
       const brandImg = new Image();
       await new Promise<void>((resolve) => {
         brandImg.onload = () => resolve();
         brandImg.onerror = () => resolve();
-        brandImg.src = brandMarkDataUrl(accent);
+        brandImg.src = brandMarkDataUrl(accent, { background: 'transparent' });
       });
       if (brandImg.naturalWidth > 0) {
-        ctx.drawImage(brandImg, 92, 92, 56, 56);
+        ctx.drawImage(brandImg, 88, 88, 64, 64);
       }
 
       ctx.textAlign = 'left';
       ctx.fillStyle = accent;
       ctx.font = 'bold 15px monospace';
-      ctx.fillText('VERIFIED ARCHITECT PORTFOLIO', 166, 115);
+      ctx.fillText('VERIFIED ARCHITECT PORTFOLIO', 168, 114);
       ctx.fillStyle = muted;
       ctx.font = '15px monospace';
-      ctx.fillText('www.mohammedsufyan.com', 166, 140);
+      ctx.fillText('www.mohammedsufyan.com', 168, 140);
 
       // Portrait frame (right side)
       const img = new Image();
@@ -470,7 +470,23 @@ export default function DigitalCardModal({ isOpen, onClose }: DigitalCardModalPr
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0 flex items-start gap-2.5">
-                        <BrandMark size={40} className="shrink-0" />
+                        <img
+                          src={brandMarkDataUrl(
+                            siteAccent === 'amber'
+                              ? shareCardTheme === 'light'
+                                ? '#b45309'
+                                : '#fbbf24'
+                              : shareCardTheme === 'light'
+                                ? '#0284c7'
+                                : '#22d3ee',
+                            { background: 'transparent' }
+                          )}
+                          alt=""
+                          width={40}
+                          height={40}
+                          className="w-10 h-10 shrink-0"
+                          draggable={false}
+                        />
                         <div className="min-w-0">
                           <div
                             className={`text-[9px] font-mono uppercase tracking-widest font-semibold ${
@@ -478,6 +494,13 @@ export default function DigitalCardModal({ isOpen, onClose }: DigitalCardModalPr
                             }`}
                           >
                             Verified Architect Portfolio
+                          </div>
+                          <div
+                            className={`text-[10px] font-mono mt-0.5 ${
+                              shareCardTheme === 'light' ? 'text-slate-500' : 'text-slate-400'
+                            }`}
+                          >
+                            www.mohammedsufyan.com
                           </div>
                           <div className="font-display font-extrabold text-base sm:text-lg leading-tight mt-1.5">
                             {activeShareTrack.headline}

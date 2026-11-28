@@ -21,18 +21,22 @@ export const BRAND_ACCENT_HEX = {
 export type BrandAccent = keyof typeof BRAND_ACCENT_HEX;
 
 /**
- * Exact approved logo SVG with optional accent recolor only.
- * Do not scale/reflow the MS — proportions match the suggested mark.
+ * Exact approved logo SVG with optional accent recolor.
+ * Pass background: 'transparent' for share cards (hex+MS only, no dark tile).
  */
 export function buildBrandMarkSvg(options?: {
   accent?: string;
-  background?: string;
+  background?: string | 'transparent';
 }): string {
   const accent = options?.accent ?? BRAND_ACCENT_HEX.cyan;
   const background = options?.background ?? '#06080d';
+  const bgRect =
+    background === 'transparent' || background === 'none'
+      ? ''
+      : `<rect width="512" height="512" fill="${background}"/>`;
 
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Mohammed Sufyan">
-  <rect width="512" height="512" fill="${background}"/>
+  ${bgRect}
   <path fill="none" stroke="${accent}" stroke-width="26" stroke-linejoin="round" d="${BRAND_MARK_HEX_PATH}"/>
   <path fill="${accent}" d="${BRAND_MARK_MS_PATH}"/>
 </svg>`;
@@ -42,15 +46,26 @@ export function brandMarkSvgSnippet(
   x: number,
   y: number,
   size: number,
-  accent: string = BRAND_ACCENT_HEX.cyan
+  accent: string = BRAND_ACCENT_HEX.cyan,
+  opts?: { background?: string | 'transparent' }
 ): string {
+  const background = opts?.background ?? 'transparent';
+  const bgRect =
+    background === 'transparent' || background === 'none'
+      ? ''
+      : `<rect width="512" height="512" fill="${background}"/>`;
   return `<svg x="${x}" y="${y}" width="${size}" height="${size}" viewBox="0 0 512 512" role="img" aria-label="Mohammed Sufyan">
-  <rect width="512" height="512" fill="#06080d"/>
+  ${bgRect}
   <path fill="none" stroke="${accent}" stroke-width="26" stroke-linejoin="round" d="${BRAND_MARK_HEX_PATH}"/>
   <path fill="${accent}" d="${BRAND_MARK_MS_PATH}"/>
 </svg>`;
 }
 
-export function brandMarkDataUrl(accent: string): string {
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(buildBrandMarkSvg({ accent }))}`;
+export function brandMarkDataUrl(
+  accent: string,
+  opts?: { background?: string | 'transparent' }
+): string {
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
+    buildBrandMarkSvg({ accent, background: opts?.background ?? '#06080d' })
+  )}`;
 }
