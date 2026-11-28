@@ -69,7 +69,7 @@ function readStoredAccent(): SiteAccent {
   return 'cyan';
 }
 
-const FAVICON_VERSION = '1.1.24';
+const FAVICON_VERSION = '1.1.25';
 
 function syncDocumentFavicon(accent: SiteAccent) {
   const href =
