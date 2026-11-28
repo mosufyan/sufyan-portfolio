@@ -18,6 +18,7 @@ import {
   serverTimestamp,
   setDoc,
   updateDoc,
+  where,
 } from 'firebase/firestore';
 import {
   AWARDS,
@@ -144,34 +145,50 @@ async function softOrHardDelete(
   collectionName: string,
   docId: string,
   isStaticSeed: boolean,
-  seedPayload: Record<string, unknown> | null,
   authorUid: string
 ): Promise<void> {
   const path = `${collectionName}/${docId}`;
   try {
-    if (isStaticSeed && seedPayload) {
-      await setDoc(doc(db, collectionName, docId), {
-        ...seedPayload,
-        deleted: true,
-        source: 'cloud',
+    // Prefer seed-hide markers over content tombstones so soft-deleted bodies
+    // are not world-readable via public list/get.
+    if (isStaticSeed) {
+      const hideId = `${collectionName}__${docId}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 128);
+      await setDoc(doc(db, 'portfolio_seed_hides', hideId), {
+        collection: collectionName,
+        entityId: docId,
         authorUid,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
-      return;
     }
-    await deleteDoc(doc(db, collectionName, docId));
+    await deleteDoc(doc(db, collectionName, docId)).catch(() => {
+      /* cloud override may not exist for pure seed hides */
+    });
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }
 }
 
+function publicCmsQuery(collectionName: string) {
+  return query(
+    collection(db, collectionName),
+    where('deleted', '==', false),
+    orderBy('updatedAt', 'desc')
+  );
+}
+
 export function PortfolioContentProvider({ children }: { children: ReactNode }) {
-  const { user, isOwner, authReady } = useFirebase();
+  const { user, isOwner, authReady, recordAdminAudit } = useFirebase();
   const [cloudCerts, setCloudCerts] = useState<CloudCertification[]>([]);
   const [cloudAwards, setCloudAwards] = useState<CloudAward[]>([]);
   const [cloudRecs, setCloudRecs] = useState<CloudRecommendation[]>([]);
   const [cloudDisciplines, setCloudDisciplines] = useState<CloudDiscipline[]>([]);
+  const [hiddenSeeds, setHiddenSeeds] = useState<Record<string, string[]>>({
+    portfolio_certifications: [],
+    portfolio_awards: [],
+    portfolio_recommendations: [],
+    portfolio_disciplines: [],
+  });
   const [cloudExperience, setCloudExperience] = useState<
     Partial<Record<ExperienceCompanyKey, CompanyExperienceDraft>>
   >({});
@@ -181,15 +198,34 @@ export function PortfolioContentProvider({ children }: { children: ReactNode }) 
   useEffect(() => {
     if (!authReady) return;
     const unsubs: Array<() => void> = [];
-    let pending = 6;
+    let pending = 7;
     const markReady = () => {
       pending -= 1;
       if (pending <= 0) setLoadingPortfolioContent(false);
     };
 
     unsubs.push(
+      onSnapshot(collection(db, 'portfolio_seed_hides'), (snap) => {
+        const next: Record<string, string[]> = {
+          portfolio_certifications: [],
+          portfolio_awards: [],
+          portfolio_recommendations: [],
+          portfolio_disciplines: [],
+        };
+        snap.docs.forEach((d) => {
+          const data = d.data();
+          const col = String(data.collection || '');
+          const entityId = String(data.entityId || '');
+          if (entityId && col in next) next[col].push(entityId);
+        });
+        setHiddenSeeds(next);
+        markReady();
+      }, () => markReady())
+    );
+
+    unsubs.push(
       onSnapshot(
-        query(collection(db, 'portfolio_certifications'), orderBy('updatedAt', 'desc')),
+        publicCmsQuery('portfolio_certifications'),
         (snap) => {
           setCloudCerts(
             snap.docs.map((d) => {
@@ -224,7 +260,7 @@ export function PortfolioContentProvider({ children }: { children: ReactNode }) 
 
     unsubs.push(
       onSnapshot(
-        query(collection(db, 'portfolio_awards'), orderBy('updatedAt', 'desc')),
+        publicCmsQuery('portfolio_awards'),
         (snap) => {
           setCloudAwards(
             snap.docs.map((d) => {
@@ -253,7 +289,7 @@ export function PortfolioContentProvider({ children }: { children: ReactNode }) 
 
     unsubs.push(
       onSnapshot(
-        query(collection(db, 'portfolio_recommendations'), orderBy('updatedAt', 'desc')),
+        publicCmsQuery('portfolio_recommendations'),
         (snap) => {
           setCloudRecs(
             snap.docs.map((d) => {
@@ -287,7 +323,7 @@ export function PortfolioContentProvider({ children }: { children: ReactNode }) 
 
     unsubs.push(
       onSnapshot(
-        query(collection(db, 'portfolio_disciplines'), orderBy('updatedAt', 'desc')),
+        publicCmsQuery('portfolio_disciplines'),
         (snap) => {
           setCloudDisciplines(
             snap.docs.map((d) => {
@@ -374,15 +410,27 @@ export function PortfolioContentProvider({ children }: { children: ReactNode }) 
     return () => unsubs.forEach((u) => u());
   }, [authReady]);
 
-  const certifications = useMemo(() => mergeCertifications(cloudCerts), [cloudCerts]);
+  const certifications = useMemo(
+    () => mergeCertifications(cloudCerts, hiddenSeeds.portfolio_certifications),
+    [cloudCerts, hiddenSeeds.portfolio_certifications]
+  );
   const certificationCategories = useMemo(
     () => mergeCertificationCategories(certifications),
     [certifications]
   );
-  const awards = useMemo(() => mergeAwards(cloudAwards), [cloudAwards]);
+  const awards = useMemo(
+    () => mergeAwards(cloudAwards, hiddenSeeds.portfolio_awards),
+    [cloudAwards, hiddenSeeds.portfolio_awards]
+  );
   const awardsByOrganization = useMemo(() => mergeAwardsByOrganization(awards), [awards]);
-  const recommendations = useMemo(() => mergeRecommendations(cloudRecs), [cloudRecs]);
-  const disciplines = useMemo(() => mergeDisciplines(cloudDisciplines), [cloudDisciplines]);
+  const recommendations = useMemo(
+    () => mergeRecommendations(cloudRecs, hiddenSeeds.portfolio_recommendations),
+    [cloudRecs, hiddenSeeds.portfolio_recommendations]
+  );
+  const disciplines = useMemo(
+    () => mergeDisciplines(cloudDisciplines, hiddenSeeds.portfolio_disciplines),
+    [cloudDisciplines, hiddenSeeds.portfolio_disciplines]
+  );
   const companyExperience = useMemo(() => {
     const seeds = getAllStaticCompanyExperienceDrafts();
     return {
@@ -405,6 +453,15 @@ export function PortfolioContentProvider({ children }: { children: ReactNode }) 
     [cloudExperience, ciscoRoleCloud]
   );
 
+  const clearSeedHide = useCallback(async (collectionName: string, entityId: string) => {
+    const hideId = `${collectionName}__${entityId}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 128);
+    try {
+      await deleteDoc(doc(db, 'portfolio_seed_hides', hideId));
+    } catch {
+      /* no hide marker */
+    }
+  }, []);
+
   const upsertCertification = useCallback(
     async (draft: CertificationDraft, id?: string) => {
       assertOwner(isOwner);
@@ -413,46 +470,30 @@ export function PortfolioContentProvider({ children }: { children: ReactNode }) 
       const docId = id && isValidPortfolioEntityId(id) ? id : generatePortfolioEntityId('cert');
       const record = certificationDraftToRecord(docId, validation.normalized);
       try {
+        await clearSeedHide('portfolio_certifications', docId);
         await upsertCloudDoc(
           'portfolio_certifications',
           docId,
           { ...record, sourceAnnouncementId: validation.normalized.sourceAnnouncementId || '' },
           user?.uid || ''
         );
+        void recordAdminAudit('cms_mutated', `Upserted certification ${docId}`).catch(() => {});
       } catch (error) {
         handleFirestoreError(error, OperationType.WRITE, `portfolio_certifications/${docId}`);
       }
       return docId;
     },
-    [isOwner, user?.uid]
+    [clearSeedHide, isOwner, recordAdminAudit, user?.uid]
   );
 
   const deleteCertification = useCallback(
     async (id: string) => {
       assertOwner(isOwner);
       const seed = CERTIFICATIONS.find((c) => c.id === id) || null;
-      await softOrHardDelete(
-        'portfolio_certifications',
-        id,
-        Boolean(seed),
-        seed
-          ? {
-              id: seed.id,
-              title: seed.title,
-              issuer: seed.issuer,
-              issueDate: seed.issueDate,
-              expiryDate: seed.expiryDate || '',
-              credentialId: seed.credentialId || '',
-              credentialUrl: seed.credentialUrl || '',
-              category: seed.category,
-              badgeColor: seed.badgeColor,
-              skills: seed.skills,
-            }
-          : null,
-        user?.uid || ''
-      );
+      await softOrHardDelete('portfolio_certifications', id, Boolean(seed), user?.uid || '');
+      void recordAdminAudit('cms_mutated', `Deleted certification ${id}`).catch(() => {});
     },
-    [isOwner, user?.uid]
+    [isOwner, recordAdminAudit, user?.uid]
   );
 
   const upsertAward = useCallback(
@@ -463,6 +504,7 @@ export function PortfolioContentProvider({ children }: { children: ReactNode }) 
       const docId = id && isValidPortfolioEntityId(id) ? id : generatePortfolioEntityId('award');
       const record = awardDraftToRecord(docId, validation.normalized);
       try {
+        await clearSeedHide('portfolio_awards', docId);
         await upsertCloudDoc(
           'portfolio_awards',
           docId,
@@ -473,37 +515,23 @@ export function PortfolioContentProvider({ children }: { children: ReactNode }) 
           },
           user?.uid || ''
         );
+        void recordAdminAudit('cms_mutated', `Upserted award ${docId}`).catch(() => {});
       } catch (error) {
         handleFirestoreError(error, OperationType.WRITE, `portfolio_awards/${docId}`);
       }
       return docId;
     },
-    [isOwner, user?.uid]
+    [clearSeedHide, isOwner, recordAdminAudit, user?.uid]
   );
 
   const deleteAward = useCallback(
     async (id: string) => {
       assertOwner(isOwner);
       const seed = AWARDS.find((a) => a.id === id) || null;
-      await softOrHardDelete(
-        'portfolio_awards',
-        id,
-        Boolean(seed),
-        seed
-          ? {
-              id: seed.id,
-              title: seed.title,
-              organization: seed.organization,
-              date: seed.date,
-              category: seed.category,
-              description: seed.description,
-              associatedWith: seed.associatedWith || '',
-            }
-          : null,
-        user?.uid || ''
-      );
+      await softOrHardDelete('portfolio_awards', id, Boolean(seed), user?.uid || '');
+      void recordAdminAudit('cms_mutated', `Deleted award ${id}`).catch(() => {});
     },
-    [isOwner, user?.uid]
+    [isOwner, recordAdminAudit, user?.uid]
   );
 
   const upsertRecommendation = useCallback(
@@ -514,6 +542,7 @@ export function PortfolioContentProvider({ children }: { children: ReactNode }) 
       const docId = id && isValidPortfolioEntityId(id) ? id : generatePortfolioEntityId('rec');
       const record = recommendationDraftToRecord(docId, validation.normalized);
       try {
+        await clearSeedHide('portfolio_recommendations', docId);
         await upsertCloudDoc(
           'portfolio_recommendations',
           docId,
@@ -524,38 +553,23 @@ export function PortfolioContentProvider({ children }: { children: ReactNode }) 
           },
           user?.uid || ''
         );
+        void recordAdminAudit('cms_mutated', `Upserted recommendation ${docId}`).catch(() => {});
       } catch (error) {
         handleFirestoreError(error, OperationType.WRITE, `portfolio_recommendations/${docId}`);
       }
       return docId;
     },
-    [isOwner, user?.uid]
+    [clearSeedHide, isOwner, recordAdminAudit, user?.uid]
   );
 
   const deleteRecommendation = useCallback(
     async (id: string) => {
       assertOwner(isOwner);
       const seed = LINKEDIN_RECOMMENDATIONS.find((r) => r.id === id) || null;
-      await softOrHardDelete(
-        'portfolio_recommendations',
-        id,
-        Boolean(seed),
-        seed
-          ? {
-              id: seed.id,
-              author: seed.author,
-              role: seed.role,
-              date: seed.date,
-              relationship: seed.relationship,
-              relationshipType: seed.relationshipType,
-              quote: seed.quote,
-              featured: Boolean(seed.featured),
-            }
-          : null,
-        user?.uid || ''
-      );
+      await softOrHardDelete('portfolio_recommendations', id, Boolean(seed), user?.uid || '');
+      void recordAdminAudit('cms_mutated', `Deleted recommendation ${id}`).catch(() => {});
     },
-    [isOwner, user?.uid]
+    [isOwner, recordAdminAudit, user?.uid]
   );
 
   const upsertDiscipline = useCallback(
@@ -565,6 +579,7 @@ export function PortfolioContentProvider({ children }: { children: ReactNode }) 
       if (!validation.valid) throw new Error(validation.errors[0]);
       const docId = id && isValidPortfolioEntityId(id) ? id : generatePortfolioEntityId('disc');
       try {
+        await clearSeedHide('portfolio_disciplines', docId);
         await upsertCloudDoc(
           'portfolio_disciplines',
           docId,
@@ -576,36 +591,23 @@ export function PortfolioContentProvider({ children }: { children: ReactNode }) 
           },
           user?.uid || ''
         );
+        void recordAdminAudit('cms_mutated', `Upserted discipline ${docId}`).catch(() => {});
       } catch (error) {
         handleFirestoreError(error, OperationType.WRITE, `portfolio_disciplines/${docId}`);
       }
       return docId;
     },
-    [isOwner, user?.uid]
+    [clearSeedHide, isOwner, recordAdminAudit, user?.uid]
   );
 
   const deleteDiscipline = useCallback(
     async (id: string) => {
       assertOwner(isOwner);
       const seed = TECHNICAL_DISCIPLINES.find((d) => d.id === id) || null;
-      await softOrHardDelete(
-        'portfolio_disciplines',
-        id,
-        Boolean(seed),
-        seed
-          ? {
-              id: seed.id,
-              title: seed.title,
-              status: seed.status,
-              description: seed.description,
-              technologies: seed.technologies,
-              level: seed.level,
-            }
-          : null,
-        user?.uid || ''
-      );
+      await softOrHardDelete('portfolio_disciplines', id, Boolean(seed), user?.uid || '');
+      void recordAdminAudit('cms_mutated', `Deleted discipline ${id}`).catch(() => {});
     },
-    [isOwner, user?.uid]
+    [isOwner, recordAdminAudit, user?.uid]
   );
 
   const saveCompanyExperience = useCallback(
@@ -619,14 +621,18 @@ export function PortfolioContentProvider({ children }: { children: ReactNode }) 
           validation.normalized.companyKey,
           {
             companyKey: validation.normalized.companyKey,
-            companyTag: validation.normalized.companyTag,
-            tenure: validation.normalized.tenure,
-            location: validation.normalized.location,
+            companyTag: validation.normalized.companyTag || '',
+            tenure: validation.normalized.tenure || '',
+            location: validation.normalized.location || '',
             roles: validation.normalized.roles,
             sourceAnnouncementId: validation.normalized.sourceAnnouncementId || '',
           },
           user?.uid || ''
         );
+        void recordAdminAudit(
+          'cms_mutated',
+          `Saved experience ${validation.normalized.companyKey}`
+        ).catch(() => {});
       } catch (error) {
         handleFirestoreError(
           error,
@@ -635,7 +641,7 @@ export function PortfolioContentProvider({ children }: { children: ReactNode }) 
         );
       }
     },
-    [isOwner, user?.uid]
+    [isOwner, recordAdminAudit, user?.uid]
   );
 
   const saveCiscoRole = useCallback(

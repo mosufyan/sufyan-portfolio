@@ -6,6 +6,7 @@ export const ADMIN_AUDIT_EVENTS = [
   'rule_deleted',
   'triage_updated',
   'announcement_mutated',
+  'cms_mutated',
   'owner_reply_sent',
   'delegate_added',
   'delegate_removed',

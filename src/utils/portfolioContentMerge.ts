@@ -53,16 +53,25 @@ export type CloudDiscipline = DisciplineDraft & {
 
 export type TechnicalDiscipline = (typeof TECHNICAL_DISCIPLINES)[number];
 
-/** Cloud overrides/additions win by id; deleted cloud docs hide static seeds. */
+/**
+ * Cloud overrides/additions win by id.
+ * Soft-deleted seeds: portfolio_seed_hides ids, or legacy cloud.deleted === true.
+ */
 export function mergeById<T extends { id: string }>(
   staticItems: T[],
-  cloudItems: Array<T & { deleted?: boolean }>
+  cloudItems: Array<T & { deleted?: boolean }>,
+  hiddenSeedIds: Iterable<string> = []
 ): T[] {
+  const hidden = new Set(hiddenSeedIds);
   const cloudMap = new Map(cloudItems.map((item) => [item.id, item]));
   const seen = new Set<string>();
   const merged: T[] = [];
 
   for (const item of staticItems) {
+    if (hidden.has(item.id)) {
+      seen.add(item.id);
+      continue;
+    }
     const cloud = cloudMap.get(item.id);
     if (cloud?.deleted) {
       seen.add(item.id);
@@ -79,7 +88,7 @@ export function mergeById<T extends { id: string }>(
   }
 
   for (const cloud of cloudItems) {
-    if (seen.has(cloud.id) || cloud.deleted) continue;
+    if (seen.has(cloud.id) || cloud.deleted || hidden.has(cloud.id)) continue;
     const { deleted: _d, ...rest } = cloud;
     merged.push(rest as T);
   }
@@ -87,8 +96,11 @@ export function mergeById<T extends { id: string }>(
   return merged;
 }
 
-export function mergeCertifications(cloud: CloudCertification[]): Certification[] {
-  return mergeById(CERTIFICATIONS, cloud);
+export function mergeCertifications(
+  cloud: CloudCertification[],
+  hiddenSeedIds: Iterable<string> = []
+): Certification[] {
+  return mergeById(CERTIFICATIONS, cloud, hiddenSeedIds);
 }
 
 export function mergeCertificationCategories(
@@ -107,8 +119,11 @@ export function mergeCertificationCategories(
   );
 }
 
-export function mergeAwards(cloud: CloudAward[]): Award[] {
-  return mergeById(AWARDS, cloud);
+export function mergeAwards(
+  cloud: CloudAward[],
+  hiddenSeedIds: Iterable<string> = []
+): Award[] {
+  return mergeById(AWARDS, cloud, hiddenSeedIds);
 }
 
 export function mergeAwardsByOrganization(awards: Award[]) {
@@ -144,12 +159,16 @@ export function mergeAwardsByOrganization(awards: Award[]) {
   return [...byOrg.values()].filter((g) => g.awards.length > 0);
 }
 
-export function mergeRecommendations(cloud: CloudRecommendation[]): Recommendation[] {
-  return mergeById(LINKEDIN_RECOMMENDATIONS, cloud);
+export function mergeRecommendations(
+  cloud: CloudRecommendation[],
+  hiddenSeedIds: Iterable<string> = []
+): Recommendation[] {
+  return mergeById(LINKEDIN_RECOMMENDATIONS, cloud, hiddenSeedIds);
 }
 
 export function mergeDisciplines(
-  cloud: CloudDiscipline[]
+  cloud: CloudDiscipline[],
+  hiddenSeedIds: Iterable<string> = []
 ): TechnicalDiscipline[] {
   const staticAsCloud: CloudDiscipline[] = TECHNICAL_DISCIPLINES.map((d) => ({
     id: d.id,
@@ -176,7 +195,8 @@ export function mergeDisciplines(
       technologies: c.technologies,
       level: c.level,
       deleted: c.deleted,
-    }))
+    })),
+    hiddenSeedIds
   ) as TechnicalDiscipline[];
 }
 

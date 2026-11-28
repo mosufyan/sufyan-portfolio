@@ -150,6 +150,7 @@ interface FirebaseContextValue {
   deleteAccessRule: (ruleId: string) => Promise<void>;
   addAdminDelegate: (draft: AdminDelegateDraft) => Promise<void>;
   removeAdminDelegate: (uid: string) => Promise<void>;
+  recordAdminAudit: (eventType: AdminAuditEventType, summary: string) => Promise<void>;
 }
 
 const FirebaseContext = createContext<FirebaseContextValue | null>(null);
@@ -1378,6 +1379,7 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
       deleteAccessRule,
       addAdminDelegate,
       removeAdminDelegate,
+      recordAdminAudit,
     }),
     [
       user,
@@ -1417,6 +1419,7 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
       deleteAccessRule,
       addAdminDelegate,
       removeAdminDelegate,
+      recordAdminAudit,
     ]
   );
 
