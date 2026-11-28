@@ -9,11 +9,7 @@ import {
   LINKEDIN_RECOMMENDATIONS,
   PERSONAL_INFO,
 } from '../data/portfolioData';
-import {
-  brandMarkDataUrl,
-  BRAND_ACCENT_HEX,
-  BRAND_MARK_PNG_SRC,
-} from '../brand/brandMark';
+import { BRAND_MARK_PNG_SRC } from '../brand/brandMark';
 import { PORTFOLIO_CANONICAL_URL } from '../utils/vcard';
 import type { CvAccentId } from '../utils/cvShareConfig';
 
@@ -529,10 +525,10 @@ export function CvImpactProofStrip({ isLight, accent = 'cyan' }: ThemeProps) {
 export function CvVerificationQrBadge({ isLight, accent = 'cyan' }: ThemeProps) {
   const palette = getInfographicAccent(isLight, accent);
   const [qrUrl, setQrUrl] = useState<string>('');
-  // Warm CV accents (copper / amber-adjacent) → amber mark; otherwise cyan PNG.
+  // Warm CV accents → amber tile (same geometry as cyan PNG); otherwise cyan PNG.
   const brandSrc =
-    accent === 'copper'
-      ? brandMarkDataUrl(isLight ? '#b45309' : BRAND_ACCENT_HEX.amber)
+    accent === 'amber' || accent === 'copper'
+      ? '/pwa-192x192-amber.png'
       : BRAND_MARK_PNG_SRC;
 
   useEffect(() => {

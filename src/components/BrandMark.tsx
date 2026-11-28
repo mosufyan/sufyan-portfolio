@@ -1,6 +1,5 @@
 import { motion, useReducedMotion } from 'motion/react';
-import { useMemo } from 'react';
-import { brandMarkDataUrl, BRAND_MARK_PNG_SRC } from '../brand/brandMark';
+import { BRAND_MARK_PNG_SRC } from '../brand/brandMark';
 import { useTheme } from '../theme/ThemeProvider';
 import { EASE_OUT_EXPO } from './MotionPrimitives';
 
@@ -10,7 +9,7 @@ const SIZE_PX = {
   lg: 40,
 } as const;
 
-/** Pre-rendered amber tile — same geometry as cyan PWA PNG, no hue-rotate. */
+/** Same pixels as cyan PWA tile, recolored to amber (not SVG / hue-rotate). */
 const BRAND_MARK_AMBER_PNG_SRC = '/pwa-192x192-amber.png';
 
 export type BrandMarkSize = keyof typeof SIZE_PX | number;
@@ -23,8 +22,8 @@ interface BrandMarkProps {
 }
 
 /**
- * Exact approved hexagon+MS logo.
- * Cyan → shipped PWA PNG. Amber → matching amber PNG (never CSS hue-rotate).
+ * Exact approved hexagon+MS logo (concept B / PWA PNG).
+ * Cyan and amber both use raster tiles with identical geometry.
  */
 export default function BrandMark({
   size = 'md',
@@ -32,18 +31,10 @@ export default function BrandMark({
   animate = true,
 }: BrandMarkProps) {
   const reduceMotion = useReducedMotion();
-  const { accent, isLight } = useTheme();
+  const { accent } = useTheme();
   const px = typeof size === 'number' ? size : SIZE_PX[size];
-  const isAmber = accent === 'amber';
-
-  const src = useMemo(() => {
-    if (!isAmber) return BRAND_MARK_PNG_SRC;
-    // Light amber: generate SVG so the mark can use the darker amber ink.
-    if (isLight) {
-      return brandMarkDataUrl('#b45309', { background: '#06080d' });
-    }
-    return BRAND_MARK_AMBER_PNG_SRC;
-  }, [isAmber, isLight]);
+  const src =
+    accent === 'amber' ? BRAND_MARK_AMBER_PNG_SRC : BRAND_MARK_PNG_SRC;
 
   const mark = (
     <img
