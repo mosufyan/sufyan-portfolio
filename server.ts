@@ -2434,7 +2434,7 @@ async function startServer() {
     });
   });
 
-  /** Public boolean status for the Security Architecture page (no secrets). */
+  /** Public boolean status for the Portfolio Architecture map (no secrets). */
   app.get('/api/status', (req: Request, res: Response) => {
     const gold = evaluateGoldPathHardening();
     const cloudflareEdge = isCloudflareEdgeProxied({
