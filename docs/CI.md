@@ -112,7 +112,7 @@ Concurrency: one run per branch/ref; newer PR pushes cancel in-progress runs.
 ### Deploy Cloud Run + Firestore (`main` only)
 - **Significance:** Production delivery after all gates.
 - **How:** Workload Identity → **`firebase deploy --only firestore:rules,firestore:indexes`** (ADC; no Firebase CI token) → build/push Artifact Registry image → `gcloud run deploy` → smoke `/api/uptime`, `/api/health`, `/api/status`, `/api/chat/status` + SPA Firebase `apiKey` bake check → create `v*` tag + GitHub Release if missing.
-- **IAM:** deploy SA needs `roles/firebaserules.admin` + `roles/datastore.indexAdmin` (see `scripts/setup-github-actions-deploy.sh`). Re-run that script (or grant those two roles once) before the first CI rules deploy.
+- **IAM:** deploy SA has `roles/firebaserules.admin` + `roles/datastore.indexAdmin` (granted; also in `scripts/setup-github-actions-deploy.sh` for new setups).
 
 ---
 

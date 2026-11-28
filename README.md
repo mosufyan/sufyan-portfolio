@@ -97,7 +97,7 @@ Open [http://localhost:3000](http://localhost:3000).
 | `npm run test:rules` | Firestore rules tests (emulator) |
 | `npm run ci:csp-smoke` | Assert prod CSP / security headers |
 | `npm run precommit` | Gitleaks + typecheck + rules lint |
-| `npm run release -- 1.1.18` | SemVer bump + annotated `v*` tag |
+| `npm run release -- 1.1.20` | SemVer bump + annotated `v*` tag |
 
 > PRs fail if `package.json` still uses an already-released `v*` tag (**SemVer tag** check) — bump before merge. After a green deploy on `main`, CI publishes the matching GitHub Release. Full CI check list: [docs/CI.md](./docs/CI.md).
 
