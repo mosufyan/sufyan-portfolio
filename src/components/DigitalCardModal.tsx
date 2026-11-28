@@ -584,7 +584,6 @@ export default function DigitalCardModal({ isOpen, onClose }: DigitalCardModalPr
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  <BrandMark size={48} className="shrink-0" />
                   <div
                     className={`w-12 h-12 rounded-xl overflow-hidden shrink-0 ${
                       isLight
