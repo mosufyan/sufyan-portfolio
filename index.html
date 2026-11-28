@@ -3,9 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <link rel="icon" type="image/svg+xml" href="/icon.svg?v=1.1.28" data-brand-favicon="svg" />
-    <link rel="icon" href="/favicon.ico?v=1.1.28" sizes="32x32" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=1.1.28" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=1.1.29" data-brand-favicon="png" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg?v=1.1.29" data-brand-favicon="svg" />
+    <link rel="icon" href="/favicon.ico?v=1.1.29" sizes="any" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=1.1.29" />
     <script>
       (function () {
         try {
@@ -23,11 +24,19 @@
             root.setAttribute('data-accent', 'cyan');
             a = 'cyan';
           }
+          var v = '?v=1.1.29';
+          var png = document.querySelector('link[data-brand-favicon="png"]');
+          if (png) {
+            png.setAttribute(
+              'href',
+              (a === 'amber' ? '/favicon-32-amber.png' : '/favicon-32.png') + v
+            );
+          }
           var fav = document.querySelector('link[data-brand-favicon="svg"]');
           if (fav) {
             fav.setAttribute(
               'href',
-              (a === 'amber' ? '/icon-amber.svg' : '/icon.svg') + '?v=1.1.28'
+              (a === 'amber' ? '/icon-amber.svg' : '/icon.svg') + v
             );
           }
         } catch (e) {}

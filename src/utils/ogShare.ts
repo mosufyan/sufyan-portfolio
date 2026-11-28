@@ -145,8 +145,8 @@ export function buildDynamicSocialSvg(options: {
   <rect width="1200" height="630" fill="url(#glow)" />
   <rect x="44" y="44" width="1112" height="542" rx="28" fill="${cardBg}" fill-opacity="0.94" stroke="${border}" stroke-width="1.5" />
 
-  <!-- Brand Mark — panel-matched tile so label sits cleanly to the right -->
-  ${brandMarkSvgSnippet(92, 92, 56, accent, { background: cardBg })}
+  <!-- Brand Mark — dark/light tile with accent-colored hex+MS -->
+  ${brandMarkSvgSnippet(92, 92, 56, accent, { background: isLight ? '#ffffff' : '#06080d' })}
 
   <text x="166" y="115" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="700" letter-spacing="2.2" fill="${accent}">VERIFIED ARCHITECT PORTFOLIO</text>
   <text x="166" y="140" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" fill="${mutedColor}">www.mohammedsufyan.com</text>
