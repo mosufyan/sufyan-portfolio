@@ -72,7 +72,7 @@ flowchart TB
 | 1 | **Cloudflare** | DNS for domain, orange-cloud proxy, SSL, Bot Fight Mode, WAF, Turnstile widgets | Strongly recommended | Yes (Free plan + free Turnstile) |
 | 2 | **Google Cloud Run** | Hosts Dockerized Express + built React app (scale-to-zero) | Yes (current deploy) | Yes (always-free allotment) |
 | 3 | **Firebase Authentication** | Owner Google Sign-In for Owner Console | Yes | Yes (50K MAU free) |
-| 4 | **Cloud Firestore** | Announcements, portfolio settings, contact/CV logs, access rules, audit | Yes | Yes (Spark/Blaze free quotas) |
+| 4 | **Cloud Firestore** | Announcements, Portfolio CMS, portfolio settings, contact/CV logs, access rules, audit, seed hides | Yes | Yes (Spark/Blaze free quotas) |
 | 5 | **Resend** *(or Gmail SMTP)* | OTP emails, inquiry mail, owner alerts/replies | Yes (one mail path) | Yes (Resend Free / Gmail personal) |
 | 6 | **Cloudflare Turnstile** | Bot challenge on Contact, CV gate, live-chat start | Recommended | Yes (unlimited challenges on Free) |
 | 7 | **Upstash Redis** | Shared rate limits, owner policy, OTP challenges, chat quotas/sessions across replicas | Recommended if >1 replica | Yes (1 DB, 500K cmds/mo) |
@@ -128,12 +128,14 @@ flowchart LR
 | Turnstile | `TURNSTILE_SECRET_KEY` + `VITE_TURNSTILE_SITE_KEY` |
 | OTP / sessions | HMAC via `SESSION_SECRET` (falls back to Turnstile secret if unset — set an explicit secret in prod) |
 | Owner auth | Firebase project id from applet config; RS256 ID token verify |
-| Firestore rules | Deny-by-default; owner/admin gates; announcements list = published |
+| Firestore rules | Deny-by-default; owner/admin gates; announcements list = published; CMS public non-deleted + `portfolio_seed_hides` |
+| Firestore indexes | Announcements composites + CMS `deleted`+`updatedAt` (`firestore.indexes.json`) |
 | Rate limits / OTP / chat | In-memory (+ disk chat cache) by default; Upstash Redis when REST URL+token set (**fail-closed** on Redis errors) |
 | Chat RAG | `UPSTASH_VECTOR_REST_*` → Vector retrieve; keyword fallback |
 | Chat LLM | `GROK_API_KEY` + owner toggle `enableChatLlm` (default model `grok-4.3`) |
-| Voice agent | `GROQ_API_KEY` (STT) + optional `ELEVENLABS_*` (TTS) + owner `enableVoiceAgent` |
-| CI/CD | Separate checks: SemVer, typecheck, Vitest, coverage, CSP smoke, bundle size, Firestore rules tests, audit, SAST, Docker/Trivy; `main`: Cloud Run deploy (WIF) — [CI.md](./CI.md) |
+| Voice agent | PTT: `GROQ_API_KEY` + optional `ELEVENLABS_*` + `enableVoiceAgent`; Live S2S: `enableVoiceRealtime` + Grok (`wss://api.x.ai`) |
+| Observability | `SENTRY_DSN`, `SLACK_ALERT_WEBHOOK_URL`, optional `METRICS_TOKEN` for `GET /api/metrics` |
+| CI/CD | Separate checks: SemVer, typecheck, Vitest, coverage, CSP smoke, bundle size (~6.5 MiB), Firestore rules tests, audit, SAST, Docker/Trivy; `main`: Cloud Run deploy (WIF) — [CI.md](./CI.md) |
 
 ---
 
@@ -178,9 +180,9 @@ flowchart LR
 | **Writes / deletes** | 20k / day each | Then per-100k pricing |
 | **Egress** | 10 GiB / month | Then per-GiB |
 
-**Portfolio impact:** Owner-only listeners + sparse lead docs stay inside free quota easily. Public announcement listeners + settings snapshots are the main read drivers.
+**Portfolio impact:** Owner-only listeners + sparse lead docs stay inside free quota easily. Public announcement listeners, Portfolio CMS snapshots (non-deleted docs + seed hides), and settings snapshots are the main read drivers.
 
-**If you exceed:** Enable Blaze (pay-as-you-go). Optimize with constrained queries (already: published-only announcements). Move heavy analytics off real-time listeners if needed.
+**If you exceed:** Enable Blaze (pay-as-you-go). Optimize with constrained queries (already: published-only announcements; CMS `deleted == false`). Move heavy analytics off real-time listeners if needed.
 
 ---
 
@@ -302,7 +304,7 @@ flowchart LR
 | npm audit | Production deps, high+ |
 | Production build | Uploads `dist` for downstream smokes |
 | CSP headers smoke | Asserts prod CSP includes `wss://api.x.ai` + core headers |
-| Bundle size | JS asset budgets |
+| Bundle size | JS asset budgets (~6.5 MiB total / ~3.0 MiB largest) |
 | Firestore rules tests | Java + Firebase emulator |
 | Gitleaks / Bandit / Semgrep / CodeQL | Secret + SAST |
 | Docker build → Trivy | Image artifact then CRITICAL/HIGH scan |
@@ -410,6 +412,13 @@ Detailed click-path steps: **[SECURITY_CONFIGURATION.md](./SECURITY_CONFIGURATIO
 | `UPSTASH_VECTOR_REST_URL` / `_TOKEN` | Upstash Vector | Free tier |
 | `GROK_API_KEY` / `GROK_API_BASE_URL` | Grok (xAI) | Paid / prepaid |
 | `CHAT_LLM_TIMEOUT_MS` | Grok client timeout | — |
+| `GROQ_API_KEY` / `GROQ_STT_MODEL` | Groq Whisper STT | Free tier |
+| `ELEVENLABS_API_KEY` / `ELEVENLABS_VOICE_ID` | ElevenLabs TTS | Free credits |
+| `SENTRY_DSN` | Sentry errors | Free tier |
+| `SLACK_ALERT_WEBHOOK_URL` | Slack urgent/warning | Workspace plan |
+| `METRICS_TOKEN` | Gate `GET /api/metrics` | — |
+| `STRICT_PROD_HARDENING` | Fail health if gold path incomplete | — |
+| `CSP_STRICT_STYLES` | Enforce style-src elem/attr split | — |
 | `ALLOW_FORMSUBMIT_FALLBACK` | FormSubmit | **Keep `false`** |
 
 ---

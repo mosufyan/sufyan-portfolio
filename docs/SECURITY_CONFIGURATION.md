@@ -158,13 +158,14 @@ FIREBASE_SERVICE_ACCOUNT_JSON='{"type":"service_account",...}'
 # SENTRY_DSN=https://<key>@oXXXX.ingest.sentry.io/<project>
 # SLACK_ALERT_WEBHOOK_URL=https://hooks.slack.com/services/...
 # STRICT_PROD_HARDENING=true   # /api/health → 503 if gold-path secrets missing in production
+# METRICS_TOKEN=...            # optional bearer/query gate for GET /api/metrics
 
 ALLOW_FORMSUBMIT_FALLBACK=false
 FORCE_CV_OTP=false   # or true for always-on CV OTP
 # CSP_STRICT_STYLES=false  # set true only after /api/csp-report is quiet for style-src-elem/attr
 ```
 
-Public readiness (no secrets): `GET /api/status` and `GET /api/health` (includes `goldPath` checklist). Disclosure: `/.well-known/security.txt` and `#security` Architecture map.
+Public readiness (no secrets): `GET /api/status` (includes `controls`, `botProtection`, `goldPathScore`, `observability` snapshot) and `GET /api/health` (includes `goldPath` checklist). Prometheus counters: `GET /api/metrics` (gate with `METRICS_TOKEN` when public). Disclosure: `/.well-known/security.txt` and `#architecture` / `#security` Portfolio Architecture map.
 
 ### Cloud Armor (optional if not using Cloudflare WAF)
 
@@ -198,10 +199,12 @@ flowchart LR
 
 | Action | Status |
 |--------|--------|
-| Deploy `firestore.rules` | **Required** on every rules change |
-| Deploy `firestore.indexes.json` | **Required** for `announcements` status+createdAt |
+| Deploy `firestore.rules` | **Required** on every rules change (includes Portfolio CMS + `portfolio_seed_hides`) |
+| Deploy `firestore.indexes.json` | **Required** for announcements composites + CMS `deleted`+`updatedAt` queries |
 | Default deny | Already in rules |
 | Public list announcements | Only `status == 'published'` |
+| Portfolio CMS | Public get/list of non-deleted docs; admin writes; seed hides for soft-delete |
+| Admin audit | Includes `cms_mutated` for CMS upserts/deletes |
 | PII collections | Owner/admin read; prefer Admin SDK creates |
 
 ### App Check (recommended)

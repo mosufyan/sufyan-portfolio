@@ -48,6 +48,7 @@ interface StatusPayload {
   ok: boolean;
   goldPathScore?: string;
   controls?: ControlStatus;
+  metricsPath?: string;
 }
 
 interface SecurityArchitectureModalProps {
@@ -134,18 +135,19 @@ const LAYERS: LayerDetail[] = [
     icon: Server,
     color: 'from-emerald-500/25 to-teal-500/10',
     barColor: 'bg-emerald-400',
-    summary: 'Firestore deny-by-default; PII writes only via Admin SDK.',
+    summary: 'Firestore deny-by-default; PII writes only via Admin SDK; CMS soft-delete safe.',
     design: [
       'Rules default-deny every collection; each path has an explicit schema.',
       'cv_downloads / contact_messages deny client creates — server Admin SDK only.',
       'Owner replies are admin-bound (no unbound mail relay).',
       'Announcement drafts stay private until published/scheduled.',
-      'Portfolio CMS merges seed data with Firestore overrides by id.',
+      'Portfolio CMS merges seed data with Firestore overrides; soft-deletes use portfolio_seed_hides + deleted==false public queries.',
+      'Experience role payloads are schema-validated in rules; CMS writes emit cms_mutated audit events.',
     ],
     items: [
       'Firestore deny-by-default schemas',
       'Admin-bound owner replies (no unbound mail relay)',
-      'Portfolio CMS collections (certs, awards, experience…)',
+      'Portfolio CMS + seed hides (no soft-delete body leak)',
       'Announcement visibility rules (drafts never public)',
     ],
   },
@@ -155,18 +157,21 @@ const LAYERS: LayerDetail[] = [
     icon: Eye,
     color: 'from-amber-500/25 to-orange-500/10',
     barColor: 'bg-amber-400',
-    summary: 'Trace every request; owner console for funnel, CRM, chat, audit.',
+    summary: 'Trace every request; Prometheus scrape; owner console for funnel, CRM, chat, audit.',
     design: [
-      'X-Request-Id on every response + structured JSON logs.',
+      'X-Request-Id on every response + structured JSON logs (chat RAG / voice / CSP).',
+      'GET /api/metrics exposes Prometheus counters; optional METRICS_TOKEN gate.',
       'Owner Console surfaces funnel, CRM triage, chat, CMS, and audit history.',
       'Optional Sentry DSN and Slack urgent/warning webhooks.',
-      '/api/status exposes boolean gold-path readiness — never secrets.',
+      '/api/status exposes boolean gold-path readiness + observability snapshot — never secrets.',
+      'Mermaid architecture SVGs are DOMPurify-sanitized before DOM insert.',
     ],
     items: [
-      'X-Request-Id on every response + structured JSON logs',
+      'X-Request-Id + structured JSON logs',
+      'Prometheus GET /api/metrics (+ optional token)',
       'Owner Console funnel / CRM / CMS / chat / audit trail',
       'Optional Sentry DSN + Slack urgent/warning webhooks',
-      'Gold-path checklist exposed on /api/status',
+      'Gold-path checklist + observability on /api/status',
     ],
   },
 ];
@@ -193,7 +198,7 @@ const PLATFORM: PlatformPillar[] = [
     summary: 'Cloud Run origin with security middleware and feature APIs.',
     bullets: [
       'CSP · origin · Turnstile · honeypot · UA denylist',
-      '/api/chat · /api/contact · /api/cv-* · /api/owner/*',
+      '/api/chat · /api/contact · /api/cv-* · /api/owner/* · /api/metrics',
       'HMAC OTP + MX verification on gated flows',
       'Fail-closed Upstash rate limits & shared quotas',
     ],
@@ -206,9 +211,9 @@ const PLATFORM: PlatformPillar[] = [
     summary: 'Firestore + Redis with deny-by-default rules and CMS merge.',
     bullets: [
       'Firestore: leads, CV logs, announcements, portfolio_* CMS',
+      'Seed hides + deleted==false for public CMS reads',
       'Upstash Redis: OTP, limits, policy, hot cache',
       'Owner metrics + chat cache across Cloud Run replicas',
-      'Local disk fallback for owner chat when Redis soft-fails',
     ],
   },
   {
@@ -216,10 +221,10 @@ const PLATFORM: PlatformPillar[] = [
     title: 'AI & messaging',
     icon: MessageSquare,
     accent: 'from-amber-500/30 to-orange-500/10 border-amber-400/40',
-    summary: 'Grounded chat, voice STT/TTS, and transactional mail.',
+    summary: 'Grounded chat, dual voice (PTT + Live S2S), and transactional mail.',
     bullets: [
       'Upstash Vector RAG + keyword hybrid fallback',
-      'Grok enrich (owner toggle) · Groq Whisper · ElevenLabs TTS',
+      'Grok enrich · Live S2S (wss://api.x.ai) · Groq Whisper · ElevenLabs',
       'Resend / SMTP for OTP and owner replies',
       'Cloudflare Turnstile on registration / OTP gates',
     ],
@@ -270,8 +275,8 @@ const SYSTEM_CHART = `flowchart TB
 const FLOW_CHART = `flowchart LR
   V["Visitor / Bot"] --> E["Edge\\nCloudflare + Turnstile"]
   E --> A["Application\\nCSP · OTP · Redis"]
-  A --> D["Data\\nFirestore rules"]
-  A --> O["Observability\\nLogs · Sentry · Slack"]
+  A --> D["Data\\nFirestore · CMS"]
+  A --> O["Observability\\nLogs · Metrics · Sentry"]
   D --> O
   classDef edge fill:#083344,stroke:#22d3ee,color:#e2e8f0
   classDef app fill:#2e1065,stroke:#c084fc,color:#e2e8f0
@@ -1029,7 +1034,20 @@ export default function SecurityArchitectureModal({
                 }`}
               >
                 Honest note: no public site is “100% secure.” This map shows defense-in-depth across
-                the full portfolio stack and live readiness. Responsible disclosure:{' '}
+                the full portfolio stack and live readiness
+                {status?.metricsPath ? (
+                  <>
+                    {' '}
+                    · scrape{' '}
+                    <a
+                      className={`${accentCls} hover:underline underline-offset-2`}
+                      href={status.metricsPath}
+                    >
+                      {status.metricsPath}
+                    </a>
+                  </>
+                ) : null}
+                . Responsible disclosure:{' '}
                 <a
                   className={`${accentCls} hover:underline underline-offset-2`}
                   href="mailto:sufyan.net@gmail.com"
