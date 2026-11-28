@@ -5,7 +5,9 @@ import {
   AWARDS,
   AWARDS_BY_ORGANIZATION,
   CERTIFICATIONS,
+  getCompanyDurationLabel,
   LINKEDIN_RECOMMENDATIONS,
+  PERSONAL_INFO,
 } from '../data/portfolioData';
 import { PORTFOLIO_CANONICAL_URL } from '../utils/vcard';
 import type { CvAccentId } from '../utils/cvShareConfig';
@@ -191,7 +193,7 @@ function getInfographicAccent(isLight: boolean, accent: CvAccentId = 'cyan') {
 }
 
 /**
- * Compact 13+ year Career Trajectory Bar + 5-Axis Multi-Cloud & AI Mini-Radar.
+ * Compact career trajectory bar + 5-Axis Multi-Cloud & AI Mini-Radar.
  * Designed with pure SVG + explicit hex/theme classes so both Dark Theme and
  * Light Paper PDF exports render crisply via html2canvas-pro.
  */
@@ -242,31 +244,34 @@ export function CvTrajectoryAndCloudStrip({ isLight, accent = 'cyan' }: ThemePro
 
   const polygonPoints = vertices.map((v) => `${v.x.toFixed(1)},${v.y.toFixed(1)}`).join(' ');
 
+  const tcsSpan = getCompanyDurationLabel('tcs');
+  const hclSpan = getCompanyDurationLabel('hcl');
+  const ciscoSpan = getCompanyDurationLabel('cisco');
   const timelineSegments = [
     {
       org: 'Tata Consultancy Services',
       short: 'TCS',
-      years: '2012 — 2019',
-      span: '7 yrs',
-      pct: 49,
+      years: '2013 — 2019',
+      span: tcsSpan,
+      pct: 44,
       role: 'Systems Eng. → IT Analyst',
       barColor: isLight ? 'bg-slate-400' : 'bg-slate-600',
     },
     {
       org: 'HCL America Inc. / HCLTech',
       short: 'HCL',
-      years: '2020 — Present',
-      span: '6+ yrs',
-      pct: 36,
+      years: '2019 — 2026',
+      span: hclSpan,
+      pct: 54,
       role: 'Tech Lead → Lead Architect',
       barColor: palette.barPrimary,
     },
     {
       org: 'Cisco Systems Inc. STO',
       short: 'Cisco STO',
-      years: 'Project Atlas',
-      span: 'Flagship',
-      pct: 15,
+      years: '2026 — Present',
+      span: ciscoSpan,
+      pct: 2,
       role: 'Security Data Platform',
       barColor: palette.barSecondary,
     },
@@ -285,7 +290,7 @@ export function CvTrajectoryAndCloudStrip({ isLight, accent = 'cyan' }: ThemePro
       data-pdf-block
       className="pdf-keep-together grid grid-cols-1 md:grid-cols-12 print:grid-cols-12 pdf-cols-12 gap-4"
     >
-      {/* Left: 13+ Year Career Trajectory Bar */}
+      {/* Left: Career Trajectory Bar */}
       <div
         data-pdf-subblock
         className={`md:col-span-7 print:col-span-7 pdf-span-7 rounded-xl border p-4 flex flex-col justify-between ${cardCls}`}
@@ -294,7 +299,7 @@ export function CvTrajectoryAndCloudStrip({ isLight, accent = 'cyan' }: ThemePro
           <div className={`flex items-center justify-between gap-2 pb-2.5 border-b ${dividerCls}`}>
             <span className={`inline-flex items-center gap-1.5 text-[11px] font-mono font-semibold uppercase tracking-wider ${accentCls}`}>
               <Building2 className="w-3.5 h-3.5" />
-              <span>13+ Year Career Trajectory · US · UK · India</span>
+              <span>{PERSONAL_INFO.experienceYears} Year Career Trajectory · US · UK · India</span>
             </span>
             <span className={`text-[10px] font-mono ${mutedCls}`}>2012 → 2026</span>
           </div>

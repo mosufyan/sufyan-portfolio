@@ -14,7 +14,7 @@ export function buildVCardString(): string {
     `URL:${PORTFOLIO_CANONICAL_URL}`,
     `URL;TYPE=LinkedIn:${PERSONAL_INFO.linkedin}`,
     'ADR;TYPE=WORK:;;San Jose;CA;;United States',
-    'NOTE:13+ years Cloud Solutions Architect & Staff Software Engineer across Cisco Systems Inc., HCL America Inc./HCLTech, and TCS (US, UK, India).',
+    `NOTE:${PERSONAL_INFO.experienceYears} years Cloud Solutions Architect & Staff Software Engineer across Cisco Systems Inc., HCL America Inc./HCLTech, and TCS (US, UK, India).`,
     'END:VCARD',
   ];
   return lines.join('\r\n');

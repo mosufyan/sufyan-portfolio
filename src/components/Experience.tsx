@@ -13,8 +13,9 @@ import {
   X,
 } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion, useScroll, useSpring } from 'motion/react';
-import { SKILL_FILTER_PRESETS, WORK_EXPERIENCE } from '../data/portfolioData';
+import { EMPLOYMENT_TENURES, SKILL_FILTER_PRESETS, WORK_EXPERIENCE } from '../data/portfolioData';
 import { doesRoleMatchSkill, doesTechTagMatchSkill, formatSkillFilterSummary } from '../utils/skillMatcher';
+import { formatCurrentTenureLabel, formatTenureDuration } from '../utils/tenureDuration';
 import { CollapseTimeline, CollapseTimelineNode } from './CollapseTimeline';
 import HeaderSpotlight from './HeaderSpotlight';
 import CiscoName from './CiscoName';
@@ -30,14 +31,23 @@ interface ExperienceProps {
   readingMode?: PortfolioReadingMode;
 }
 
+const TCS_DURATION = formatTenureDuration(
+  EMPLOYMENT_TENURES.tcs.start,
+  EMPLOYMENT_TENURES.tcs.end
+);
+const HCL_DURATION = formatTenureDuration(
+  EMPLOYMENT_TENURES.hcl.start,
+  EMPLOYMENT_TENURES.hcl.end
+);
+
 const GLOBAL_FOOTPRINT = [
   {
     company: 'Tata Consultancy Services',
     shortName: 'TCS (India & UK)',
     filterKey: 'tcs' as const,
     period: '2013 — 2019',
-    durationLabel: '6.3 Yrs · 5 Roles',
-    spanWeight: 46,
+    durationLabel: `${TCS_DURATION} · 5 Roles`,
+    spanWeight: 44,
     focusDomain: 'Enterprise Automation & Web Engineering',
     regions: 'Bengaluru, India · Greater London, UK',
     summary: '5 Enterprise Delivery Roles · Client Operations & Consulting',
@@ -47,8 +57,8 @@ const GLOBAL_FOOTPRINT = [
     shortName: 'HCL America (Actian & Cisco)',
     filterKey: 'hcl' as const,
     period: '2019 — 2026',
-    durationLabel: '6.5 Yrs · 4 Roles',
-    spanWeight: 47,
+    durationLabel: `${HCL_DURATION} · 4 Roles`,
+    spanWeight: 54,
     focusDomain: 'Multi-Cloud Security & DevSecOps Architecture',
     regions: 'Bengaluru, India · San Francisco Bay Area, US',
     summary: '4 Technical Leadership Roles · Cisco Systems Inc. Cloud Security Account',
@@ -58,8 +68,9 @@ const GLOBAL_FOOTPRINT = [
     shortName: 'Cisco STO',
     filterKey: 'cisco' as const,
     period: '2026 — Present',
-    durationLabel: 'Current',
-    spanWeight: 7,
+    // durationLabel set at render from EMPLOYMENT_TENURES.cisco.start
+    durationLabel: '',
+    spanWeight: 2,
     focusDomain: 'STO CTO Ops · Security & AI Data Platforms',
     regions: 'San Jose, California, US · Hybrid',
     summary: 'Software Engineer · STO CTO Operations · Project Atlas',
@@ -69,22 +80,14 @@ const GLOBAL_FOOTPRINT = [
 const JOURNEY_MILESTONES = [
   {
     step: '01',
-    years: '2013–16',
-    hub: 'Bengaluru, IN',
-    org: 'TCS · Systems Engineering',
+    years: '2013–19',
+    hub: 'Bengaluru & London',
+    org: 'TCS · Systems & Enterprise Consulting',
     company: 'Tata Consultancy Services',
     filterKey: 'tcs' as const,
   },
   {
     step: '02',
-    years: '2016–19',
-    hub: 'London, UK',
-    org: 'TCS · Enterprise Consulting',
-    company: 'Tata Consultancy Services',
-    filterKey: 'tcs' as const,
-  },
-  {
-    step: '03',
     years: '2019–26',
     hub: 'Bay Area & India',
     org: 'HCL America · Cloud Security',
@@ -92,7 +95,7 @@ const JOURNEY_MILESTONES = [
     filterKey: 'hcl' as const,
   },
   {
-    step: '04',
+    step: '03',
     years: '2026–Now',
     hub: 'San Jose, US',
     org: 'Cisco Systems · STO CTO Ops',
@@ -282,7 +285,7 @@ export default function Experience({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                 {JOURNEY_MILESTONES.map((stop) => {
                   const isActiveStop = activeFilter === stop.filterKey;
                   return (
@@ -312,10 +315,14 @@ export default function Experience({
               </div>
             </div>
 
-            {/* Proportional 13+ Year Era Cards */}
+            {/* Proportional career-era cards (durations from EMPLOYMENT_TENURES) */}
             <div className="grid grid-cols-1 md:grid-cols-3 print:grid-cols-3 gap-3">
               {GLOBAL_FOOTPRINT.map((stage, idx) => {
                 const isSelected = activeFilter === stage.filterKey;
+                const durationLabel =
+                  stage.filterKey === 'cisco'
+                    ? formatCurrentTenureLabel(EMPLOYMENT_TENURES.cisco.start)
+                    : stage.durationLabel;
                 return (
                   <button
                     key={stage.company}
@@ -329,7 +336,7 @@ export default function Experience({
                   >
                     <div className="flex items-center justify-between gap-2 text-[11px] font-mono text-cyan-400">
                       <span>0{idx + 1}. {stage.period}</span>
-                      <span className="text-slate-400">{stage.durationLabel}</span>
+                      <span className="text-slate-400">{durationLabel}</span>
                     </div>
                     <div className="mt-1 font-display font-bold text-sm sm:text-base text-white">
                       {stage.company.includes('Cisco') ? <CiscoName /> : stage.company}

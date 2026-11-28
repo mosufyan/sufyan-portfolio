@@ -316,7 +316,7 @@ export default function Hero({
           >
             {readingMode === 'brief' ? (
               <>
-                13+ years architecting security data platforms, multi-cloud vulnerability engines, and Zero Trust governance across <CiscoName />, HCLTech, and TCS (US · UK · India).
+                {PERSONAL_INFO.experienceYears} years architecting security data platforms, multi-cloud vulnerability engines, and Zero Trust governance across <CiscoName />, HCLTech, and TCS (US · UK · India).
               </>
             ) : (
               <>

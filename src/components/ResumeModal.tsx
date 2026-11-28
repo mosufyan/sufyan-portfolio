@@ -2439,7 +2439,7 @@ export default function ResumeModal({
 
                   <div className="flex flex-col space-y-3.5">
                     <p className={`text-xs sm:text-sm leading-relaxed max-w-4xl font-light ${t.muted}`}>
-                      Architecting high-velocity security data platforms, multi-cloud vulnerability engines, and enterprise compliance systems across 13+ years of engineering experience with{' '}
+                      Architecting high-velocity security data platforms, multi-cloud vulnerability engines, and enterprise compliance systems across {PERSONAL_INFO.experienceYears} years of engineering experience with{' '}
                       <span className="sm:hidden print:hidden">Cisco</span>
                       <span className="hidden sm:inline print:inline">Cisco Systems Inc.</span>
                       , HCL America Inc./HCLTech, and Tata Consultancy Services in the United States, United Kingdom, and India.
@@ -2540,7 +2540,7 @@ export default function ResumeModal({
                     </p>
 
                     <p className={`text-xs leading-relaxed ${t.muted}`}>
-                      Over the course of 13+ years of production system engineering across Fortune 500 organizations, my leadership focus has centered on architecting self-healing, auditable multi-cloud foundations. By bridging developer velocity with rigorous Zero Trust boundaries and telemetry instrumentation, distributed pods achieve deterministic reliability and peak operational velocity.
+                      Over the course of {PERSONAL_INFO.experienceYears} years of production system engineering across Fortune 500 organizations, my leadership focus has centered on architecting self-healing, auditable multi-cloud foundations. By bridging developer velocity with rigorous Zero Trust boundaries and telemetry instrumentation, distributed pods achieve deterministic reliability and peak operational velocity.
                     </p>
                   </div>
 
