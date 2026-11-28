@@ -25,6 +25,14 @@ describe('portfolioContentMerge', () => {
     expect(mergeById(staticSeed, cloud)).toEqual([]);
   });
 
+  it('hides static items listed in seed hide markers', () => {
+    const staticSeed = [
+      { id: 'a', title: 'Static A' },
+      { id: 'b', title: 'Static B' },
+    ];
+    expect(mergeById(staticSeed, [], ['a'])).toEqual([{ id: 'b', title: 'Static B' }]);
+  });
+
   it('merges real certifications without dropping the static catalog when cloud empty', () => {
     expect(mergeCertifications([])).toHaveLength(CERTIFICATIONS.length);
   });

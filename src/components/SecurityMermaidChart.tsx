@@ -139,7 +139,13 @@ export default function SecurityMermaidChart({
         const id = `sec-mermaid-${reactId}-${Date.now().toString(36)}`;
         const { svg, bindFunctions } = await mermaid.render(id, chart);
         if (cancelled || !containerRef.current) return;
-        containerRef.current.innerHTML = svg;
+        const DOMPurify = (await import('dompurify')).default;
+        const clean = DOMPurify.sanitize(svg, {
+          USE_PROFILES: { svg: true, svgFilters: true },
+          ADD_TAGS: ['foreignObject'],
+          ADD_ATTR: ['target'],
+        });
+        containerRef.current.innerHTML = clean;
         if (bindFunctions) bindFunctions(containerRef.current);
         colorizeSequence(containerRef.current);
 

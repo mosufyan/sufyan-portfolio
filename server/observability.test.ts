@@ -3,6 +3,7 @@ import {
   bumpMetric,
   evaluateBotProtection,
   evaluateGoldPathHardening,
+  formatPrometheusMetrics,
   getObservabilitySnapshot,
   structuredLog,
 } from './observability.ts';
@@ -58,5 +59,15 @@ describe('observability', () => {
     expect(bots.adminSdkWrites).toBe(true);
     expect(bots.appCheck).toBe(true);
     expect(bots.cloudflareEdge).toBe(true);
+    expect(bots.metricsExport).toBe(true);
+  });
+
+  it('formats prometheus exposition with core counters', () => {
+    bumpMetric('chatRagHits');
+    bumpMetric('cspReports');
+    const text = formatPrometheusMetrics({ service: 'unit' });
+    expect(text).toContain('sufyan_portfolio_chat_rag_hits_total{service="unit"}');
+    expect(text).toContain('sufyan_portfolio_csp_reports_total{service="unit"}');
+    expect(text).toContain('# TYPE sufyan_portfolio_uptime_seconds gauge');
   });
 });

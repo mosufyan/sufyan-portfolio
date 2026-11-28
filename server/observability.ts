@@ -19,18 +19,28 @@ export interface RequestLogContext {
 const metrics = {
   httpRequests: 0,
   httpErrors: 0,
+  http4xx: 0,
   rateLimitDenials: 0,
   otpIssued: 0,
   otpVerified: 0,
   chatQuestions: 0,
   chatLiveStarts: 0,
+  chatRagHits: 0,
+  chatRagMisses: 0,
+  chatLlmEnrichments: 0,
+  voiceTurns: 0,
+  voiceRealtimeSessions: 0,
+  cspReports: 0,
+  clientErrors: 0,
   alertsDispatched: 0,
   sentryEvents: 0,
   slackEvents: 0,
   startedAtMs: Date.now(),
 };
 
-export function bumpMetric(name: keyof typeof metrics, by = 1): void {
+export type MetricName = keyof typeof metrics;
+
+export function bumpMetric(name: MetricName, by = 1): void {
   if (name === 'startedAtMs') return;
   metrics[name] += by;
 }
@@ -41,7 +51,71 @@ export function getObservabilitySnapshot() {
     uptimeSec: Math.floor((Date.now() - metrics.startedAtMs) / 1000),
     sentryConfigured: Boolean((process.env.SENTRY_DSN || '').trim()),
     slackWebhookConfigured: Boolean((process.env.SLACK_ALERT_WEBHOOK_URL || '').trim()),
+    cspStrictStyles: (process.env.CSP_STRICT_STYLES || '').toLowerCase() === 'true',
   };
+}
+
+/** Prometheus text exposition (process-local counters; multi-replica scrapes aggregate). */
+export function formatPrometheusMetrics(extraLabels: Record<string, string> = {}): string {
+  const snap = getObservabilitySnapshot();
+  const labelParts = Object.entries(extraLabels)
+    .filter(([, v]) => v)
+    .map(([k, v]) => `${k}="${String(v).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`);
+  const labels = labelParts.length ? `{${labelParts.join(',')}}` : '';
+  const lines: string[] = [
+    '# HELP sufyan_portfolio_http_requests_total HTTP requests observed',
+    '# TYPE sufyan_portfolio_http_requests_total counter',
+    `sufyan_portfolio_http_requests_total${labels} ${snap.httpRequests}`,
+    '# HELP sufyan_portfolio_http_errors_total HTTP 5xx responses',
+    '# TYPE sufyan_portfolio_http_errors_total counter',
+    `sufyan_portfolio_http_errors_total${labels} ${snap.httpErrors}`,
+    '# HELP sufyan_portfolio_http_client_errors_total HTTP 4xx responses',
+    '# TYPE sufyan_portfolio_http_client_errors_total counter',
+    `sufyan_portfolio_http_client_errors_total${labels} ${snap.http4xx}`,
+    '# HELP sufyan_portfolio_rate_limit_denials_total Rate-limit 429 responses',
+    '# TYPE sufyan_portfolio_rate_limit_denials_total counter',
+    `sufyan_portfolio_rate_limit_denials_total${labels} ${snap.rateLimitDenials}`,
+    '# HELP sufyan_portfolio_otp_issued_total OTP challenges issued',
+    '# TYPE sufyan_portfolio_otp_issued_total counter',
+    `sufyan_portfolio_otp_issued_total${labels} ${snap.otpIssued}`,
+    '# HELP sufyan_portfolio_otp_verified_total OTP challenges verified',
+    '# TYPE sufyan_portfolio_otp_verified_total counter',
+    `sufyan_portfolio_otp_verified_total${labels} ${snap.otpVerified}`,
+    '# HELP sufyan_portfolio_chat_questions_total Portfolio chat questions',
+    '# TYPE sufyan_portfolio_chat_questions_total counter',
+    `sufyan_portfolio_chat_questions_total${labels} ${snap.chatQuestions}`,
+    '# HELP sufyan_portfolio_chat_live_starts_total Live chat session starts',
+    '# TYPE sufyan_portfolio_chat_live_starts_total counter',
+    `sufyan_portfolio_chat_live_starts_total${labels} ${snap.chatLiveStarts}`,
+    '# HELP sufyan_portfolio_chat_rag_hits_total Chat answers with retrieval hits',
+    '# TYPE sufyan_portfolio_chat_rag_hits_total counter',
+    `sufyan_portfolio_chat_rag_hits_total${labels} ${snap.chatRagHits}`,
+    '# HELP sufyan_portfolio_chat_rag_misses_total Chat answers with weak/empty retrieval',
+    '# TYPE sufyan_portfolio_chat_rag_misses_total counter',
+    `sufyan_portfolio_chat_rag_misses_total${labels} ${snap.chatRagMisses}`,
+    '# HELP sufyan_portfolio_chat_llm_enrichments_total Grok enrichments applied',
+    '# TYPE sufyan_portfolio_chat_llm_enrichments_total counter',
+    `sufyan_portfolio_chat_llm_enrichments_total${labels} ${snap.chatLlmEnrichments}`,
+    '# HELP sufyan_portfolio_voice_turns_total Voice PTT turns',
+    '# TYPE sufyan_portfolio_voice_turns_total counter',
+    `sufyan_portfolio_voice_turns_total${labels} ${snap.voiceTurns}`,
+    '# HELP sufyan_portfolio_voice_realtime_sessions_total Live S2S session grants',
+    '# TYPE sufyan_portfolio_voice_realtime_sessions_total counter',
+    `sufyan_portfolio_voice_realtime_sessions_total${labels} ${snap.voiceRealtimeSessions}`,
+    '# HELP sufyan_portfolio_csp_reports_total CSP violation reports received',
+    '# TYPE sufyan_portfolio_csp_reports_total counter',
+    `sufyan_portfolio_csp_reports_total${labels} ${snap.cspReports}`,
+    '# HELP sufyan_portfolio_client_errors_total Browser client_error beacons',
+    '# TYPE sufyan_portfolio_client_errors_total counter',
+    `sufyan_portfolio_client_errors_total${labels} ${snap.clientErrors}`,
+    '# HELP sufyan_portfolio_alerts_dispatched_total Owner alerts dispatched',
+    '# TYPE sufyan_portfolio_alerts_dispatched_total counter',
+    `sufyan_portfolio_alerts_dispatched_total${labels} ${snap.alertsDispatched}`,
+    '# HELP sufyan_portfolio_uptime_seconds Process uptime',
+    '# TYPE sufyan_portfolio_uptime_seconds gauge',
+    `sufyan_portfolio_uptime_seconds${labels} ${snap.uptimeSec}`,
+  ];
+  return `${lines.join('\n')}\n`;
 }
 
 export function structuredLog(
@@ -86,9 +160,9 @@ export function requestContextMiddleware(req: Request, res: Response, next: Next
     const durationMs = Date.now() - started;
     const statusCode = res.statusCode;
     if (statusCode >= 500) bumpMetric('httpErrors');
+    if (statusCode >= 400 && statusCode < 500) bumpMetric('http4xx');
     if (statusCode === 429) bumpMetric('rateLimitDenials');
 
-    // Skip noisy static/health chatter at info; always log API + errors.
     const isApi = req.path.startsWith('/api/');
     const level: LogLevel = statusCode >= 500 ? 'error' : statusCode >= 400 ? 'warn' : 'info';
     if (isApi || statusCode >= 400) {
@@ -245,6 +319,8 @@ export function evaluateBotProtection(options?: {
   sessionSecret: boolean;
   trustProxy: boolean;
   cloudflareEdge: boolean | null;
+  cspStrictStyles: boolean;
+  metricsExport: true;
 } {
   const isProd = process.env.NODE_ENV === 'production';
   return {
@@ -274,6 +350,8 @@ export function evaluateBotProtection(options?: {
     trustProxy: !isProd || process.env.TRUST_PROXY !== '0',
     cloudflareEdge:
       typeof options?.cloudflareEdge === 'boolean' ? options.cloudflareEdge : null,
+    cspStrictStyles: (process.env.CSP_STRICT_STYLES || '').toLowerCase() === 'true',
+    metricsExport: true,
   };
 }
 
@@ -346,6 +424,11 @@ export function evaluateGoldPathHardening(): {
           (process.env.RECAPTCHA_SITE_KEY || '').trim()
       ),
       label: 'Firebase App Check site key configured',
+    },
+    {
+      id: 'csp_report',
+      ok: true,
+      label: 'CSP report endpoint + metrics counters',
     },
   ];
   const okCount = items.filter((i) => i.ok).length;

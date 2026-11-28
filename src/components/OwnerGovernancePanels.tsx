@@ -79,6 +79,8 @@ function eventMeta(eventType: AdminAuditEventType): {
       return { label: 'INQUIRY TRIAGE', tone: 'sky' };
     case 'announcement_mutated':
       return { label: 'ANNOUNCEMENTS', tone: 'emerald' };
+    case 'cms_mutated':
+      return { label: 'PORTFOLIO CMS', tone: 'sky' };
     case 'owner_reply_sent':
       return { label: 'OWNER REPLY', tone: 'sky' };
     case 'delegate_added':
@@ -884,6 +886,7 @@ export function AdminAuditPanel({ isLight }: { isLight: boolean }) {
       return (
         entry.eventType === 'triage_updated' ||
         entry.eventType === 'announcement_mutated' ||
+        entry.eventType === 'cms_mutated' ||
         entry.eventType === 'owner_reply_sent'
       );
     });

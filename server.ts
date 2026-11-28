@@ -70,6 +70,7 @@ import {
   captureException,
   evaluateBotProtection,
   evaluateGoldPathHardening,
+  formatPrometheusMetrics,
   getObservabilitySnapshot,
   postSlackAlert,
   requestContextMiddleware,
@@ -2469,6 +2470,8 @@ async function startServer() {
       },
       botProtection,
       goldPathScore: `${gold.score}/${gold.max}`,
+      observability: getObservabilitySnapshot(),
+      metricsPath: '/api/metrics',
     });
   });
 
@@ -2496,13 +2499,38 @@ async function startServer() {
     }),
     (req: Request, res: Response) => {
       const report = req.body;
+      bumpMetric('cspReports');
       structuredLog('warn', 'csp_violation', {
         requestId: req.requestId,
         report: typeof report === 'object' ? report : String(report).slice(0, 500),
+        cspReportsTotal: getObservabilitySnapshot().cspReports,
       });
       res.status(204).end();
     }
   );
+
+  /** Prometheus text metrics (process-local). Optional METRICS_TOKEN bearer gate. */
+  app.get('/api/metrics', (req: Request, res: Response) => {
+    const token = (process.env.METRICS_TOKEN || '').trim();
+    if (token) {
+      const auth = typeof req.headers.authorization === 'string' ? req.headers.authorization : '';
+      const presented = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
+      const queryToken = typeof req.query.token === 'string' ? req.query.token.trim() : '';
+      if (presented !== token && queryToken !== token) {
+        res.status(401).type('text/plain').send('Unauthorized\n');
+        return;
+      }
+    }
+    res
+      .status(200)
+      .type('text/plain; version=0.0.4; charset=utf-8')
+      .send(
+        formatPrometheusMetrics({
+          service: 'sufyan-portfolio',
+          env: process.env.NODE_ENV || 'development',
+        })
+      );
+  });
 
   app.get('/.well-known/security.txt', (_req: Request, res: Response) => {
     const expires = new Date();
@@ -2770,6 +2798,7 @@ async function startServer() {
         stack,
         componentStack,
       });
+      bumpMetric('clientErrors');
       void captureException(new Error(message), {
         source: 'client',
         requestId: req.requestId,
@@ -4387,6 +4416,13 @@ async function startServer() {
         runtimeOwnerPolicy.chatMaxLlmPerVisitor > 0;
       let provider: 'grok' | 'grounded' = 'grounded';
       let answer = await answerPortfolioQuestionSmart(question);
+      const retrievalMode = answer.retrieval || 'keyword';
+      const retrievalChars = (answer.retrievalContext || '').length;
+      if (retrievalChars > 40 || retrievalMode === 'vector' || retrievalMode === 'hybrid') {
+        bumpMetric('chatRagHits');
+      } else {
+        bumpMetric('chatRagMisses');
+      }
 
       if (wantLlm && !shouldSkipGrokEnrichment(question, answer)) {
         const llmCheck = await checkChatLimitAsync(visitorKey, 'llm', limitPolicy);
@@ -4409,6 +4445,7 @@ async function startServer() {
           if (enriched.provider === 'grok') {
             await consumeChatLimitAsync(visitorKey, 'llm', limitPolicy);
             bumpLlmCall(true);
+            bumpMetric('chatLlmEnrichments');
           } else {
             bumpLlmCall(false);
           }
@@ -4426,6 +4463,14 @@ async function startServer() {
 
       const llmRemaining = (await checkChatLimitAsync(visitorKey, 'llm', limitPolicy)).remaining;
       const session = sessionId ? await getChatSessionAsync(sessionId) : null;
+
+      structuredLog('info', 'chat_answer', {
+        requestId: req.requestId,
+        retrievalMode,
+        retrievalChars,
+        provider,
+        questionChars: question.length,
+      });
 
       res.status(200).json({
         ok: true,
@@ -4542,6 +4587,7 @@ async function startServer() {
       bumpBotQuestion();
       bumpVoiceTurn();
       bumpMetric('chatQuestions');
+      bumpMetric('voiceTurns');
 
       const wantLlm =
         runtimeOwnerPolicy.enableChatLlm &&
@@ -4746,6 +4792,11 @@ async function startServer() {
       }
 
       bumpVoiceRealtimeSession(sessionMinutes);
+      bumpMetric('voiceRealtimeSessions');
+      structuredLog('info', 'voice_realtime_session', {
+        requestId: req.requestId,
+        sessionMinutes,
+      });
 
       res.status(200).json({
         ok: true,

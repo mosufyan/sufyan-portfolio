@@ -9,10 +9,10 @@ Related: [SECURITY.md](./SECURITY.md) · [SECURITY_CONFIGURATION.md](./SECURITY_
 
 | Goal | Realistic target | Where you are today |
 |------|------------------|---------------------|
-| Security | Defense-in-depth, no known high-severity gold-path gaps | **~96/100** in code (Admin-only PII, split settings, HTTPS IP intel, CSP reporting + Live S2S `wss://api.x.ai`, CI CSP/rules/SAST gates) |
-| Observability | Product telemetry + SRE hooks | **~88/100** (request IDs, JSON logs, metrics, Sentry/Slack, `/api/uptime`, CSP reports) |
-| Product polish | Recruiter-ready + control map | **~93/100** (dual voice PTT/Live S2S, amber/cyan accents, maintenance banner stacking) |
-| **Overall** | World-class personal security portfolio | **~95/100** |
+| Security | Defense-in-depth, no known high-severity gold-path gaps | **~97/100** in code (CMS seed-hides, deep experience rules, Mermaid DOMPurify, Admin-only PII, CSP + Live S2S, CI SAST) |
+| Observability | Product telemetry + SRE hooks | **~94/100** (Prometheus `/api/metrics`, RAG/voice/CSP counters, request IDs, JSON logs, Sentry/Slack, `/api/status` snapshot) |
+| Product polish | Recruiter-ready + control map | **~94/100** (Portfolio Architecture hub, CMS, dual voice, accents) |
+| **Overall** | World-class personal security portfolio | **~96/100** |
 
 **Why not 99?** Remaining points are *production proof*, not missing features:
 
@@ -33,7 +33,7 @@ quadrantChart
     quadrant-2 Harden next
     quadrant-3 Early stage
     quadrant-4 Observe next
-    This portfolio: [0.88, 0.95]
+    This portfolio: [0.94, 0.97]
     Typical personal site: [0.15, 0.25]
     Ops-proven target: [0.96, 0.97]
 ```
@@ -44,11 +44,11 @@ quadrantChart
 
 | Dimension | Score | Rationale |
 |-----------|------:|-----------|
-| **Security** | **96** | Deny-by-default rules; Admin-only PII creates; public/private settings split; Redis OTP/sessions/quotas; fail-closed policy; HTTPS IP intel; CSP + Live S2S `wss://api.x.ai`; CI CSP smoke + rules emulator + SAST/Trivy |
-| **Observability** | **88** | Structured logs, request IDs, metrics, client errors, CSP reports, `/api/status` + `/api/uptime`, Sentry/Slack hooks |
-| **Feature polish** | **93** | Owner console, dual voice (PTT + Live S2S), theme accents, Security Architecture + case notes |
-| **Hiring narrative** | **93** | Live control map + gold-path health is interview-grade |
-| **Overall** | **95** | Ops checklist below unlocks ~96–97 |
+| **Security** | **97** | Prior gold path + CMS seed-hides (no soft-delete body leak), deep experience role rules, Mermaid SVG sanitize, `cms_mutated` audit, CI SAST/Trivy |
+| **Observability** | **94** | Prometheus `/api/metrics` (+ optional `METRICS_TOKEN`), chat RAG/LLM/voice/CSP/client-error counters, structured chat/voice logs, `/api/status.observability` |
+| **Feature polish** | **94** | Owner CMS hub, Portfolio Architecture, dual voice, accents |
+| **Hiring narrative** | **94** | Live control map + gold-path + metrics exposition |
+| **Overall** | **96** | Ops checklist below unlocks ~97–98 |
 
 ---
 
