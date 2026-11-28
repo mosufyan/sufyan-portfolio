@@ -330,7 +330,7 @@ jobs:
       - name: Load image
         run: docker load -i /tmp/sufyan-portfolio-ci.tar
       - name: Trivy image scan (CRITICAL/HIGH)
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: sufyan-portfolio:ci
           format: table
@@ -338,7 +338,7 @@ jobs:
           ignore-unfixed: true
           vuln-type: os,library
           severity: CRITICAL,HIGH
-          # Vulns only — secret/misconfig noise has caused non-CVE failures without actionable image fixes.
+          # Vulns only — secret/misconfig noise is not actionable for this image gate.
           scanners: vuln
 
   deploy:
