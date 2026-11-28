@@ -21,14 +21,16 @@ if ! gcloud iam service-accounts describe "$SA_EMAIL" --project="$PROJECT" >/dev
     --display-name="GitHub Actions Cloud Run deploy"
 fi
 
-# Roles needed for `gcloud run deploy --source .`
+# Roles needed for Cloud Run image deploy + Firestore rules/indexes deploy from CI.
 for ROLE in \
   roles/run.admin \
   roles/iam.serviceAccountUser \
   roles/cloudbuild.builds.builder \
   roles/artifactregistry.writer \
   roles/storage.admin \
-  roles/secretmanager.secretAccessor
+  roles/secretmanager.secretAccessor \
+  roles/firebaserules.admin \
+  roles/datastore.indexAdmin
 do
   gcloud projects add-iam-policy-binding "$PROJECT" \
     --member="serviceAccount:${SA_EMAIL}" \

@@ -199,8 +199,8 @@ flowchart LR
 
 | Action | Status |
 |--------|--------|
-| Deploy `firestore.rules` | **Required** on every rules change (includes Portfolio CMS + `portfolio_seed_hides`) |
-| Deploy `firestore.indexes.json` | **Required** for announcements composites + CMS `deleted`+`updatedAt` queries |
+| Deploy `firestore.rules` | Auto on `main` CI (WIF); still required manually until deploy SA has `firebaserules.admin` |
+| Deploy `firestore.indexes.json` | Auto on `main` CI with rules; SA needs `datastore.indexAdmin` |
 | Default deny | Already in rules |
 | Public list announcements | Only `status == 'published'` |
 | Portfolio CMS | Public get/list of non-deleted docs; admin writes; seed hides for soft-delete |

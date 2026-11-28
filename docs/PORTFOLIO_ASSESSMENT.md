@@ -78,8 +78,8 @@ quadrantChart
 | Secrets green | Turnstile, SESSION_SECRET, Redis, Vector, Grok, Admin JSON, Sentry, Slack |
 | `STRICT_PROD_HARDENING=true` | Health/uptime return 503 if gold path incomplete |
 | External uptime | Point Better Stack / UptimeRobot at `https://www.mohammedsufyan.com/api/uptime` |
-| Deploy rules + indexes | `firestore.rules` + `firestore.indexes.json` |
-| CI/CD | All separate PR checks green + merge-to-`main` auto-deploys Cloud Run (WIF) — see [ARCHITECTURE.md](./ARCHITECTURE.md#cicd) |
+| Deploy rules + indexes | Automated on `main` via CI (`firebase deploy`); PR still validates lint + emulator + indexes JSON |
+| CI/CD | All separate PR checks green + merge-to-`main` auto-deploys Firestore rules/indexes + Cloud Run (WIF) — see [CI.md](./CI.md) |
 
 ---
 
