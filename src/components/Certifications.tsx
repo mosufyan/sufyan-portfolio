@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Award, Check, CheckCircle, ChevronDown, ChevronsUpDown, ExternalLink, LayoutGrid, Radar, Search, Share2, ShieldCheck, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { CERTIFICATION_CATEGORIES, CERTIFICATIONS, Certification } from '../data/portfolioData';
+import type { Certification } from '../data/portfolioData';
+import { usePortfolioContent } from '../contexts/PortfolioContentContext';
 import { doesCertMatchSkill, doesTechTagMatchSkill, formatSkillFilterSummary } from '../utils/skillMatcher';
 import { useTheme } from '../theme/ThemeProvider';
 import CloudConstellation from './CloudConstellation';
@@ -32,15 +33,25 @@ export default function Certifications({
   readingMode = 'deep',
 }: CertificationsProps) {
   const { theme, isLight, accent } = useTheme();
+  const { certifications: CERTIFICATIONS, certificationCategories: CERTIFICATION_CATEGORIES } =
+    usePortfolioContent();
   const isAmber = accent === 'amber';
   const [activeTab, setActiveTab] = useState<'all' | 'ai' | 'cloud' | 'data'>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'radar'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
   const [linkCopied, setLinkCopied] = useState(false);
   const [showAllInBrief, setShowAllInBrief] = useState(false);
-  const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(CERTIFICATION_CATEGORIES.map((cat) => [cat.id, false]))
-  );
+  const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    setExpandedCategories((prev) => {
+      const next = { ...prev };
+      for (const cat of CERTIFICATION_CATEGORIES) {
+        if (next[cat.id] === undefined) next[cat.id] = false;
+      }
+      return next;
+    });
+  }, [CERTIFICATION_CATEGORIES]);
   const skillFilter = formatSkillFilterSummary(selectedSkills);
   const hasSkillFilter = skillFilter.count > 0;
 

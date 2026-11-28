@@ -629,5 +629,98 @@ service cloud.firestore {
       allow list: if false;
       allow create, update, delete: if false;
     }
+
+    // Portfolio CMS entities — public read; admin create/update/delete.
+    // Cloud docs merge over static seed data by id (including soft-delete tombstones).
+    function isValidPortfolioString(value, minLen, maxLen) {
+      return value is string && value.size() >= minLen && value.size() <= maxLen;
+    }
+
+    function hasAuthorAndTimestamps(data) {
+      return data.authorUid is string
+        && data.authorUid.size() >= 1
+        && data.authorUid.size() <= 128
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    match /portfolio_certifications/{certId} {
+      allow get, list: if true;
+      allow create, update: if isAdmin()
+        && isValidId(certId)
+        && isValidPortfolioString(incoming().title, 3, 180)
+        && isValidPortfolioString(incoming().issuer, 2, 120)
+        && isValidPortfolioString(incoming().issueDate, 3, 40)
+        && incoming().category in ['ai', 'cloud', 'data']
+        && incoming().skills is list
+        && incoming().deleted is bool
+        && hasAuthorAndTimestamps(incoming());
+      allow delete: if isAdmin() && isValidId(certId);
+    }
+
+    match /portfolio_awards/{awardId} {
+      allow get, list: if true;
+      allow create, update: if isAdmin()
+        && isValidId(awardId)
+        && isValidPortfolioString(incoming().title, 3, 180)
+        && isValidPortfolioString(incoming().organization, 2, 120)
+        && isValidPortfolioString(incoming().date, 3, 40)
+        && isValidPortfolioString(incoming().description, 10, 600)
+        && incoming().deleted is bool
+        && hasAuthorAndTimestamps(incoming());
+      allow delete: if isAdmin() && isValidId(awardId);
+    }
+
+    match /portfolio_recommendations/{recId} {
+      allow get, list: if true;
+      allow create, update: if isAdmin()
+        && isValidId(recId)
+        && isValidPortfolioString(incoming().author, 2, 120)
+        && isValidPortfolioString(incoming().role, 2, 160)
+        && isValidPortfolioString(incoming().date, 3, 40)
+        && isValidPortfolioString(incoming().quote, 20, 2000)
+        && incoming().relationshipType in ['manager', 'direct_report', 'peer']
+        && incoming().featured is bool
+        && incoming().deleted is bool
+        && hasAuthorAndTimestamps(incoming());
+      allow delete: if isAdmin() && isValidId(recId);
+    }
+
+    match /portfolio_disciplines/{discId} {
+      allow get, list: if true;
+      allow create, update: if isAdmin()
+        && isValidId(discId)
+        && isValidPortfolioString(incoming().title, 3, 120)
+        && isValidPortfolioString(incoming().description, 10, 400)
+        && incoming().technologies is list
+        && isWholeNumber(incoming().level)
+        && incoming().level >= 1
+        && incoming().level <= 100
+        && incoming().deleted is bool
+        && hasAuthorAndTimestamps(incoming());
+      allow delete: if isAdmin() && isValidId(discId);
+    }
+
+    match /portfolio_cisco_role/{roleId} {
+      allow get, list: if true;
+      allow create, update: if isAdmin()
+        && roleId == 'current'
+        && incoming().highlights is list
+        && incoming().technologies is list
+        && hasAuthorAndTimestamps(incoming());
+      allow delete: if isAdmin() && roleId == 'current';
+    }
+
+    match /portfolio_experience/{companyKey} {
+      allow get, list: if true;
+      allow create, update: if isAdmin()
+        && companyKey in ['cisco', 'hcl', 'tcs']
+        && incoming().companyKey == companyKey
+        && incoming().roles is list
+        && incoming().roles.size() >= 1
+        && incoming().roles.size() <= 12
+        && hasAuthorAndTimestamps(incoming());
+      allow delete: if isAdmin() && companyKey in ['cisco', 'hcl', 'tcs'];
+    }
   }
 }

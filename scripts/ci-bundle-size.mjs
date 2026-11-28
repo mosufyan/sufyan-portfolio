@@ -8,7 +8,8 @@ import path from 'path';
 const DIST = path.resolve('dist');
 const ASSETS = path.join(DIST, 'assets');
 /** Total hashed JS under dist/assets (gzip not required — raw bytes). */
-const MAX_TOTAL_JS_BYTES = 4.5 * 1024 * 1024;
+/** Includes lazy Mermaid diagram chunks (~1.5 MiB) used by #security. */
+const MAX_TOTAL_JS_BYTES = 6.5 * 1024 * 1024;
 /** Largest single JS chunk (main SPA + Firebase/chat is ~2.4 MiB today). */
 const MAX_SINGLE_JS_BYTES = 3.0 * 1024 * 1024;
 

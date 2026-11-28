@@ -1,12 +1,18 @@
 import { useEffect, useState } from 'react';
 import {
   ArrowLeft,
+  Award,
+  BadgeCheck,
+  Briefcase,
   Download,
   ExternalLink,
   History,
+  Layers,
+  Library,
   LogOut,
   Megaphone,
   MessageSquare,
+  Quote,
   Shield,
   ShieldCheck,
   SlidersHorizontal,
@@ -18,11 +24,15 @@ import {
   Headphones,
 } from 'lucide-react';
 import { useFirebase } from '../contexts/FirebaseContext';
+import { usePortfolioContent } from '../contexts/PortfolioContentContext';
 import { useTheme } from '../theme/ThemeProvider';
 import { OWNER_EMAIL } from '../utils/announcementValidation';
 import {
+  DEFAULT_OWNER_CMS_TAB,
+  OWNER_CMS_TABS,
   parseOwnerConsoleHash,
   writeOwnerConsoleHash,
+  type OwnerCmsTabId,
   type OwnerConsoleSectionId,
 } from '../utils/ownerConsoleRouting';
 import { CvAnalyticsPanel, type WorkspaceTab } from './CvAnalyticsView';
@@ -32,6 +42,25 @@ import OwnerFunnelPanel from './OwnerFunnelPanel';
 import OwnerProfilePanel, { useOwnerOpsHealth } from './OwnerProfilePanel';
 import { DelegatesPanel } from './OwnerGovernancePanels';
 import OwnerChatPanel from './OwnerChatPanel';
+import {
+  OwnerCredentialsPanel,
+  OwnerDisciplinesPanel,
+  OwnerExperiencePanel,
+  OwnerRecognitionPanel,
+  OwnerRecommendationsPanel,
+} from './OwnerPortfolioCmsPanels';
+
+const CMS_TAB_META: Record<
+  OwnerCmsTabId,
+  { label: string; shortLabel: string; icon: typeof Megaphone }
+> = {
+  announcements: { label: 'Announcements', shortLabel: 'News', icon: Megaphone },
+  credentials: { label: 'Licenses & Certs', shortLabel: 'Certs', icon: BadgeCheck },
+  recognition: { label: 'Recognition & Honors', shortLabel: 'Honors', icon: Award },
+  recommendations: { label: 'LinkedIn Recs', shortLabel: 'Recs', icon: Quote },
+  disciplines: { label: 'Skills & Disciplines', shortLabel: 'Skills', icon: Layers },
+  experience: { label: 'Experience', shortLabel: 'Experience', icon: Briefcase },
+};
 
 export type OwnerConsoleSection = OwnerConsoleSectionId;
 
@@ -49,6 +78,12 @@ export default function OwnerConsolePage({
   initialSection,
 }: OwnerConsolePageProps) {
   const { isLight } = useTheme();
+  const {
+    certifications,
+    awards,
+    recommendations,
+    disciplines,
+  } = usePortfolioContent();
   const {
     user,
     cvDownloadLogs,
@@ -100,25 +135,64 @@ export default function OwnerConsolePage({
     }
     return 'profile';
   });
+  const [cmsTab, setCmsTabState] = useState<OwnerCmsTabId>(() => {
+    if (typeof window !== 'undefined') {
+      return parseOwnerConsoleHash(window.location.hash).cmsTab;
+    }
+    return DEFAULT_OWNER_CMS_TAB;
+  });
   const { telemetry, opsHealth } = useOwnerOpsHealth(true);
 
-  const setSection = (next: OwnerConsoleSection, historyMode: 'push' | 'replace' = 'replace') => {
+  const setSection = (
+    next: OwnerConsoleSection,
+    historyMode: 'push' | 'replace' = 'replace',
+    nextCmsTab: OwnerCmsTabId = cmsTab
+  ) => {
     setSectionState(next);
+    if (next === 'cms') {
+      setCmsTabState(nextCmsTab);
+      writeOwnerConsoleHash(next, historyMode, nextCmsTab);
+      return;
+    }
     writeOwnerConsoleHash(next, historyMode);
+  };
+
+  const setCmsTab = (next: OwnerCmsTabId, historyMode: 'push' | 'replace' = 'replace') => {
+    setCmsTabState(next);
+    setSectionState('cms');
+    writeOwnerConsoleHash('cms', historyMode, next);
   };
 
   useEffect(() => {
     const onHash = () => {
       const parsed = parseOwnerConsoleHash(window.location.hash);
-      if (parsed.open) setSectionState(parsed.section);
+      if (parsed.open) {
+        setSectionState(parsed.section);
+        setCmsTabState(parsed.cmsTab);
+      }
     };
     window.addEventListener('hashchange', onHash);
-    writeOwnerConsoleHash(section, 'replace');
+    writeOwnerConsoleHash(section, 'replace', cmsTab);
     return () => window.removeEventListener('hashchange', onHash);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- sync hash once on mount + listen
   }, []);
 
   const newInquiryCount = contactMessageLogs.filter((m) => m.triageStatus === 'new').length;
+  const cmsBadgeCounts: Record<OwnerCmsTabId, number> = {
+    announcements: announcements.length,
+    credentials: certifications.length,
+    recognition: awards.length,
+    recommendations: recommendations.length,
+    disciplines: disciplines.length,
+    experience: 3,
+  };
+  const cmsTotalBadge = String(
+    announcements.length +
+      certifications.length +
+      awards.length +
+      recommendations.length +
+      disciplines.length
+  );
 
   const navGroups: Array<{
     groupLabel: string;
@@ -170,14 +244,19 @@ export default function OwnerConsolePage({
       ],
     },
     {
-      groupLabel: 'Content & Governance',
+      groupLabel: 'Content',
       items: [
         {
-          id: 'announcements',
-          label: 'Announcements',
-          badge: String(announcements.length),
-          icon: Megaphone,
+          id: 'cms',
+          label: 'Portfolio CMS',
+          badge: cmsTotalBadge,
+          icon: Library,
         },
+      ],
+    },
+    {
+      groupLabel: 'Governance',
+      items: [
         {
           id: 'rules',
           label: 'Allow / Block Rules',
@@ -254,10 +333,10 @@ export default function OwnerConsolePage({
       subtitle:
         'Review OTP-verified submissions, reply from console, classify status, and add private notes.',
     },
-    announcements: {
-      title: 'Announcements & Publications Manager',
+    cms: {
+      title: 'Portfolio Content Management',
       subtitle:
-        'Draft, schedule, and publish career milestones and architecture announcements.',
+        'Edit announcements, credentials, honors, recommendations, skills, and company experience from one hub.',
     },
     rules: {
       title: 'Allowlist & Blocklist Access Rules',
@@ -547,8 +626,66 @@ export default function OwnerConsolePage({
                 <OwnerChatPanel isLight={isLight} />
               ) : section === 'delegates' ? (
                 <DelegatesPanel isLight={isLight} />
-              ) : section === 'announcements' ? (
-                <OwnerAnnouncementsPanel isLight={isLight} />
+              ) : section === 'cms' ? (
+                <div className="space-y-5">
+                  <div
+                    className={`flex items-center gap-1 overflow-x-auto rounded-xl border p-1 ${subSurface}`}
+                    role="tablist"
+                    aria-label="Portfolio CMS categories"
+                  >
+                    {OWNER_CMS_TABS.map((tabId) => {
+                      const meta = CMS_TAB_META[tabId];
+                      const Icon = meta.icon;
+                      const active = cmsTab === tabId;
+                      const count = cmsBadgeCounts[tabId];
+                      return (
+                        <button
+                          key={tabId}
+                          type="button"
+                          role="tab"
+                          aria-selected={active}
+                          onClick={() => setCmsTab(tabId)}
+                          className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-mono transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                            active
+                              ? 'bg-[#38bdf8] text-slate-950 font-semibold'
+                              : isLight
+                                ? 'text-slate-600 hover:bg-white hover:text-slate-900'
+                                : 'text-slate-400 hover:bg-slate-800/70 hover:text-white'
+                          }`}
+                        >
+                          <Icon className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">{meta.label}</span>
+                          <span className="sm:hidden">{meta.shortLabel}</span>
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-[10px] tabular-nums ${
+                              active
+                                ? 'bg-slate-950/15 text-slate-950 font-bold'
+                                : isLight
+                                  ? 'bg-slate-100 text-slate-600'
+                                  : 'bg-slate-900 text-slate-300'
+                            }`}
+                          >
+                            {count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {cmsTab === 'announcements' ? (
+                    <OwnerAnnouncementsPanel isLight={isLight} />
+                  ) : cmsTab === 'credentials' ? (
+                    <OwnerCredentialsPanel isLight={isLight} />
+                  ) : cmsTab === 'recognition' ? (
+                    <OwnerRecognitionPanel isLight={isLight} />
+                  ) : cmsTab === 'recommendations' ? (
+                    <OwnerRecommendationsPanel isLight={isLight} />
+                  ) : cmsTab === 'disciplines' ? (
+                    <OwnerDisciplinesPanel isLight={isLight} />
+                  ) : (
+                    <OwnerExperiencePanel isLight={isLight} />
+                  )}
+                </div>
               ) : WORKSPACE_TABS.has(section) ? (
                 <CvAnalyticsPanel
                   isLight={isLight}

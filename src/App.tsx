@@ -78,7 +78,8 @@ export default function App() {
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [securityOpen, setSecurityOpen] = useState(() => {
     if (typeof window === 'undefined') return false;
-    return window.location.hash.replace(/^#/, '').split('?')[0] === 'security';
+    const id = window.location.hash.replace(/^#/, '').split('?')[0];
+    return id === 'security' || id === 'architecture';
   });
   const [selectedCert, setSelectedCert] = useState<Certification | null>(null);
   const [selectedSkills, setSelectedSkillsState] = useState<string[]>(() => readSkillsFromUrl());
@@ -127,11 +128,11 @@ export default function App() {
     }
   }, [isOwner, ownerViewRequested]);
 
-  // Public `#security` deep link for the architecture map
+  // Public `#architecture` / `#security` deep links for the portfolio architecture map
   useEffect(() => {
     const syncSecurityHash = () => {
       const id = window.location.hash.replace(/^#/, '').split('?')[0];
-      setSecurityOpen(id === 'security');
+      setSecurityOpen(id === 'security' || id === 'architecture');
     };
     window.addEventListener('hashchange', syncSecurityHash);
     return () => window.removeEventListener('hashchange', syncSecurityHash);
@@ -282,13 +283,20 @@ export default function App() {
   const openSecurity = useCallback(() => {
     setSecurityOpen(true);
     if (typeof window !== 'undefined') {
-      window.history.replaceState({}, '', `${window.location.pathname}${window.location.search}#security`);
+      window.history.replaceState(
+        {},
+        '',
+        `${window.location.pathname}${window.location.search}#architecture`
+      );
     }
   }, []);
   const closeSecurity = useCallback(() => {
     setSecurityOpen(false);
-    if (typeof window !== 'undefined' && window.location.hash.replace(/^#/, '').startsWith('security')) {
-      window.history.replaceState({}, '', `${window.location.pathname}${window.location.search}`);
+    if (typeof window !== 'undefined') {
+      const id = window.location.hash.replace(/^#/, '').split('?')[0];
+      if (id === 'security' || id === 'architecture') {
+        window.history.replaceState({}, '', `${window.location.pathname}${window.location.search}`);
+      }
     }
   }, []);
   const skillSelect = features.enableSkillFilter ? setSelectedSkill : () => {};

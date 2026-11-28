@@ -27,12 +27,21 @@ import type { ExperienceRole } from '../data/portfolioData';
 
 describe('portfolio feature matrix', () => {
   describe('owner console routing', () => {
-    it('opens chat, messages, announcements, and settings sections', () => {
-      expect(parseOwnerConsoleHash('#owner/chat')).toEqual({ open: true, section: 'chat' });
-      expect(parseOwnerConsoleHash('#owner/messages')).toEqual({ open: true, section: 'messages' });
+    it('opens chat, messages, cms announcements tab, and settings sections', () => {
+      expect(parseOwnerConsoleHash('#owner/chat')).toEqual({
+        open: true,
+        section: 'chat',
+        cmsTab: 'announcements',
+      });
+      expect(parseOwnerConsoleHash('#owner/messages')).toEqual({
+        open: true,
+        section: 'messages',
+        cmsTab: 'announcements',
+      });
       expect(parseOwnerConsoleHash('#owner/announcements')).toEqual({
         open: true,
-        section: 'announcements',
+        section: 'cms',
+        cmsTab: 'announcements',
       });
       expect(buildOwnerConsoleHash('settings')).toBe('#owner/settings');
       expect(composeOwnerReplySubject('Hello')).toBe('Re: Hello');

@@ -15,7 +15,8 @@ import {
   Radar,
 } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { Award, AWARDS_BY_ORGANIZATION, LINKEDIN_RECOMMENDATIONS } from '../data/portfolioData';
+import type { Award } from '../data/portfolioData';
+import { usePortfolioContent } from '../contexts/PortfolioContentContext';
 import { useTheme } from '../theme/ThemeProvider';
 import { CollapseTimeline, CollapseTimelineNode } from './CollapseTimeline';
 import HeaderSpotlight from './HeaderSpotlight';
@@ -31,6 +32,10 @@ interface AwardsProps {
 
 export default function Awards({ readingMode = 'deep' }: AwardsProps) {
   const { isLight } = useTheme();
+  const {
+    awardsByOrganization: AWARDS_BY_ORGANIZATION,
+    recommendations: LINKEDIN_RECOMMENDATIONS,
+  } = usePortfolioContent();
   const shouldReduceMotion = useReducedMotion();
   const [filterOrg, setFilterOrg] = useState<'all' | 'Cisco' | 'HCL' | 'TCS'>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'radar'>('grid');
@@ -39,9 +44,17 @@ export default function Awards({ readingMode = 'deep' }: AwardsProps) {
   const [carouselIdx, setCarouselIdx] = useState(0);
   const [carouselDirection, setCarouselDirection] = useState<1 | -1>(1);
   const [showAllRecGrid, setShowAllRecGrid] = useState(false);
-  const [expandedOrgs, setExpandedOrgs] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(AWARDS_BY_ORGANIZATION.map((group) => [group.organization, false]))
-  );
+  const [expandedOrgs, setExpandedOrgs] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    setExpandedOrgs((prev) => {
+      const next = { ...prev };
+      for (const group of AWARDS_BY_ORGANIZATION) {
+        if (next[group.organization] === undefined) next[group.organization] = false;
+      }
+      return next;
+    });
+  }, [AWARDS_BY_ORGANIZATION]);
 
   const normalizedQuery = searchQuery.trim().toLowerCase();
 
