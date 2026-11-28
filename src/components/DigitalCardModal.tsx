@@ -13,7 +13,6 @@ import {
   Mail,
   MapPin,
   QrCode,
-  Share2,
   UserPlus,
   X
 } from 'lucide-react';
@@ -23,6 +22,7 @@ import { buildVCardString, downloadVCard, PORTFOLIO_CANONICAL_URL } from '../uti
 import { brandMarkDataUrl } from '../brand/brandMark';
 import { SHARE_CARD_TRACKS, type ShareTrackId } from '../utils/ogShare';
 import { useModalPlacement } from '../hooks/useModalPlacement';
+import BrandMark from './BrandMark';
 import ModalHeaderScan from './ModalHeaderScan';
 import { EASE_OUT_EXPO } from './MotionPrimitives';
 import ShineSurface from './ShineSurface';
@@ -333,13 +333,7 @@ export default function DigitalCardModal({ isOpen, onClose }: DigitalCardModalPr
             <div className="relative shrink-0 flex items-center justify-between gap-3 px-4 sm:px-5 py-3 sm:py-3.5 border-b border-slate-800/90 bg-[#0b101b]">
               <ModalHeaderScan active={isOpen} />
               <div className="flex items-center gap-2.5">
-                <motion.div
-                  animate={{ rotate: [0, -6, 6, 0] }}
-                  transition={{ duration: 2.8, repeat: Infinity, repeatDelay: 3.5, ease: 'easeInOut' }}
-                  className="flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-950/60 border border-cyan-500/40 text-cyan-400"
-                >
-                  {activeTab === 'qr' ? <QrCode className="w-4 h-4" /> : <Share2 className="w-4 h-4" />}
-                </motion.div>
+                <BrandMark size="sm" />
                 <div>
                   <h3 className="font-display font-bold text-sm sm:text-base text-white">
                     Digital Card &amp; Social Share Studio
@@ -475,23 +469,26 @@ export default function DigitalCardModal({ isOpen, onClose }: DigitalCardModalPr
                     }`}
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div
-                          className={`text-[9px] font-mono uppercase tracking-widest font-semibold ${
-                            shareCardTheme === 'light' ? 'text-sky-700' : 'text-cyan-400'
-                          }`}
-                        >
-                          OpenGraph Preview · 1200×630
-                        </div>
-                        <div className="font-display font-extrabold text-base sm:text-lg leading-tight mt-1.5">
-                          {activeShareTrack.headline}
-                        </div>
-                        <div
-                          className={`text-[11px] mt-1 leading-snug ${
-                            shareCardTheme === 'light' ? 'text-slate-600' : 'text-slate-300'
-                          }`}
-                        >
-                          {activeShareTrack.subline}
+                      <div className="min-w-0 flex items-start gap-2.5">
+                        <BrandMark size={40} className="shrink-0" />
+                        <div className="min-w-0">
+                          <div
+                            className={`text-[9px] font-mono uppercase tracking-widest font-semibold ${
+                              shareCardTheme === 'light' ? 'text-sky-700' : 'text-cyan-400'
+                            }`}
+                          >
+                            Verified Architect Portfolio
+                          </div>
+                          <div className="font-display font-extrabold text-base sm:text-lg leading-tight mt-1.5">
+                            {activeShareTrack.headline}
+                          </div>
+                          <div
+                            className={`text-[11px] mt-1 leading-snug ${
+                              shareCardTheme === 'light' ? 'text-slate-600' : 'text-slate-300'
+                            }`}
+                          >
+                            {activeShareTrack.subline}
+                          </div>
                         </div>
                       </div>
                       <div
@@ -587,6 +584,7 @@ export default function DigitalCardModal({ isOpen, onClose }: DigitalCardModalPr
                 }`}
               >
                 <div className="flex items-center gap-3">
+                  <BrandMark size={48} className="shrink-0" />
                   <div
                     className={`w-12 h-12 rounded-xl overflow-hidden shrink-0 ${
                       isLight
