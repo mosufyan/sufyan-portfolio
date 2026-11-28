@@ -69,6 +69,48 @@ function readStoredAccent(): SiteAccent {
   return 'cyan';
 }
 
+const FAVICON_VERSION = '1.1.30';
+
+function syncDocumentFavicon(accent: SiteAccent) {
+  const pngHref =
+    accent === 'amber'
+      ? `/favicon-32-amber.png?v=${FAVICON_VERSION}`
+      : `/favicon-32.png?v=${FAVICON_VERSION}`;
+  const svgHref =
+    accent === 'amber'
+      ? `/icon-amber.svg?v=${FAVICON_VERSION}`
+      : `/icon.svg?v=${FAVICON_VERSION}`;
+
+  let pngLink = document.querySelector<HTMLLinkElement>(
+    'link[data-brand-favicon="png"]'
+  );
+  if (!pngLink) {
+    pngLink = document.createElement('link');
+    pngLink.rel = 'icon';
+    pngLink.type = 'image/png';
+    pngLink.sizes = '32x32';
+    pngLink.setAttribute('data-brand-favicon', 'png');
+    document.head.appendChild(pngLink);
+  }
+  if (pngLink.getAttribute('href') !== pngHref) {
+    pngLink.setAttribute('href', pngHref);
+  }
+
+  let svgLink = document.querySelector<HTMLLinkElement>(
+    'link[data-brand-favicon="svg"]'
+  );
+  if (!svgLink) {
+    svgLink = document.createElement('link');
+    svgLink.rel = 'icon';
+    svgLink.type = 'image/svg+xml';
+    svgLink.setAttribute('data-brand-favicon', 'svg');
+    document.head.appendChild(svgLink);
+  }
+  if (svgLink.getAttribute('href') !== svgHref) {
+    svgLink.setAttribute('href', svgHref);
+  }
+}
+
 function applyThemeToDocument(theme: SiteTheme, accent: SiteAccent) {
   const root = document.documentElement;
   root.setAttribute('data-theme', theme);
@@ -80,6 +122,8 @@ function applyThemeToDocument(theme: SiteTheme, accent: SiteAccent) {
   if (meta) {
     meta.setAttribute('content', theme === 'light' ? '#f8fafc' : '#06080d');
   }
+
+  syncDocumentFavicon(accent);
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {

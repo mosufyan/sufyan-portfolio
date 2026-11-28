@@ -9,6 +9,7 @@ import {
   LINKEDIN_RECOMMENDATIONS,
   PERSONAL_INFO,
 } from '../data/portfolioData';
+import { BRAND_MARK_PNG_SRC } from '../brand/brandMark';
 import { PORTFOLIO_CANONICAL_URL } from '../utils/vcard';
 import type { CvAccentId } from '../utils/cvShareConfig';
 
@@ -524,6 +525,11 @@ export function CvImpactProofStrip({ isLight, accent = 'cyan' }: ThemeProps) {
 export function CvVerificationQrBadge({ isLight, accent = 'cyan' }: ThemeProps) {
   const palette = getInfographicAccent(isLight, accent);
   const [qrUrl, setQrUrl] = useState<string>('');
+  // Warm CV accents → amber tile (same geometry as cyan PNG); otherwise cyan PNG.
+  const brandSrc =
+    accent === 'amber' || accent === 'copper'
+      ? '/pwa-192x192-amber.png'
+      : BRAND_MARK_PNG_SRC;
 
   useEffect(() => {
     let active = true;
@@ -555,6 +561,14 @@ export function CvVerificationQrBadge({ isLight, accent = 'cyan' }: ThemeProps) 
       }`}
     >
       <div className="flex items-center gap-3 min-w-0">
+        <img
+          src={brandSrc}
+          alt="Mohammed Sufyan brand mark"
+          width={44}
+          height={44}
+          className="w-11 h-11 rounded-lg shrink-0 object-cover border border-slate-800/80"
+          draggable={false}
+        />
         {qrUrl ? (
           <div className="p-1 rounded-lg bg-white border border-slate-200 shrink-0 shadow-xs">
             <img

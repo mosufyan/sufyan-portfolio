@@ -3,6 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=1.1.30" data-brand-favicon="png" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg?v=1.1.30" data-brand-favicon="svg" />
+    <link rel="icon" href="/favicon.ico?v=1.1.30" sizes="any" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=1.1.30" />
     <script>
       (function () {
         try {
@@ -18,15 +22,28 @@
             root.setAttribute('data-accent', a);
           } else {
             root.setAttribute('data-accent', 'cyan');
+            a = 'cyan';
+          }
+          var v = '?v=1.1.30';
+          var png = document.querySelector('link[data-brand-favicon="png"]');
+          if (png) {
+            png.setAttribute(
+              'href',
+              (a === 'amber' ? '/favicon-32-amber.png' : '/favicon-32.png') + v
+            );
+          }
+          var fav = document.querySelector('link[data-brand-favicon="svg"]');
+          if (fav) {
+            fav.setAttribute(
+              'href',
+              (a === 'amber' ? '/icon-amber.svg' : '/icon.svg') + v
+            );
           }
         } catch (e) {}
       })();
     </script>
     <title>Mohammed Sufyan — Security &amp; Cloud Architect</title>
     <meta name="description" content="Software Engineer at Cisco STO CTO Ops with __EXPERIENCE_YEARS__ years architecting security data platforms, multi-cloud infrastructure, Zero Trust systems, and applied AI." />
-    <link rel="icon" href="/favicon.ico" />
-    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="canonical" href="https://www.mohammedsufyan.com/" />
     <meta name="robots" content="noai, noimageai, noarchive" />
     <meta name="theme-color" content="#06080d" />

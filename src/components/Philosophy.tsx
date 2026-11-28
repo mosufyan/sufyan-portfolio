@@ -4,6 +4,7 @@ import { PERSONAL_INFO } from '../data/portfolioData';
 import { useTheme } from '../theme/ThemeProvider';
 import HeaderSpotlight from './HeaderSpotlight';
 import { Reveal, EASE_OUT_EXPO } from './MotionPrimitives';
+import BrandMark from './BrandMark';
 import SectionScanLine from './SectionScanLine';
 import type { PortfolioReadingMode } from './UnifiedScrollHud';
 
@@ -64,13 +65,6 @@ export default function Philosophy({ readingMode = 'deep' }: PhilosophyProps) {
     : isLight
       ? 'border-t border-sky-200'
       : 'border-t border-cyan-500/30';
-  const creedBadge = isAmber
-    ? isLight
-      ? 'bg-amber-100 border border-amber-200 text-amber-800'
-      : 'bg-amber-500/20 border border-amber-500/30 text-amber-300'
-    : isLight
-      ? 'bg-sky-100 border border-sky-200 text-sky-700'
-      : 'bg-cyan-500/20 border border-cyan-500/30 text-cyan-300';
   const ambientOrb = isAmber ? 'bg-amber-500/8' : 'bg-cyan-500/8';
   const eyebrow = isAmber
     ? isLight
@@ -206,11 +200,7 @@ export default function Philosophy({ readingMode = 'deep' }: PhilosophyProps) {
                 <div className={`text-xs font-mono ${labelAccent}`}>Software Engineer</div>
               </div>
 
-              <div
-                className={`flex h-10 w-10 items-center justify-center rounded-xl font-mono text-xs font-bold ${creedBadge}`}
-              >
-                MS
-              </div>
+              <BrandMark size="lg" className="rounded-xl" />
             </div>
           </motion.div>
         </div>

@@ -13,7 +13,6 @@ import {
   Mail,
   MapPin,
   QrCode,
-  Share2,
   UserPlus,
   X
 } from 'lucide-react';
@@ -21,7 +20,9 @@ import { PERSONAL_INFO } from '../data/portfolioData';
 import { useTheme } from '../theme/ThemeProvider';
 import { buildVCardString, downloadVCard, PORTFOLIO_CANONICAL_URL } from '../utils/vcard';
 import { SHARE_CARD_TRACKS, type ShareTrackId } from '../utils/ogShare';
+import { renderSocialShareCardPng } from '../utils/socialShareCardCanvas';
 import { useModalPlacement } from '../hooks/useModalPlacement';
+import BrandMark from './BrandMark';
 import ModalHeaderScan from './ModalHeaderScan';
 import { EASE_OUT_EXPO } from './MotionPrimitives';
 import ShineSurface from './ShineSurface';
@@ -49,6 +50,8 @@ export default function DigitalCardModal({ isOpen, onClose }: DigitalCardModalPr
   );
   const [copiedShareLink, setCopiedShareLink] = useState(false);
   const [downloadingBanner, setDownloadingBanner] = useState(false);
+  const [sharePreviewUrl, setSharePreviewUrl] = useState('');
+  const [sharePreviewLoading, setSharePreviewLoading] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -128,6 +131,30 @@ export default function DigitalCardModal({ isOpen, onClose }: DigitalCardModalPr
   const activeShareTrack =
     SHARE_CARD_TRACKS.find((t) => t.id === shareTrack) ?? SHARE_CARD_TRACKS[0];
 
+  useEffect(() => {
+    if (!isOpen || activeTab !== 'social') return;
+    let active = true;
+    setSharePreviewLoading(true);
+    renderSocialShareCardPng({
+      track: activeShareTrack,
+      theme: shareCardTheme,
+      accent: siteAccent === 'amber' ? 'amber' : 'cyan',
+    })
+      .then((url) => {
+        if (!active) return;
+        setSharePreviewUrl(url || '');
+        setSharePreviewLoading(false);
+      })
+      .catch(() => {
+        if (!active) return;
+        setSharePreviewUrl('');
+        setSharePreviewLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [isOpen, activeTab, activeShareTrack, shareCardTheme, siteAccent]);
+
   const handleCopyTrackShareUrl = () => {
     const base =
       typeof window !== 'undefined'
@@ -147,149 +174,14 @@ export default function DigitalCardModal({ isOpen, onClose }: DigitalCardModalPr
     if (downloadingBanner) return;
     setDownloadingBanner(true);
     try {
-      const canvas = document.createElement('canvas');
-      canvas.width = 1200;
-      canvas.height = 630;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-
-      const cardLight = shareCardTheme === 'light';
-      const isAmber = siteAccent === 'amber';
-      const bg = cardLight ? '#f8fafc' : '#06080d';
-      const panel = cardLight ? '#ffffff' : '#0b111f';
-      const border = cardLight ? '#cbd5e1' : '#1e293b';
-      const heading = cardLight ? '#0f172a' : '#f8fafc';
-      const subtext = cardLight ? '#334155' : '#cbd5e1';
-      const muted = cardLight ? '#64748b' : '#94a3b8';
-      const accent = isAmber
-        ? cardLight
-          ? '#b45309'
-          : '#f59e0b'
-        : cardLight
-          ? '#0284c7'
-          : '#38bdf8';
-      const accentSoft = isAmber
-        ? cardLight
-          ? '#fffbeb'
-          : '#3b2a14'
-        : cardLight
-          ? '#e0f2fe'
-          : '#082f49';
-
-      ctx.fillStyle = bg;
-      ctx.fillRect(0, 0, 1200, 630);
-
-      // Subtle architectural dot matrix
-      ctx.fillStyle = isAmber
-        ? cardLight
-          ? 'rgba(180,83,9,0.14)'
-          : 'rgba(245,158,11,0.14)'
-        : cardLight
-          ? 'rgba(2,132,199,0.14)'
-          : 'rgba(56,189,248,0.14)';
-      for (let x = 24; x < 1200; x += 28) {
-        for (let y = 24; y < 630; y += 28) {
-          ctx.beginPath();
-          ctx.arc(x, y, 1.2, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
-
-      // Main card container
-      ctx.fillStyle = panel;
-      ctx.strokeStyle = border;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.roundRect(44, 44, 1112, 542, 26);
-      ctx.fill();
-      ctx.stroke();
-
-      // Brand badge
-      ctx.fillStyle = accentSoft;
-      ctx.beginPath();
-      ctx.roundRect(92, 92, 56, 56, 14);
-      ctx.fill();
-      ctx.fillStyle = accent;
-      ctx.font = 'bold 22px system-ui, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('MS', 120, 128);
-
-      ctx.textAlign = 'left';
-      ctx.fillStyle = accent;
-      ctx.font = 'bold 15px monospace';
-      ctx.fillText('VERIFIED ARCHITECT PORTFOLIO', 166, 115);
-      ctx.fillStyle = muted;
-      ctx.font = '15px monospace';
-      ctx.fillText('www.mohammedsufyan.com', 166, 140);
-
-      // Portrait frame (right side)
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      await new Promise<void>((resolve) => {
-        img.onload = () => resolve();
-        img.onerror = () => resolve();
-        img.src = '/assets/aistudio/Sufyan_hero_portrait.png';
-      });
-      if (img.naturalWidth > 0) {
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(1005, 195, 86, 0, Math.PI * 2);
-        ctx.fillStyle = cardLight ? '#e2e8f0' : '#0f172a';
-        ctx.fill();
-        ctx.strokeStyle = accent;
-        ctx.lineWidth = 2.5;
-        ctx.stroke();
-        ctx.clip();
-        ctx.drawImage(img, 919, 109, 172, 172);
-        ctx.restore();
-      }
-
-      // Copy
-      ctx.fillStyle = heading;
-      ctx.font = 'bold 46px system-ui, sans-serif';
-      ctx.fillText(activeShareTrack.headline, 92, 240, 780);
-
-      ctx.fillStyle = subtext;
-      ctx.font = '500 24px system-ui, sans-serif';
-      ctx.fillText(activeShareTrack.subline, 92, 294, 790);
-
-      ctx.fillStyle = muted;
-      ctx.font = '17px monospace';
-      ctx.fillText(activeShareTrack.kicker, 92, 338, 790);
-
-      ctx.strokeStyle = border;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(92, 388);
-      ctx.lineTo(1108, 388);
-      ctx.stroke();
-
-      // Track KPI pills
-      activeShareTrack.metrics.forEach((metric, idx) => {
-        const px = 92 + idx * 246;
-        ctx.fillStyle = accentSoft;
-        ctx.strokeStyle = accent;
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.roundRect(px, 428, 224, 54, 12);
-        ctx.fill();
-        ctx.stroke();
-
-        ctx.fillStyle = accent;
-        ctx.font = 'bold 19px monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText(metric, px + 112, 461);
-      });
-
-      ctx.textAlign = 'left';
-      ctx.fillStyle = muted;
-      ctx.font = '15px monospace';
-      ctx.fillText('Cisco Systems Inc. · HCL America Inc./HCLTech · Tata Consultancy Services', 92, 538);
-      ctx.textAlign = 'right';
-      ctx.fillStyle = accent;
-      ctx.fillText('San Jose, CA · Global', 1108, 538);
-
-      const pngUrl = canvas.toDataURL('image/png');
+      const pngUrl =
+        sharePreviewUrl ||
+        (await renderSocialShareCardPng({
+          track: activeShareTrack,
+          theme: shareCardTheme,
+          accent: siteAccent === 'amber' ? 'amber' : 'cyan',
+        }));
+      if (!pngUrl) return;
       const link = document.createElement('a');
       link.href = pngUrl;
       link.download = `Mohammed_Sufyan_${activeShareTrack.id}_Share_Card.png`;
@@ -331,13 +223,7 @@ export default function DigitalCardModal({ isOpen, onClose }: DigitalCardModalPr
             <div className="relative shrink-0 flex items-center justify-between gap-3 px-4 sm:px-5 py-3 sm:py-3.5 border-b border-slate-800/90 bg-[#0b101b]">
               <ModalHeaderScan active={isOpen} />
               <div className="flex items-center gap-2.5">
-                <motion.div
-                  animate={{ rotate: [0, -6, 6, 0] }}
-                  transition={{ duration: 2.8, repeat: Infinity, repeatDelay: 3.5, ease: 'easeInOut' }}
-                  className="flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-950/60 border border-cyan-500/40 text-cyan-400"
-                >
-                  {activeTab === 'qr' ? <QrCode className="w-4 h-4" /> : <Share2 className="w-4 h-4" />}
-                </motion.div>
+                <BrandMark size="sm" />
                 <div>
                   <h3 className="font-display font-bold text-sm sm:text-base text-white">
                     Digital Card &amp; Social Share Studio
@@ -464,77 +350,30 @@ export default function DigitalCardModal({ isOpen, onClose }: DigitalCardModalPr
                     </button>
                   </div>
 
-                  {/* Live 1200x630 OpenGraph Card Preview */}
+                  {/* Live preview = exact same canvas PNG as download */}
                   <div
-                    className={`aspect-[1200/630] w-full rounded-xl border p-4 sm:p-5 flex flex-col justify-between relative overflow-hidden ${
+                    className={`aspect-[1200/630] w-full rounded-xl border overflow-hidden relative ${
                       shareCardTheme === 'light'
-                        ? 'border-slate-200 bg-gradient-to-br from-slate-50 via-white to-sky-50 text-slate-900'
-                        : 'border-slate-800 bg-gradient-to-br from-[#070b14] via-[#0b1120] to-[#06080d] text-white'
+                        ? 'border-slate-200 bg-slate-100'
+                        : 'border-slate-800 bg-[#06080d]'
                     }`}
                   >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div
-                          className={`text-[9px] font-mono uppercase tracking-widest font-semibold ${
-                            shareCardTheme === 'light' ? 'text-sky-700' : 'text-cyan-400'
-                          }`}
-                        >
-                          OpenGraph Preview · 1200×630
-                        </div>
-                        <div className="font-display font-extrabold text-base sm:text-lg leading-tight mt-1.5">
-                          {activeShareTrack.headline}
-                        </div>
-                        <div
-                          className={`text-[11px] mt-1 leading-snug ${
-                            shareCardTheme === 'light' ? 'text-slate-600' : 'text-slate-300'
-                          }`}
-                        >
-                          {activeShareTrack.subline}
-                        </div>
-                      </div>
+                    {sharePreviewUrl ? (
+                      <img
+                        src={sharePreviewUrl}
+                        alt={`${activeShareTrack.label} social share card preview`}
+                        className="absolute inset-0 h-full w-full object-cover"
+                        draggable={false}
+                      />
+                    ) : (
                       <div
-                        className={`w-12 h-12 rounded-full overflow-hidden shrink-0 border ${
-                          shareCardTheme === 'light'
-                            ? 'border-sky-300 bg-slate-100'
-                            : 'border-cyan-400/50 bg-[#06080d]'
+                        className={`absolute inset-0 flex items-center justify-center text-[11px] font-mono ${
+                          shareCardTheme === 'light' ? 'text-slate-500' : 'text-slate-400'
                         }`}
                       >
-                        <img
-                          src="/assets/aistudio/Sufyan_hero_portrait.png"
-                          alt="Mohammed Sufyan"
-                          className="w-full h-full object-contain object-bottom"
-                        />
+                        {sharePreviewLoading ? 'Rendering preview…' : 'Preview unavailable'}
                       </div>
-                    </div>
-
-                    <div className="space-y-2.5">
-                      <div className="flex flex-wrap gap-1.5">
-                        {activeShareTrack.metrics.map((m) => (
-                          <span
-                            key={m}
-                            className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold border ${
-                              shareCardTheme === 'light'
-                                ? 'bg-sky-50 border-sky-200 text-sky-800'
-                                : 'bg-cyan-950/50 border-cyan-500/35 text-cyan-300'
-                            }`}
-                          >
-                            {m}
-                          </span>
-                        ))}
-                      </div>
-                      <div
-                        className={`pt-2 border-t flex items-center justify-between text-[10px] font-mono ${
-                          shareCardTheme === 'light'
-                            ? 'border-slate-200 text-slate-500'
-                            : 'border-slate-800 text-slate-400'
-                        }`}
-                      >
-                        <span className="truncate">www.mohammedsufyan.com</span>
-                        <span className={shareCardTheme === 'light' ? 'text-sky-700' : 'text-cyan-400'}>
-                          Cisco · HCLTech · TCS
-                        </span>
-                      </div>
-                    </div>
+                    )}
                   </div>
 
                   {/* Social Share Actions */}

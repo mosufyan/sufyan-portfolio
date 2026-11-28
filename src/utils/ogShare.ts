@@ -1,3 +1,4 @@
+import { brandMarkSvgSnippet, BRAND_ACCENT_HEX } from '../brand/brandMark';
 import { PERSONAL_INFO } from '../data/portfolioData';
 
 export type ShareTrackId = 'executive' | 'security' | 'platform' | 'ai';
@@ -56,11 +57,13 @@ export const SHARE_CARD_TRACKS: readonly ShareCardTrack[] = [
 export function buildDynamicSocialSvg(options: {
   track?: ShareTrackId;
   theme?: 'dark' | 'light';
+  accent?: 'cyan' | 'amber';
   skillLabel?: string;
 }): string {
   const track =
     SHARE_CARD_TRACKS.find((t) => t.id === options.track) ?? SHARE_CARD_TRACKS[0];
   const isLight = options.theme === 'light';
+  const isAmber = options.accent === 'amber';
   const skill = options.skillLabel?.trim();
 
   const bg = isLight ? '#f8fafc' : '#06080d';
@@ -69,10 +72,34 @@ export function buildDynamicSocialSvg(options: {
   const titleColor = isLight ? '#0f172a' : '#f8fafc';
   const subColor = isLight ? '#334155' : '#cbd5e1';
   const mutedColor = isLight ? '#64748b' : '#94a3b8';
-  const accent = isLight ? '#0284c7' : '#38bdf8';
-  const accentSoft = isLight ? '#e0f2fe' : '#082f49';
-  const accentBorder = isLight ? '#7dd3fc' : '#0ea5e9';
-  const gridDot = isLight ? 'rgba(2,132,199,0.14)' : 'rgba(56,189,248,0.14)';
+  const accent = isAmber
+    ? isLight
+      ? '#b45309'
+      : '#fbbf24'
+    : isLight
+      ? '#0284c7'
+      : '#22d3ee';
+  const accentSoft = isAmber
+    ? isLight
+      ? '#fffbeb'
+      : '#3b2a14'
+    : isLight
+      ? '#e0f2fe'
+      : '#082f49';
+  const accentBorder = isAmber
+    ? isLight
+      ? '#f59e0b'
+      : '#d97706'
+    : isLight
+      ? '#7dd3fc'
+      : '#0ea5e9';
+  const gridDot = isAmber
+    ? isLight
+      ? 'rgba(180,83,9,0.14)'
+      : 'rgba(245,158,11,0.14)'
+    : isLight
+      ? 'rgba(2,132,199,0.14)'
+      : 'rgba(56,189,248,0.14)';
 
   const escapeXml = (s: string) =>
     s
@@ -118,12 +145,11 @@ export function buildDynamicSocialSvg(options: {
   <rect width="1200" height="630" fill="url(#glow)" />
   <rect x="44" y="44" width="1112" height="542" rx="28" fill="${cardBg}" fill-opacity="0.94" stroke="${border}" stroke-width="1.5" />
 
-  <!-- Brand Mark -->
-  <rect x="96" y="96" width="56" height="56" rx="14" fill="${accentSoft}" stroke="${accentBorder}" stroke-opacity="0.55" />
-  <text x="124" y="133" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="24" font-weight="800" fill="${accent}">MS</text>
+  <!-- Brand Mark — approved dark tile + vibrant cyan/amber ink (same on light cards) -->
+  ${brandMarkSvgSnippet(92, 92, 56, isAmber ? BRAND_ACCENT_HEX.amber : BRAND_ACCENT_HEX.cyan, { background: '#06080d' })}
 
-  <text x="172" y="120" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="700" letter-spacing="2.2" fill="${accent}">VERIFIED ARCHITECT PORTFOLIO</text>
-  <text x="172" y="145" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" fill="${mutedColor}">www.mohammedsufyan.com</text>
+  <text x="166" y="115" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="700" letter-spacing="2.2" fill="${accent}">VERIFIED ARCHITECT PORTFOLIO</text>
+  <text x="166" y="140" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" fill="${mutedColor}">www.mohammedsufyan.com</text>
 
   <!-- Main Title -->
   <text x="96" y="246" font-family="system-ui, -apple-system, sans-serif" font-size="52" font-weight="800" letter-spacing="-1" fill="${titleColor}">${safeHeadline}</text>
