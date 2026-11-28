@@ -315,7 +315,7 @@ export default function Experience({
               </div>
             </div>
 
-            {/* Proportional 13+ Year Era Cards */}
+            {/* Proportional career-era cards (durations from EMPLOYMENT_TENURES) */}
             <div className="grid grid-cols-1 md:grid-cols-3 print:grid-cols-3 gap-3">
               {GLOBAL_FOOTPRINT.map((stage, idx) => {
                 const isSelected = activeFilter === stage.filterKey;

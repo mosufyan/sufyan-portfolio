@@ -42,7 +42,7 @@ export default function Footer({ onOpenDigitalCard, onOpenTerminal, onOpenSecuri
             </HoverLift>
 
             <p className="fluid-body text-slate-400 max-w-md font-light">
-              Software Engineer with 13+ years of enterprise engineering experience across{' '}
+              Software Engineer with {PERSONAL_INFO.experienceYears} years of enterprise engineering experience across{' '}
               <span className="sm:hidden">Cisco</span>
               <span className="hidden sm:inline">Cisco Systems Inc.</span>
               , HCL America Inc./HCLTech, and Tata Consultancy Services in the United States, United Kingdom, and India.

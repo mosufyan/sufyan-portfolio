@@ -200,7 +200,7 @@ export default function CommandPalette({
         id: 'sec-experience',
         group: 'Sections',
         title: 'Professional Experience & Leadership',
-        subtitle: '13+ years across Cisco Systems Inc., HCL America Inc./HCLTech & TCS',
+        subtitle: `${PERSONAL_INFO.experienceYears} years across Cisco Systems Inc., HCL America Inc./HCLTech & TCS`,
         keywords: 'experience timeline career work history',
         action: () => jumpToSection('experience'),
       },

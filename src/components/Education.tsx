@@ -1,6 +1,6 @@
 import { GraduationCap, Award, Calendar, MapPin } from 'lucide-react';
 import { motion } from 'motion/react';
-import { EDUCATION } from '../data/portfolioData';
+import { EDUCATION, PERSONAL_INFO } from '../data/portfolioData';
 import HeaderSpotlight from './HeaderSpotlight';
 import { Reveal, StaggerContainer, StaggerItem, EASE_OUT_EXPO } from './MotionPrimitives';
 import SectionScanLine from './SectionScanLine';
@@ -26,7 +26,7 @@ export default function Education({ readingMode = 'deep' }: EducationProps) {
               Education &amp; Scholastic Honors
             </h2>
             <p className="mt-2 text-sm sm:text-base text-slate-400 max-w-3xl">
-              Formal training in computer science, distributed algorithms, discrete mathematics, and applied sciences underpinning 13+ years of systems architecture.
+              Formal training in computer science, distributed algorithms, discrete mathematics, and applied sciences underpinning {PERSONAL_INFO.experienceYears} years of systems architecture.
             </p>
           </HeaderSpotlight>
         </Reveal>

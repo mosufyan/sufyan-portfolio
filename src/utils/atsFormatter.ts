@@ -52,7 +52,7 @@ export function buildAtsPlainTextResume(input: AtsExportInput): string {
     lines.push('EXECUTIVE SUMMARY');
     lines.push('-----------------');
     lines.push(
-      'Architecting high-velocity security data platforms, multi-cloud vulnerability engines, and enterprise compliance systems across 13+ years of engineering experience with Cisco Systems Inc., HCL America Inc./HCLTech, and Tata Consultancy Services in the United States, United Kingdom, and India.'
+      `Architecting high-velocity security data platforms, multi-cloud vulnerability engines, and enterprise compliance systems across ${PERSONAL_INFO.experienceYears} years of engineering experience with Cisco Systems Inc., HCL America Inc./HCLTech, and Tata Consultancy Services in the United States, United Kingdom, and India.`
     );
     lines.push('');
     lines.push('Key Metrics:');

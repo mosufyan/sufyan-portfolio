@@ -1,4 +1,14 @@
 import { formatTenureDuration } from '../utils/tenureDuration';
+import { EMPLOYMENT_TENURES, getExperienceYearsPlus } from './employmentTenures';
+
+export {
+  CISCO_ROLE_START,
+  EMPLOYMENT_TENURES,
+  getCompanyDurationLabel,
+  getExperienceDurationLabel,
+  getExperienceYearsPlus,
+  getTotalExperienceMonths,
+} from './employmentTenures';
 
 export interface Certification {
   id: string;
@@ -52,25 +62,6 @@ export interface CompanyExperience {
   roles: ExperienceRole[];
 }
 
-/** Exact employment windows used for day-aware tenure labels. */
-export const EMPLOYMENT_TENURES = {
-  tcs: {
-    start: new Date(2013, 11, 26), // 26 Dec 2013
-    end: new Date(2019, 7, 31), // 31 Aug 2019
-  },
-  hcl: {
-    start: new Date(2019, 8, 5), // 5 Sep 2019
-    end: new Date(2026, 7, 24), // 24 Aug 2026
-  },
-  cisco: {
-    start: new Date(2026, 7, 25), // 25 Aug 2026
-    end: null as Date | null, // open — Present
-  },
-} as const;
-
-/** @deprecated Prefer EMPLOYMENT_TENURES.cisco.start */
-export const CISCO_ROLE_START = EMPLOYMENT_TENURES.cisco.start;
-
 export interface Award {
   id: string;
   title: string;
@@ -92,23 +83,26 @@ export interface Recommendation {
   featured?: boolean;
 }
 
+const EXPERIENCE_YEARS_PLUS = getExperienceYearsPlus();
+
 export const PERSONAL_INFO = {
   name: 'Mohammed Sufyan',
   title: 'Software Engineer — Cisco Systems Inc. STO CTO Operations',
-  tagline: 'Architecting high-velocity systems for distributed platforms, multi-cloud scalability, resilience and cloud governance across diverse ecosystems. 13+ years of enterprise experience with Cisco Systems Inc., HCL America Inc./HCLTech, and Tata Consultancy Services in the United States, United Kingdom, and India.',
+  tagline: `Architecting high-velocity systems for distributed platforms, multi-cloud scalability, resilience and cloud governance across diverse ecosystems. ${EXPERIENCE_YEARS_PLUS} years of enterprise experience with Cisco Systems Inc., HCL America Inc./HCLTech, and Tata Consultancy Services in the United States, United Kingdom, and India.`,
   email: 'sufyan.net@gmail.com',
   linkedin: 'https://www.linkedin.com/in/mohammed-sufyan',
   openTo:
     'Open to Software Engineer and platform roles spanning security data platforms, multi-cloud systems, and applied AI — San Jose / hybrid.',
   location: 'San Jose, California, United States · Hybrid',
-  experienceYears: '13+',
+  /** Floor years from summed employment windows, e.g. "12+". Refreshed on each module load. */
+  experienceYears: EXPERIENCE_YEARS_PLUS,
   certificationsCount: '20x',
   academicCgpa: '9.5/10',
   philosophy: {
     quote1:
       'Build systems that stay trustworthy under change — governed data, Zero Trust boundaries, and telemetry that makes reliability measurable.',
     body:
-      'Software Engineer with 13+ years across Cisco Systems Inc., HCL America Inc./HCLTech, and Tata Consultancy Services. I design multi-cloud security data platforms, resilient services, and AI-assisted engineering workflows that scale without losing auditability.',
+      `Software Engineer with ${EXPERIENCE_YEARS_PLUS} years across Cisco Systems Inc., HCL America Inc./HCLTech, and Tata Consultancy Services. I design multi-cloud security data platforms, resilient services, and AI-assisted engineering workflows that scale without losing auditability.`,
     poem: 'Knowledge is my companion,\nit boasts me wherever I go.\nMy heart is its container, and\nnot the bookshelf.',
     poemAuthor: 'Mohammed Sufyan, Software Engineer',
   },
@@ -116,7 +110,7 @@ export const PERSONAL_INFO = {
 
 export const STATS = [
   {
-    value: '13+',
+    value: EXPERIENCE_YEARS_PLUS,
     label: 'YEARS ENTERPRISE EXPERIENCE',
     sublabel: 'Cisco Systems Inc. • HCL America Inc./HCLTech • TCS'
   },

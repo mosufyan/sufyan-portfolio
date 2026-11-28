@@ -1,3 +1,5 @@
+import { PERSONAL_INFO } from '../data/portfolioData';
+
 export type ShareTrackId = 'executive' | 'security' | 'platform' | 'ai';
 
 export interface ShareCardTrack {
@@ -10,14 +12,16 @@ export interface ShareCardTrack {
   shareQuery: string;
 }
 
+const EXPERIENCE_YEARS = PERSONAL_INFO.experienceYears;
+
 export const SHARE_CARD_TRACKS: readonly ShareCardTrack[] = [
   {
     id: 'executive',
     label: 'Executive',
     headline: 'Mohammed Sufyan',
     subline: 'Software Engineer · Cisco Systems Inc. STO CTO Operations',
-    kicker: '13+ Yrs · Multi-Cloud & Security Data Platforms · US / UK / India',
-    metrics: ['13+ Years', '20x Certified', '9.5/10 CGPA'],
+    kicker: `${EXPERIENCE_YEARS} Yrs · Multi-Cloud & Security Data Platforms · US / UK / India`,
+    metrics: [`${EXPERIENCE_YEARS} Years`, '20x Certified', '9.5/10 CGPA'],
     shareQuery: '',
   },
   {
@@ -35,7 +39,7 @@ export const SHARE_CARD_TRACKS: readonly ShareCardTrack[] = [
     headline: 'Mohammed Sufyan · Multi-Cloud Systems',
     subline: 'AWS · Azure · GCP · Kubernetes (EKS / AKS / GKE) & DevSecOps',
     kicker: 'Enterprise Infrastructure · High-Throughput Telemetry & SRE',
-    metrics: ['AWS · Azure · GCP', 'Kubernetes', '13+ Yrs'],
+    metrics: ['AWS · Azure · GCP', 'Kubernetes', `${EXPERIENCE_YEARS} Yrs`],
     shareQuery: '?cv=platform&theme=dark',
   },
   {
@@ -47,7 +51,7 @@ export const SHARE_CARD_TRACKS: readonly ShareCardTrack[] = [
     metrics: ['Databricks', 'Agentic AI', '23 Endorsements'],
     shareQuery: '?skill=Databricks',
   },
-] as const;
+];
 
 export function buildDynamicSocialSvg(options: {
   track?: ShareTrackId;
