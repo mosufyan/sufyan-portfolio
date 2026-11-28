@@ -1,4 +1,4 @@
-import { brandMarkDataUrl } from '../brand/brandMark';
+import { brandMarkDataUrl, BRAND_MARK_PNG_SRC } from '../brand/brandMark';
 import type { ShareCardTrack } from './ogShare';
 
 export type ShareCardTheme = 'dark' | 'light';
@@ -75,20 +75,24 @@ export async function renderSocialShareCardPng(options: {
   ctx.fill();
   ctx.stroke();
 
-  const brandImg = await loadImage(
-    brandMarkDataUrl(accent, { background: 'transparent' })
-  );
+  // Prefer the shipped PNG for cyan/dark (exact pixels). Otherwise SVG with
+  // panel-matching fill + explicit size so canvas never overlaps the label.
+  const brandSrc =
+    !isAmber && !cardLight
+      ? BRAND_MARK_PNG_SRC
+      : brandMarkDataUrl(accent, { background: panel });
+  const brandImg = await loadImage(brandSrc, !isAmber && !cardLight);
   if (brandImg.naturalWidth > 0) {
-    ctx.drawImage(brandImg, 88, 88, 64, 64);
+    ctx.drawImage(brandImg, 92, 92, 56, 56);
   }
 
   ctx.textAlign = 'left';
   ctx.fillStyle = accent;
   ctx.font = 'bold 15px monospace';
-  ctx.fillText('VERIFIED ARCHITECT PORTFOLIO', 168, 114);
+  ctx.fillText('VERIFIED ARCHITECT PORTFOLIO', 166, 115);
   ctx.fillStyle = muted;
   ctx.font = '15px monospace';
-  ctx.fillText('www.mohammedsufyan.com', 168, 140);
+  ctx.fillText('www.mohammedsufyan.com', 166, 140);
 
   const portrait = await loadImage(
     '/assets/aistudio/Sufyan_hero_portrait.png',

@@ -22,7 +22,7 @@ export type BrandAccent = keyof typeof BRAND_ACCENT_HEX;
 
 /**
  * Exact approved logo SVG with optional accent recolor.
- * Pass background: 'transparent' for share cards (hex+MS only, no dark tile).
+ * Always includes explicit width/height so canvas drawImage scales correctly.
  */
 export function buildBrandMarkSvg(options?: {
   accent?: string;
@@ -35,7 +35,7 @@ export function buildBrandMarkSvg(options?: {
       ? ''
       : `<rect width="512" height="512" fill="${background}"/>`;
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Mohammed Sufyan">
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Mohammed Sufyan">
   ${bgRect}
   <path fill="none" stroke="${accent}" stroke-width="26" stroke-linejoin="round" d="${BRAND_MARK_HEX_PATH}"/>
   <path fill="${accent}" d="${BRAND_MARK_MS_PATH}"/>
@@ -49,7 +49,7 @@ export function brandMarkSvgSnippet(
   accent: string = BRAND_ACCENT_HEX.cyan,
   opts?: { background?: string | 'transparent' }
 ): string {
-  const background = opts?.background ?? 'transparent';
+  const background = opts?.background ?? '#06080d';
   const bgRect =
     background === 'transparent' || background === 'none'
       ? ''

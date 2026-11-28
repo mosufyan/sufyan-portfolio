@@ -145,11 +145,11 @@ export function buildDynamicSocialSvg(options: {
   <rect width="1200" height="630" fill="url(#glow)" />
   <rect x="44" y="44" width="1112" height="542" rx="28" fill="${cardBg}" fill-opacity="0.94" stroke="${border}" stroke-width="1.5" />
 
-  <!-- Brand Mark — hex+MS only, no dark tile -->
-  ${brandMarkSvgSnippet(88, 88, 64, accent, { background: 'transparent' })}
+  <!-- Brand Mark — panel-matched tile so label sits cleanly to the right -->
+  ${brandMarkSvgSnippet(92, 92, 56, accent, { background: cardBg })}
 
-  <text x="168" y="114" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="700" letter-spacing="2.2" fill="${accent}">VERIFIED ARCHITECT PORTFOLIO</text>
-  <text x="168" y="140" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" fill="${mutedColor}">www.mohammedsufyan.com</text>
+  <text x="166" y="115" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="700" letter-spacing="2.2" fill="${accent}">VERIFIED ARCHITECT PORTFOLIO</text>
+  <text x="166" y="140" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" fill="${mutedColor}">www.mohammedsufyan.com</text>
 
   <!-- Main Title -->
   <text x="96" y="246" font-family="system-ui, -apple-system, sans-serif" font-size="52" font-weight="800" letter-spacing="-1" fill="${titleColor}">${safeHeadline}</text>
