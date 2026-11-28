@@ -1,6 +1,10 @@
 import { motion, useReducedMotion } from 'motion/react';
 import { useMemo } from 'react';
-import { brandMarkDataUrl, BRAND_ACCENT_HEX } from '../brand/brandMark';
+import {
+  brandMarkDataUrl,
+  BRAND_ACCENT_HEX,
+  BRAND_MARK_PNG_SRC,
+} from '../brand/brandMark';
 import { useTheme } from '../theme/ThemeProvider';
 import { EASE_OUT_EXPO } from './MotionPrimitives';
 
@@ -20,9 +24,9 @@ interface BrandMarkProps {
 }
 
 /**
- * Site-wide brand mark: hexagon + MS tile.
- * Rendered as <img> (not inline SVG) so navbar backdrop-blur does not smear strokes.
- * Color follows the active accent (cyan / amber).
+ * Exact approved hexagon+MS logo (concept B / PWA mark).
+ * Cyan uses the shipped PNG so pixels match the suggested logo;
+ * amber uses the same SVG paths recolored.
  */
 export default function BrandMark({
   size = 'md',
@@ -32,16 +36,17 @@ export default function BrandMark({
   const reduceMotion = useReducedMotion();
   const { accent, isLight } = useTheme();
   const px = typeof size === 'number' ? size : SIZE_PX[size];
-  const markColor =
-    accent === 'amber'
-      ? isLight
-        ? '#b45309'
-        : BRAND_ACCENT_HEX.amber
-      : isLight
-        ? '#0284c7'
-        : BRAND_ACCENT_HEX.cyan;
+  const isAmber = accent === 'amber';
+  const markColor = isAmber
+    ? isLight
+      ? '#b45309'
+      : BRAND_ACCENT_HEX.amber
+    : BRAND_ACCENT_HEX.cyan;
 
-  const src = useMemo(() => brandMarkDataUrl(markColor), [markColor]);
+  const src = useMemo(
+    () => (isAmber ? brandMarkDataUrl(markColor) : BRAND_MARK_PNG_SRC),
+    [isAmber, markColor]
+  );
 
   const mark = (
     <img
@@ -51,11 +56,8 @@ export default function BrandMark({
       height={px}
       draggable={false}
       decoding="async"
-      className="block h-full w-full rounded-lg"
-      style={{
-        // Own layer — avoids Chrome backdrop-filter smearing vector strokes
-        transform: 'translateZ(0)',
-      }}
+      className="block h-full w-full rounded-lg object-cover"
+      style={{ transform: 'translateZ(0)' }}
     />
   );
 
