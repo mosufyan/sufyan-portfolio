@@ -57,11 +57,13 @@ export const SHARE_CARD_TRACKS: readonly ShareCardTrack[] = [
 export function buildDynamicSocialSvg(options: {
   track?: ShareTrackId;
   theme?: 'dark' | 'light';
+  accent?: 'cyan' | 'amber';
   skillLabel?: string;
 }): string {
   const track =
     SHARE_CARD_TRACKS.find((t) => t.id === options.track) ?? SHARE_CARD_TRACKS[0];
   const isLight = options.theme === 'light';
+  const isAmber = options.accent === 'amber';
   const skill = options.skillLabel?.trim();
 
   const bg = isLight ? '#f8fafc' : '#06080d';
@@ -70,10 +72,34 @@ export function buildDynamicSocialSvg(options: {
   const titleColor = isLight ? '#0f172a' : '#f8fafc';
   const subColor = isLight ? '#334155' : '#cbd5e1';
   const mutedColor = isLight ? '#64748b' : '#94a3b8';
-  const accent = isLight ? '#0284c7' : '#38bdf8';
-  const accentSoft = isLight ? '#e0f2fe' : '#082f49';
-  const accentBorder = isLight ? '#7dd3fc' : '#0ea5e9';
-  const gridDot = isLight ? 'rgba(2,132,199,0.14)' : 'rgba(56,189,248,0.14)';
+  const accent = isAmber
+    ? isLight
+      ? '#b45309'
+      : '#fbbf24'
+    : isLight
+      ? '#0284c7'
+      : '#22d3ee';
+  const accentSoft = isAmber
+    ? isLight
+      ? '#fffbeb'
+      : '#3b2a14'
+    : isLight
+      ? '#e0f2fe'
+      : '#082f49';
+  const accentBorder = isAmber
+    ? isLight
+      ? '#f59e0b'
+      : '#d97706'
+    : isLight
+      ? '#7dd3fc'
+      : '#0ea5e9';
+  const gridDot = isAmber
+    ? isLight
+      ? 'rgba(180,83,9,0.14)'
+      : 'rgba(245,158,11,0.14)'
+    : isLight
+      ? 'rgba(2,132,199,0.14)'
+      : 'rgba(56,189,248,0.14)';
 
   const escapeXml = (s: string) =>
     s
@@ -120,7 +146,7 @@ export function buildDynamicSocialSvg(options: {
   <rect x="44" y="44" width="1112" height="542" rx="28" fill="${cardBg}" fill-opacity="0.94" stroke="${border}" stroke-width="1.5" />
 
   <!-- Brand Mark -->
-  ${brandMarkSvgSnippet(96, 96, 56)}
+  ${brandMarkSvgSnippet(96, 96, 56, accent)}
 
   <text x="172" y="120" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="700" letter-spacing="2.2" fill="${accent}">VERIFIED ARCHITECT PORTFOLIO</text>
   <text x="172" y="145" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" fill="${mutedColor}">www.mohammedsufyan.com</text>

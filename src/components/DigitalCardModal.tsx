@@ -20,6 +20,7 @@ import {
 import { PERSONAL_INFO } from '../data/portfolioData';
 import { useTheme } from '../theme/ThemeProvider';
 import { buildVCardString, downloadVCard, PORTFOLIO_CANONICAL_URL } from '../utils/vcard';
+import { brandMarkDataUrl } from '../brand/brandMark';
 import { SHARE_CARD_TRACKS, type ShareTrackId } from '../utils/ogShare';
 import { useModalPlacement } from '../hooks/useModalPlacement';
 import ModalHeaderScan from './ModalHeaderScan';
@@ -204,22 +205,15 @@ export default function DigitalCardModal({ isOpen, onClose }: DigitalCardModalPr
       ctx.fill();
       ctx.stroke();
 
-      // Brand badge — full cyan hexagon + MS tile
+      // Brand badge — accent-aware hexagon + MS tile
       const brandImg = new Image();
-      brandImg.crossOrigin = 'anonymous';
       await new Promise<void>((resolve) => {
         brandImg.onload = () => resolve();
         brandImg.onerror = () => resolve();
-        // PNG is more reliable than SVG for canvas drawImage across browsers.
-        brandImg.src = '/pwa-192x192.png';
+        brandImg.src = brandMarkDataUrl(accent);
       });
       if (brandImg.naturalWidth > 0) {
-        ctx.save();
-        ctx.beginPath();
-        ctx.roundRect(92, 92, 56, 56, 12);
-        ctx.clip();
         ctx.drawImage(brandImg, 92, 92, 56, 56);
-        ctx.restore();
       } else {
         ctx.fillStyle = accentSoft;
         ctx.beginPath();

@@ -1,5 +1,11 @@
 import { motion, useReducedMotion } from 'motion/react';
-import { BRAND_MARK_SRC } from '../brand/brandMark';
+import {
+  BRAND_ACCENT_HEX,
+  BRAND_MARK_HEX_PATH,
+  BRAND_MARK_INSET_SCALE,
+  BRAND_MARK_MS_PATH,
+} from '../brand/brandMark';
+import { useTheme } from '../theme/ThemeProvider';
 import { EASE_OUT_EXPO } from './MotionPrimitives';
 
 const SIZE_PX = {
@@ -18,7 +24,8 @@ interface BrandMarkProps {
 }
 
 /**
- * Site-wide brand mark: full cyan hexagon + MS tile with consistent hover spin.
+ * Site-wide brand mark: hexagon + MS tile.
+ * Stroke/fill follow the active accent (cyan / amber).
  */
 export default function BrandMark({
   size = 'md',
@@ -26,27 +33,48 @@ export default function BrandMark({
   animate = true,
 }: BrandMarkProps) {
   const reduceMotion = useReducedMotion();
+  const { accent, isLight } = useTheme();
   const px = typeof size === 'number' ? size : SIZE_PX[size];
+  const inset = ((1 - BRAND_MARK_INSET_SCALE) / 2) * 512;
+  const markColor =
+    accent === 'amber'
+      ? isLight
+        ? '#b45309'
+        : BRAND_ACCENT_HEX.amber
+      : isLight
+        ? '#0284c7'
+        : BRAND_ACCENT_HEX.cyan;
 
-  const img = (
-    <img
-      src={BRAND_MARK_SRC}
-      alt=""
+  const mark = (
+    <svg
+      viewBox="0 0 512 512"
       width={px}
       height={px}
-      draggable={false}
-      className="block h-full w-full rounded-lg object-cover"
-    />
+      className="block h-full w-full rounded-lg"
+      aria-hidden
+    >
+      <rect width="512" height="512" fill="#06080d" />
+      <g transform={`translate(${inset} ${inset}) scale(${BRAND_MARK_INSET_SCALE})`}>
+        <path
+          fill="none"
+          stroke={markColor}
+          strokeWidth={26}
+          strokeLinejoin="round"
+          d={BRAND_MARK_HEX_PATH}
+        />
+        <path fill={markColor} d={BRAND_MARK_MS_PATH} />
+      </g>
+    </svg>
   );
 
   if (!animate) {
     return (
       <span
-        className={`inline-flex shrink-0 overflow-hidden rounded-lg ${className}`}
+        className={`inline-flex shrink-0 rounded-lg ${className}`}
         style={{ width: px, height: px }}
         aria-hidden
       >
-        {img}
+        {mark}
       </span>
     );
   }
@@ -60,11 +88,11 @@ export default function BrandMark({
         scale: { type: 'spring', stiffness: 400, damping: 20 },
         rotate: { duration: 0.65, ease: EASE_OUT_EXPO },
       }}
-      className={`inline-flex shrink-0 overflow-hidden rounded-lg ${className}`}
+      className={`inline-flex shrink-0 rounded-lg ${className}`}
       style={{ width: px, height: px }}
       aria-hidden
     >
-      {img}
+      {mark}
     </motion.span>
   );
 }
